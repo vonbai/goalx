@@ -296,6 +296,38 @@ func TestMergeConfigTargetFieldLevel(t *testing.T) {
 	}
 }
 
+func TestMergeConfigServeFieldLevel(t *testing.T) {
+	base := Config{
+		Serve: ServeConfig{
+			Bind:            "100.110.196.103:18800",
+			Token:           "base-token",
+			Workspaces:      map[string]string{"goalx": "/srv/goalx"},
+			NotificationURL: "https://hub.example/hooks/wake",
+		},
+	}
+	overlay := Config{
+		Serve: ServeConfig{
+			Bind:       "100.110.196.103:18801",
+			Workspaces: map[string]string{"quantos": "/srv/quantos"},
+		},
+	}
+
+	mergeConfig(&base, &overlay)
+
+	if base.Serve.Bind != "100.110.196.103:18801" {
+		t.Fatalf("Serve.Bind = %q, want %q", base.Serve.Bind, "100.110.196.103:18801")
+	}
+	if base.Serve.Token != "base-token" {
+		t.Fatalf("Serve.Token = %q, want preserved base token", base.Serve.Token)
+	}
+	if base.Serve.NotificationURL != "https://hub.example/hooks/wake" {
+		t.Fatalf("Serve.NotificationURL = %q, want preserved base notification URL", base.Serve.NotificationURL)
+	}
+	if len(base.Serve.Workspaces) != 1 || base.Serve.Workspaces["quantos"] != "/srv/quantos" {
+		t.Fatalf("Serve.Workspaces = %#v, want overlay workspaces", base.Serve.Workspaces)
+	}
+}
+
 func TestLoadYAMLNotFound(t *testing.T) {
 	cfg, err := LoadYAML[Config]("/nonexistent/path.yaml")
 	if err != nil {

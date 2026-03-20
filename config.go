@@ -36,6 +36,7 @@ type Config struct {
 	Context        ContextConfig   `yaml:"context,omitempty"`
 	Budget         BudgetConfig    `yaml:"budget,omitempty"`
 	Master         MasterConfig    `yaml:"master,omitempty"`
+	Serve          ServeConfig     `yaml:"serve,omitempty"`
 }
 
 type TargetConfig struct {
@@ -62,6 +63,13 @@ type MasterConfig struct {
 	Engine        string        `yaml:"engine,omitempty"`
 	Model         string        `yaml:"model,omitempty"`
 	CheckInterval time.Duration `yaml:"check_interval,omitempty"`
+}
+
+type ServeConfig struct {
+	Bind            string            `yaml:"bind,omitempty"`
+	Token           string            `yaml:"token,omitempty"`
+	Workspaces      map[string]string `yaml:"workspaces,omitempty"`
+	NotificationURL string            `yaml:"notification_url,omitempty"`
 }
 
 type SessionConfig struct {
@@ -477,6 +485,18 @@ func mergeConfig(base, overlay *Config) {
 	}
 	if overlay.Master.CheckInterval > 0 {
 		base.Master.CheckInterval = overlay.Master.CheckInterval
+	}
+	if overlay.Serve.Bind != "" {
+		base.Serve.Bind = overlay.Serve.Bind
+	}
+	if overlay.Serve.Token != "" {
+		base.Serve.Token = overlay.Serve.Token
+	}
+	if len(overlay.Serve.Workspaces) > 0 {
+		base.Serve.Workspaces = overlay.Serve.Workspaces
+	}
+	if overlay.Serve.NotificationURL != "" {
+		base.Serve.NotificationURL = overlay.Serve.NotificationURL
 	}
 }
 
