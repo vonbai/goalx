@@ -1,0 +1,53 @@
+# goalx.yaml — Develop: 实施辩论共识的 P0-P3 修复
+name: fix-consensus
+mode: develop
+objective: |
+  实施架构调研辩论达成共识的 P0-P3 修复清单。
+
+  严格按照 docs/research-round2/debate-summary.md 中的共识执行，不做额外改动。
+
+  Batch 1 (互不依赖，可并行):
+    P0-1: journal.go 字段 + program.md.tmpl 模板对齐（"question"→"desc"，加 confidence 字段）
+    P0-2: cli/report.go "ar report"→"goalx report"
+    P1-2: cli/adapter.go echo→printf 修复 \n bug
+    P1-3: templates/master.md.tmpl restart 命令前加 C-c
+    P3-1: cmd/goalx/main.go 启动检查 HOME + cwd
+    P3-2: cli/init.go 纳秒→time.Hour
+    P3-3: cli/start.go heartbeat floor 警告
+
+  Batch 2 (有依赖):
+    P2-1: 删除 config.go 死代码 LoadBaseConfig + loadBaseConfig
+    P2-2: 删除 config.go ResolveSubagentCommand passthrough
+    P2-3: 删除 templates/report.md.tmpl
+    P1-1: 提取 session-path helpers（新建 cli/session_paths.go）
+
+  完成标准: go build + go test + go vet 全部通过
+preset: default
+engine: claude-code
+model: opus
+parallel: 2
+diversity_hints:
+  - "你负责 Batch 1: P0-1, P0-2, P1-2, P1-3, P3-1, P3-2, P3-3。这些文件互不依赖，逐个修复，每个修完跑一次 go build 验证。"
+  - "你负责 Batch 2: P2-1, P2-2, P2-3, P1-1。先删死代码（P2），再提取 session-path helpers（P1-1）。每步跑 go build + go test。"
+context:
+  files:
+    - docs/research-round2/debate-summary.md
+target:
+  files:
+    - journal.go
+    - config.go
+    - cli/
+    - cmd/goalx/main.go
+    - templates/
+  readonly:
+    - docs/
+    - go.mod
+    - go.sum
+harness:
+  command: go build ./... && go test ./... -count=1 && go vet ./...
+budget:
+  max_duration: 2h0m0s
+master:
+  engine: claude-code
+  model: opus
+  check_interval: 5m0s
