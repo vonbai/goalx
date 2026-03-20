@@ -1,230 +1,234 @@
-# AutoResearch — Implementation Plan
+# AutoResearch — Implementation Plan (v6)
 
-> Spec: `docs/specs/2026-03-19-autoresearch-design.md`
+> Spec: `docs/specs/2026-03-19-autoresearch-design.md` (v6)
+> Master/Subagent 架构。框架做编排，AI 判断一切。
 
-## Phase 1: Shared Core
+## Phase 1: Core (~200 lines)
 
-最先实现的基础类型，Level 1 和 Level 2 都依赖。
-
-### 1.1 types + verdict (~50 lines)
-- `verdict.go`: `Verdict` enum (Keep, Revert, Crash, ConstraintViolated)
-- `Direction` enum (Minimize, Maximize)
-- **测试**: enum string 方法
-
-### 1.2 metric (~80 lines)
-- `metric.go`: `Metric`, `MetricSet`, `ConstraintMetric`
-- `MetricSet.BetterThan(other)` — primary 比较
-- `MetricSet.Satisfies()` — constraints 检查
-- **测试**: 比较逻辑、constraints 满足/违反
-
-### 1.3 experiment (~40 lines)
-- `experiment.go`: `Experiment` struct (Round, Timestamp, Commit, Hypothesis, Metrics, Verdict, Description)
-- `ExperimentResult` struct (Metrics, Duration, Crashed, CrashLog)
-- **测试**: 构造 + 序列化
-
-### 1.4 journal (~120 lines)
-- `journal.go`: TSV 读写
-- `LoadJournal(path)` — 从 TSV 文件加载
-- `Journal.Append(e)` — append-only 写入
-- `Journal.Best()` — 最优 kept entry
-- `Journal.Kept()` — 所有 kept entries
-- `Journal.RecentN(n)` — 最近 N 轮
-- `Journal.Summary()` — 统计 (total, kept, reverted, crashed, keep rate)
-- **测试**: 写→读 round-trip、Best 查询、空 journal 处理
-
-### 1.5 policy (~60 lines)
-- `policy.go`: `Policy` interface + `SimplePolicy` + `ThresholdPolicy`
-- `SimplePolicy.Decide()` — primary 改进即 keep
-- `ThresholdPolicy.Decide()` — 改进超过 minDelta
-- `ParetoPolicy` 可后续加，Phase 1 先不实现
-- **测试**: 各 policy 的 keep/revert 判定
-
-### 1.6 config (~100 lines)
-- `config.go`: `Config` struct (单会话 + 多会话 sessions)
-- `LoadConfig(path)` — 解析 ar.yaml
-- 支持单会话 (flat) 和多会话 (sessions array) 两种格式
-- harness 模板引用 (`harness: go-bench` + `harness_vars:`)
+### 1.1 config (~170 lines)
+- `config.go`:
+  - Config, TargetConfig, ContextConfig, HarnessConfig, MasterConfig, SessionConfig
+  - EngineConfig（command 模板 + model 映射）
+  - **Preset 系统**：default / turbo / deep，展开为 engine + model（按 role + mode）
+  - **四层配置合并**：built-in → user (~/.autoresearch/config.yaml) → project (.autoresearch/config.yaml) → run (ar.yaml)
+  - `LoadConfig()` — 按层级加载、preset 展开、合并
+  - `ValidateConfig()` — 启动前校验 objective / target / harness / engine / model / sessions
+  - `ResolveEngine(engine, model)` — 查 engines 定义，替换 {model_id}，返回最终命令
+  - Mode-aware defaults：research → claude, develop → codex
+  - Name slug 生成（从 objective 提取关键词）
+  - `sessions` 字段（per-session engine/model 覆盖）
+  - `TmuxSessionName(projectID, runName)` — 生成 run 级唯一 tmux session 名
+  - `ResolveRunName()` / 冲突检查（runDir 已存在、tmux session 已存在则失败）
+- **不抽象 thinking** — 各引擎在 command 模板里自行处理
 - **依赖**: `gopkg.in/yaml.v3`
-- **测试**: 两种格式解析、harness 引用
+- **测试**: preset 展开、配置合并优先级、engine 解析、mode-aware defaults、sessions 继承、placeholder 拒绝、session/diversity 校验、tmux session name 生成、run 名冲突拒绝
 
-**Phase 1 完成标志**: `go test ./...` 全绿，core 类型全部可用。
+### 1.2 journal (~30 lines)
+- `journal.go`: JournalEntry, LoadJournal, Summary
+- 极简：框架只提供读 journal 给 ar status 用
+- 写 journal 是 agent 的事（在 protocol 里指导）
+- **测试**: 读 JSONL、Summary
 
----
-
-## Phase 2: SDK Engine (Level 2)
-
-可嵌入的进程内研究循环。
-
-### 2.1 interfaces (~60 lines)
-- `artifact.go`: `Artifact` interface (ID, Kind, Snapshot, Restore, Describe, Apply)
-- `executor.go`: `Executor` interface (Execute)
-- `proposer.go`: `Proposer` interface (Propose) + `ProposerState` + `Proposal` + `Patch`
-- **测试**: mock 实现验证接口可用
-
-### 2.2 session (~70 lines)
-- `session.go`: `Session` struct + 状态机
-- States: Init → Baseline → Running → Converged | Stopped
-- `Session.Transition(to)` — 状态转换 + 合法性校验
-- **测试**: 状态转换合法路径 + 非法路径 panic
-
-### 2.3 budget (~50 lines)
-- 放入 `config.go` 或独立 `budget.go`
-- `Budget.ShouldStop(journal, elapsed)` — 检查所有停止条件
-- 条件: max_rounds / max_duration / convergence / target metric
-- `parseTarget("ic_mean >= 0.08")` — 简单表达式解析
-- **测试**: 各停止条件触发
-
-### 2.4 engine (~150 lines)
-- `engine.go`: `Engine` struct + `NewEngine(opts)` + `Run(ctx) (*RunResult, error)`
-- 主循环: baseline → loop{propose → snapshot → apply → execute → decide → record → keep/restore}
-- stuck detection: 连续 N 轮未改进时在 ProposerState.StuckFor 传递信号
-- context cancellation 支持 (graceful stop)
-- **测试**: mock artifact + executor + proposer 跑完整循环
-  - case 1: 3 轮，2 keep 1 revert
-  - case 2: convergence 触发停止
-  - case 3: target 达标停止
-  - case 4: ctx cancel 停止
-
-### 2.5 report (~60 lines)
-- `report.go`: `GenerateReport(journal, config) (string, error)`
-- 从 Journal 生成 markdown 报告
-- 使用 `templates/report.md.tmpl`
-- **测试**: 验证报告包含 summary table + kept experiments
-
-**Phase 2 完成标志**: Engine 能用 mock 实现跑完整研究循环，journal 正确记录。
+**Phase 1 完成标志**: `go test ./...` 全绿。config 四层合并 + engine 解析 + 启动前校验正确。
 
 ---
 
-## Phase 3: CLI (Level 1)
+## Phase 2: CLI 核心 (~420 lines)
 
-tmux 编排 + protocol 生成 + AI agent 启动。
+### 2.1 CLI 框架 (~70 lines)
+- `cmd/ar/main.go`: 子命令路由，标准库 flag
+- 子命令：init, start, list, status, attach, stop, review, diff, keep, archive, drop, report
 
-### 3.1 CLI 框架 (~50 lines)
-- `cmd/ar/main.go`: 子命令路由 (start, stop, status, attach, report, close)
-- 参数解析用标准库 `flag` (每个子命令一个 FlagSet)
-- 不引入第三方 CLI 框架
+### 2.2 ar init (~50 lines)
+- `cli/init.go`:
+  1. 解析 CLI 参数：objective, --research/--develop, --parallel, --name, --model, --engine
+  2. Name: 用户指定 → 或从 objective slug 生成
+  3. 加载 project config 作为基础，CLI 参数覆盖
+  4. Research 模式：自动填 target（报告 + 全项目 readonly）+ 简单 harness
+  5. Develop 模式：target/harness 留 TODO placeholder
+  6. 生成 ar.yaml → 打印下一步提示
+- **不做自动检测**：harness 由用户在 project config 或 ar.yaml 中配置
+- **测试**: research/develop 模式生成的 ar.yaml 内容、placeholder 会被 `ar start` 拒绝
 
-### 3.2 protocol 渲染 (~60 lines)
-- `cli/protocol.go`: `RenderProtocol(config, tmplPath) (string, error)`
-- 从 `templates/program.md.tmpl` + config 渲染 program.md
-- 模板变量: Objective, Target, Harness, Budget, JournalPath, Baseline
-- **测试**: 渲染结果包含关键字段
+### 2.3 tmux (~70 lines)
+- `cli/tmux.go`: NewSession / NewWindow / RenameWindow / SendKeys / AttachSession / KillSession / KillWindow / SessionExists
+- tmux session 按 run 唯一命名：`ar-{projectID}-{runName}`
 
-### 3.3 harness 解析 (~40 lines)
-- `cli/harness.go`: `LoadHarness(name) (*HarnessConfig, error)`
-- 从 `harnesses/` 目录加载 YAML
-- 支持模板变量替换 (harness_vars)
-- **测试**: 加载 go-test.yaml + 变量替换
+### 2.4 worktree (~50 lines)
+- `cli/worktree.go`: CreateWorktree / RemoveWorktree / MergeWorktree / TagArchive
+- Branch 命名：`ar/{run-name}/{session-number}`
 
-### 3.4 worktree 管理 (~50 lines)
-- `cli/worktree.go`: `CreateWorktree(name) (path, error)` / `RemoveWorktree(name)`
-- `git worktree add .autoresearch/worktrees/{name} -b autoresearch/{name}`
-- 清理: `git worktree remove` + `git branch -D`
-- **测试**: 手动验证（依赖 git）
+### 2.5 protocol 渲染 (~60 lines)
+- `cli/protocol.go`:
+  - `RenderMasterProtocol(config) (string, error)` — 渲染 master.md
+  - `RenderSubagentProtocol(config, sessionIdx) (string, error)` — 渲染 program.md
+  - 每个 session 用自己解析后的 engine command（含 model）
+- **测试**: 两种模式 × master/subagent 渲染结果、per-session engine
 
-### 3.5 tmux 管理 (~70 lines)
-- `cli/tmux.go`:
-  - `NewSession(name, workdir)` — `tmux new-session -d -s {name} -c {workdir}`
-  - `NewWindow(session, name, workdir)` — 多会话用
-  - `SendKeys(session, keys)` — 发送启动命令
-  - `AttachSession(session)` — `tmux attach-session -t {session}`
-  - `KillSession(session)` — graceful stop
-  - `SessionExists(name) bool` — 检查 session 是否存在
-- **测试**: 手动验证（依赖 tmux）
+### 2.6 harness 解析 (~20 lines)
+- `cli/harness.go`: 变量替换（{worktree} 等）
 
-### 3.6 ar start (~80 lines)
-- `cli/start.go`: 完整启动流程
-  1. 加载 config (ar.yaml)
-  2. 解析 engine 配置 (~/.config/ar/engines.yaml 或内置默认)
-  3. 创建 git worktree
-  4. 渲染 program.md → `.autoresearch/program.md`
-  5. 初始化 journal.tsv (header only)
-  6. 生成 adapter 文件 (CLAUDE.md / AGENTS.md)
-  7. 创建 tmux session
-  8. send-keys 启动 AI agent
-  9. 打印状态
-- 多会话: 循环上述步骤，每个 session 一个 tmux window
+### 2.7 adapter 生成 (~30 lines)
+- `cli/adapter.go`: 按 engine 类型生成 worktree 内的适配文件
+  - `claude-code` → 合并已有 `.claude/hooks.json` + 追加 Stop hook + `git update-index --assume-unchanged`
+  - `codex` → 不改 AGENTS.md（靠 protocol 的 guidance 检查指令）
+  - 项目的 AGENTS.md / CLAUDE.md / hooks 全部原样保留
 
-### 3.7 ar status (~40 lines)
-- `cli/status.go`: 读 journal → 格式化输出
-- 显示: round count, best metric, keep rate, runtime, status
-- 多会话: 所有 session 的表格
+### 2.8 heartbeat (~20 lines)
+- `cli/heartbeat.go`: 生成 heartbeat shell loop 命令，在 tmux `heartbeat` window 中常驻
+  - 每 check_interval: `tmux send-keys -t {tmuxSession}:master "Heartbeat: check now." Enter`
+  - `ar start` 退出后 heartbeat 仍然存活
+  - `ar stop` 通过 kill tmux session 一起退出
 
-### 3.8 ar attach (~15 lines)
-- `cli/attach.go`: tmux attach + 可选 window 选择
+### 2.9 ar start (~100 lines)
+- `cli/start.go`:
+  1. 如果有 CLI objective 参数 → 先执行 init 逻辑
+  2. 四层配置加载 + 合并
+  3. `ValidateConfig()`，失败直接退出，不创建任何副作用
+  4. 如果有 `sessions` → 用 sessions；否则从 parallel + diversity_hints 展开
+  5. 每个 session 解析最终 engine/model → ResolveEngine() → 得到命令
+  6. 计算 runDir: `~/.autoresearch/runs/{projectID}/{name}/`
+  7. 计算 tmux session 名：`ar-{projectID}-{name}`
+  8. 检查 runDir / tmux session 是否冲突，冲突直接失败
+  9. 创建 run 目录 + 复制 config snapshot
+  10. 创建 N 个 worktree → `{runDir}/worktrees/{name}-{i}/`
+  11. 渲染 N 个 program-{i}.md + 1 个 master.md → run 目录（全部绝对路径）
+  12. 每个 worktree 生成 engine adapter（合并 hooks + assume-unchanged）
+  13. 初始化 journal × N + master.jsonl
+  14. 初始化 `selection.json`（可选，keep/archive 时写入）
+  15. 创建 guidance 目录 + 空 guidance 文件 × N
+  16. tmux: master window + N session windows + heartbeat window（统一交互模式）
+  17. 打印状态
 
-### 3.9 ar stop (~20 lines)
-- `cli/stop.go`: tmux send-keys C-c 或 kill-session
+**Phase 2 完成标志**: `ar init` 生成 ar.yaml + `ar start` 能启动 + heartbeat window 定时触发 master。
+
+---
+
+## Phase 3: 状态 + Review (~220 lines)
+
+### 3.1 ar list (~30 lines)
+- `cli/list.go`: 扫描 `~/.autoresearch/runs/{projectID}/*/ar.yaml`，展示当前项目的所有 run
+- 字段：name, mode, engine, status, sessions, created, tmux-session
+
+### 3.2 ar status (~40 lines)
+- 读 subagent journal + master journal → 表格
+- 支持 `--run <name>`，默认取当前项目 `ar.yaml` 指向的 run
+
+### 3.3 ar attach (~15 lines)
+- 默认 attach 当前 run 的 master，可指定 session
+- 支持 `--run <name>`
+
+### 3.4 ar stop (~20 lines)
+- 按 run 定位 tmux session，kill 整个 session（含 heartbeat window）
+- 支持 `--run <name>`
+
+### 3.5 ar review (~50 lines)
+- 多 session 对比
+- 支持 `--run <name>`
+
+### 3.6 ar diff (~15 lines)
+- 支持 `--run <name>`
+
+### 3.7 ar keep (~25 lines)
+- `develop`: merge 选中 session branch 到当前分支
+- `research`: 标记并保留选中 session/report，不 merge 到主分支
+- 结果写入 `selection.json`
+- 支持 `--run <name>`
+
+### 3.8 ar archive (~15 lines)
+- 支持 `--run <name>`
+
+### 3.9 ar drop (~15 lines)
+- 支持 `--run <name>`
 
 ### 3.10 ar report (~30 lines)
-- `cli/report.go`: 调用 `GenerateReport()` → 写文件
+- 支持 `--run <name>`
 
-### 3.11 ar close (~30 lines)
-- `cli/close.go`: stop + remove worktree + 可选 delete branch
-
-**Phase 3 完成标志**: `ar start` 能完整创建 worktree + 渲染 protocol + 启动 tmux + Claude Code。
+**Phase 3 完成标志**: 完整 review 工作流 + `ar list` 展示历史 run。
 
 ---
 
-## Phase 4: Templates & Adapters
+## Phase 4: Templates (~320 lines)
 
-### 4.1 program.md.tmpl 打磨
-- 已有初版，根据实际测试调整措辞
-- 确保 Karpathy 的 "never stop" 精神完整传达
-- 加入 stuck detection 指令
+### 4.1 master.md.tmpl (~100 lines)
+- 监督循环指导
+- check_interval
+- run-scoped tmux session 名
+- 存活检查命令
+- journal + git log 读取（绝对路径）
+- guidance 状态检查（ack 确认 / 升级判断）
+- harness 执行
+- AI 判断目标达成
+- 三级递进决策：guide → restart（guidance 无效）→ restart（agent 死了）
+- summary / guidance 绝对路径写入
 
-### 4.2 adapter 模板完善
-- claude-code.md.tmpl — 已有
-- codex.md.tmpl — 已有
-- factory-droid.md.tmpl — 已有
-- generic.md.tmpl — 通用适配器（给 aider 等）
+### 4.2 program.md.tmpl (~100 lines)
+- research: 只写报告不改代码
+- develop: 朝目标写代码，harness gate 必须过
+- guidance 检查：每次 commit/harness 后读 guidance 绝对路径
+- guidance 响应：遵循 → journal ack → 清空文件
+- diversity hint
+- context files
+- journal 绝对路径 + journal 格式
+- budget 提示
 
-### 4.3 内置 engines.yaml
-- 嵌入到 binary (embed) 作为默认配置
-- 用户可覆盖 (~/.config/ar/engines.yaml)
+### 4.3 report.md.tmpl (~40 lines)
+- 多 session 对比
 
-### 4.4 harness 模板完善
-- go-test.yaml, go-bench.yaml, command.yaml, http-health.yaml — 已有
-- 根据实际使用调整
+### 4.4 adapter 模板 (~80 lines)
+- 各 engine 的 hooks / 启动 prompt 适配
 
-**Phase 4 完成标志**: 模板渲染出的 program.md 可直接被 Claude Code 执行。
-
----
-
-## Phase 5: QuantOS 集成测试
-
-### 5.1 Level 1 集成
-- 在 `/data/dev/quantos/` 创建 `ar.yaml`
-- 选择一个真实目标（如 go-bench harness）
-- `ar start` 启动 Claude Code → 验证自主循环可工作
-
-### 5.2 Level 2 集成（QuantOS bridge）
-- 在 `/data/dev/quantos/quant_agent/autoresearch/` 创建 bridge
-- 实现 Artifact / Executor / Proposer for QuantOS
-- Agent 模式触发 SDK Engine
-- 此阶段可能在 QuantOS 侧另开 plan
-
-**Phase 5 完成标志**: QuantOS 能通过 Level 1 外部 + Level 2 内部两种方式使用 autoresearch。
+**Phase 4 完成标志**: 模板可直接被 agent 执行。
 
 ---
 
-## 实施顺序总结
+## Phase 5: 实战验证
+
+### 5.1 ar init 快速启动
+- `ar init "测试目标" --research` → 验证生成的 ar.yaml
+- `ar start "测试目标" --research` → 验证合一模式
+
+### 5.2 配置层级
+- 设置 project config → ar.yaml 只写 name/objective → 验证继承正确
+- per-session engine 覆盖 → 验证每个 tmux window 用正确的命令
+- 无效 placeholder / engine / sessions 配置 → 验证 `ar start` 在创建 run 前直接失败
+
+### 5.3 单 subagent develop
+- master + 1 subagent
+- 验证：master 监督 → guidance → subagent 完成 → summary
+
+### 5.4 并行 develop
+- master + 2 subagent
+- 验证：review → keep → drop
+
+### 5.5 混合引擎
+- session-1 用 claude-code，session-2 用 codex
+- 验证各自启动命令正确
+
+### 5.6 research → develop 衔接
+- 完整两步工作流 + context 引用
+
+### 5.7 多 run 并行
+- 同项目或不同项目连续启动两个 run
+- 验证 tmux session、heartbeat、attach/stop 互不串台
+
+---
+
+## 实施顺序
 
 ```
-Phase 1 (Core)       ████████░░░░  ~450 lines   ← 先做，所有后续依赖
-Phase 2 (SDK)        ░░░░████░░░░  ~390 lines   ← Core 完成后
-Phase 3 (CLI)        ░░░░░░░░████  ~435 lines   ← 可与 Phase 2 并行
-Phase 4 (Templates)  ░░░░░░░░░░██  ~150 lines   ← 穿插进行
-Phase 5 (QuantOS)    ░░░░░░░░░░░█  集成测试     ← 最后验证
+Phase 1 (Core)       ████░░░░░░░░  ~200 lines
+Phase 2 (CLI 核心)   ░░░░█████░░░  ~420 lines
+Phase 3 (Review)     ░░░░░░░░██░░  ~220 lines
+Phase 4 (Templates)  ░░░░░░░░░██░  ~320 lines
+Phase 5 (验证)       ░░░░░░░░░░░█  实战
 ```
 
-Phase 1 → Phase 2 + Phase 3 (并行) → Phase 4 → Phase 5
+总 Go: ~840 行。总模板: ~320 行。
 
 ## 依赖
 
 ```
-go 1.23+
-gopkg.in/yaml.v3    # config/harness YAML 解析
+go 1.25+
+gopkg.in/yaml.v3
 ```
-
-仅此。标准库 + 一个 YAML 库。
