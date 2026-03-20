@@ -12,9 +12,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"os/exec"
 	"sync"
 
 	goalx "github.com/vonbai/goalx"
+	"gopkg.in/yaml.v3"
 )
 
 type serveApp struct {
@@ -101,6 +103,13 @@ func (a *serveApp) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		a.handleProjects(w)
 	case r.Method == http.MethodGet && path == "runs":
 		a.handleRuns(w)
+	case r.Method == http.MethodGet && path == "workspaces":
+		a.handleListWorkspaces(w)
+	case r.Method == http.MethodPost && path == "workspaces":
+		a.handleAddWorkspace(w, r)
+	case strings.HasPrefix(path, "workspaces/") && r.Method == http.MethodDelete:
+		name := strings.TrimPrefix(path, "workspaces/")
+		a.handleRemoveWorkspace(w, name)
 	case strings.HasPrefix(path, "projects/"):
 		a.handleProjectRoutes(w, r, strings.Split(path, "/"))
 	default:
@@ -607,4 +616,111 @@ func captureServeOutput(fn func() error) (string, error) {
 	}
 
 	return output, runErr
+}
+
+// Workspace management API
+
+func (a *serveApp) handleListWorkspaces(w http.ResponseWriter) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workspaces": a.cfg.Workspaces,
+	})
+}
+
+func (a *serveApp) handleAddWorkspace(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("invalid request body"))
+		return
+	}
+	if req.Name == "" || req.Path == "" {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("name and path are required"))
+		return
+	}
+
+	// Verify path exists
+	info, err := os.Stat(req.Path)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("path %q does not exist", req.Path))
+		return
+	}
+	if !info.IsDir() {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("path %q is not a directory", req.Path))
+		return
+	}
+
+	// Auto git-init if not a git repo
+	if _, err := os.Stat(filepath.Join(req.Path, ".git")); os.IsNotExist(err) {
+		if initErr := exec.Command("git", "-C", req.Path, "init").Run(); initErr != nil {
+			writeJSONError(w, http.StatusInternalServerError, fmt.Errorf("git init failed: %w", initErr))
+			return
+		}
+		exec.Command("git", "-C", req.Path, "add", "-A").Run()
+		exec.Command("git", "-C", req.Path, "commit", "-m", "init: project scaffold").Run()
+	}
+
+	if a.cfg.Workspaces == nil {
+		a.cfg.Workspaces = make(map[string]string)
+	}
+	a.cfg.Workspaces[req.Name] = req.Path
+
+	// Persist to config
+	if err := a.saveWorkspaces(); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Errorf("save config: %w", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"added":      req.Name,
+		"path":       req.Path,
+		"git_inited": true,
+	})
+}
+
+func (a *serveApp) handleRemoveWorkspace(w http.ResponseWriter, name string) {
+	if _, ok := a.cfg.Workspaces[name]; !ok {
+		writeJSONError(w, http.StatusNotFound, fmt.Errorf("workspace %q not found", name))
+		return
+	}
+	delete(a.cfg.Workspaces, name)
+
+	if err := a.saveWorkspaces(); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Errorf("save config: %w", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"removed": name})
+}
+
+func (a *serveApp) saveWorkspaces() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	cfgPath := filepath.Join(home, ".goalx", "config.yaml")
+
+	// Load existing config, update workspaces only
+	var raw map[string]any
+	data, err := os.ReadFile(cfgPath)
+	if err == nil {
+		yaml.Unmarshal(data, &raw)
+	}
+	if raw == nil {
+		raw = make(map[string]any)
+	}
+
+	serve, _ := raw["serve"].(map[string]any)
+	if serve == nil {
+		serve = make(map[string]any)
+	}
+	serve["workspaces"] = a.cfg.Workspaces
+	raw["serve"] = serve
+
+	out, err := yaml.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cfgPath, out, 0o644)
 }
