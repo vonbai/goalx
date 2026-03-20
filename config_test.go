@@ -261,6 +261,30 @@ func TestMergeConfig(t *testing.T) {
 	}
 }
 
+func TestMergeConfigTargetFieldLevel(t *testing.T) {
+	// base has Readonly, overlay has Files → both preserved
+	base := Config{Target: TargetConfig{Readonly: []string{"pkg/"}}}
+	overlay := Config{Target: TargetConfig{Files: []string{"."}}}
+	mergeConfig(&base, &overlay)
+	if len(base.Target.Files) != 1 || base.Target.Files[0] != "." {
+		t.Errorf("Target.Files should be set from overlay, got %v", base.Target.Files)
+	}
+	if len(base.Target.Readonly) != 1 || base.Target.Readonly[0] != "pkg/" {
+		t.Errorf("Target.Readonly should be preserved from base, got %v", base.Target.Readonly)
+	}
+
+	// overlay has Readonly, base has Files → both preserved
+	base2 := Config{Target: TargetConfig{Files: []string{"src/"}}}
+	overlay2 := Config{Target: TargetConfig{Readonly: []string{"vendor/"}}}
+	mergeConfig(&base2, &overlay2)
+	if len(base2.Target.Files) != 1 || base2.Target.Files[0] != "src/" {
+		t.Errorf("Target.Files should be preserved from base, got %v", base2.Target.Files)
+	}
+	if len(base2.Target.Readonly) != 1 || base2.Target.Readonly[0] != "vendor/" {
+		t.Errorf("Target.Readonly should be set from overlay, got %v", base2.Target.Readonly)
+	}
+}
+
 func TestLoadYAMLNotFound(t *testing.T) {
 	cfg, err := LoadYAML[Config]("/nonexistent/path.yaml")
 	if err != nil {
