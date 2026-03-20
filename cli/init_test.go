@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	ar "github.com/vonbai/autoresearch"
@@ -60,5 +61,15 @@ func TestInitResearchUsesResearchPresetDefaults(t *testing.T) {
 	}
 	if cfg.Engine != "claude-code" || cfg.Model != "sonnet" {
 		t.Fatalf("subagent = %s/%s, want claude-code/sonnet", cfg.Engine, cfg.Model)
+	}
+}
+
+func TestInitDoesNotHardcodeResearchHarnessToReportDotMD(t *testing.T) {
+	data, err := os.ReadFile("init.go")
+	if err != nil {
+		t.Fatalf("read init.go: %v", err)
+	}
+	if strings.Contains(string(data), `test -s report.md && echo 'ok'`) {
+		t.Fatalf("init.go still hardcodes the research harness to report.md")
 	}
 }

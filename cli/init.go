@@ -40,11 +40,12 @@ func Init(projectRoot string, args []string) error {
 
 	// Mode-specific defaults
 	if mode == ar.ModeResearch {
+		reportFile := "report.md"
 		cfg.Target = ar.TargetConfig{
-			Files:    []string{"report.md"},
+			Files:    []string{reportFile},
 			Readonly: []string{"."},
 		}
-		cfg.Harness = ar.HarnessConfig{Command: "test -s report.md && echo 'ok'"}
+		cfg.Harness = ar.HarnessConfig{Command: fmt.Sprintf("test -s %s && echo 'ok'", cfg.Target.Files[0])}
 		// Apply research strategies
 		if len(opts.Strategies) > 0 {
 			hints, err := ar.ResolveStrategies(opts.Strategies)
