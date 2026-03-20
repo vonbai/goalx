@@ -14,10 +14,17 @@ import (
 func Implement(projectRoot string, args []string) error {
 	savesDir := filepath.Join(projectRoot, ".goalx", "runs")
 
-	// Try to find a debate run first, fall back to any research run
-	run, runDir, err := findLatestSavedRun(savesDir, "")
-	if err != nil {
-		return fmt.Errorf("no saved runs found in .goalx/runs/: %w", err)
+	// Prefer debate run (saved as mode=research, name=debate), then any research run
+	var run, runDir string
+	debateDir := filepath.Join(savesDir, "debate")
+	if debateCfg, err2 := ar.LoadYAML[ar.Config](filepath.Join(debateDir, "goalx.yaml")); err2 == nil && debateCfg.Mode == ar.ModeResearch {
+		run, runDir = "debate", debateDir
+	} else {
+		var err error
+		run, runDir, err = findLatestSavedRun(savesDir, ar.ModeResearch)
+		if err != nil {
+			return fmt.Errorf("no saved research or debate run found in .goalx/runs/: %w", err)
+		}
 	}
 
 	// Collect context files (summary + reports, absolute paths)

@@ -19,7 +19,7 @@ func Next(projectRoot string, _ []string) error {
 	activeRun := findActiveRun(projectRoot, runsDir)
 	if activeRun != "" {
 		fmt.Printf("Active run: %s\n", activeRun)
-		fmt.Printf("  → goalx observe %s\n", activeRun)
+		fmt.Printf("  → goalx attach %s\n", activeRun)
 		return nil
 	}
 

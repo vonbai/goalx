@@ -99,7 +99,7 @@ func TestResolveEngineCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cmd != "claude --model claude-opus-4-6 --permission-mode auto" {
+	if cmd != "claude --model claude-opus-4-6 --permission-mode auto --disable-slash-commands" {
 		t.Errorf("cmd = %q", cmd)
 	}
 }
@@ -258,6 +258,30 @@ func TestMergeConfig(t *testing.T) {
 	}
 	if base.Harness.Command != "go test" {
 		t.Error("harness should be overridden")
+	}
+}
+
+func TestMergeConfigTargetFieldLevel(t *testing.T) {
+	// base has Readonly, overlay has Files → both preserved
+	base := Config{Target: TargetConfig{Readonly: []string{"pkg/"}}}
+	overlay := Config{Target: TargetConfig{Files: []string{"."}}}
+	mergeConfig(&base, &overlay)
+	if len(base.Target.Files) != 1 || base.Target.Files[0] != "." {
+		t.Errorf("Target.Files should be set from overlay, got %v", base.Target.Files)
+	}
+	if len(base.Target.Readonly) != 1 || base.Target.Readonly[0] != "pkg/" {
+		t.Errorf("Target.Readonly should be preserved from base, got %v", base.Target.Readonly)
+	}
+
+	// overlay has Readonly, base has Files → both preserved
+	base2 := Config{Target: TargetConfig{Files: []string{"src/"}}}
+	overlay2 := Config{Target: TargetConfig{Readonly: []string{"vendor/"}}}
+	mergeConfig(&base2, &overlay2)
+	if len(base2.Target.Files) != 1 || base2.Target.Files[0] != "src/" {
+		t.Errorf("Target.Files should be preserved from base, got %v", base2.Target.Files)
+	}
+	if len(base2.Target.Readonly) != 1 || base2.Target.Readonly[0] != "vendor/" {
+		t.Errorf("Target.Readonly should be set from overlay, got %v", base2.Target.Readonly)
 	}
 }
 
