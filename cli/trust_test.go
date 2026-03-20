@@ -45,6 +45,9 @@ func TestEnsureEngineTrustedCodexExactPathIdempotent(t *testing.T) {
 	if !strings.Contains(text, `trust_level = "trusted"`) {
 		t.Fatalf("trust level missing:\n%s", text)
 	}
+	if !strings.Contains(text, `sandbox_mode = "danger-full-access"`) {
+		t.Fatalf("sandbox mode missing:\n%s", text)
+	}
 }
 
 func TestEnsureEngineTrustedClaudeWritesProjectTrust(t *testing.T) {

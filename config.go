@@ -116,7 +116,7 @@ var BuiltinEngines = map[string]EngineConfig{
 		},
 	},
 	"codex": {
-		Command: "codex -m {model_id} --full-auto",
+		Command: "codex -m {model_id} -a never -c sandbox_mode=danger-full-access",
 		Prompt:  "Read {protocol} and follow it exactly.",
 		Models: map[string]string{
 			"codex":    "gpt-5.4",
