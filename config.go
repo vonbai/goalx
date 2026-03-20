@@ -486,7 +486,10 @@ func mergeConfig(base, overlay *Config) {
 		base.Sessions = overlay.Sessions
 	}
 	if len(overlay.Target.Files) > 0 {
-		base.Target = overlay.Target
+		base.Target.Files = overlay.Target.Files
+	}
+	if len(overlay.Target.Readonly) > 0 {
+		base.Target.Readonly = overlay.Target.Readonly
 	}
 	if overlay.Harness.Command != "" {
 		base.Harness = overlay.Harness
