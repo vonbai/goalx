@@ -187,6 +187,7 @@ func Start(projectRoot string, args []string) error {
 		Budget:         cfg.Budget,
 		Target:         cfg.Target,
 		TmuxSession:    tmuxSess,
+		ProjectRoot:       absProjectRoot,
 		SummaryPath:       filepath.Join(runDir, "summary.md"),
 		AcceptancePath:    acceptancePath,
 		MasterJournalPath: filepath.Join(runDir, "master.jsonl"),
@@ -230,6 +231,11 @@ func Start(projectRoot string, args []string) error {
 	// 13. Create tmux session (first window = "master")
 	if err := NewSession(tmuxSess, "master"); err != nil {
 		return fmt.Errorf("tmux new-session: %w", err)
+	}
+
+	// Set master working directory to project root
+	if err := SendKeys(tmuxSess+":master", "cd "+absProjectRoot); err != nil {
+		return fmt.Errorf("set master cwd: %w", err)
 	}
 
 	// Launch master

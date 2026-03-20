@@ -8,104 +8,101 @@ import (
 	"time"
 )
 
+const maxAutoIterations = 5
+
 // statusJSON matches the structure master writes to .goalx/status.json
 type statusJSON struct {
 	Phase          string `json:"phase"`
 	Recommendation string `json:"recommendation"`
 	Heartbeat      int    `json:"heartbeat"`
+	AcceptanceMet  bool   `json:"acceptance_met"`
+	KeepSession    string `json:"keep_session"`
+	NextObjective  string `json:"next_objective"`
 }
 
-// Auto runs the full goalx pipeline: research -> (debate?) -> implement -> keep.
+// Auto runs the full goalx pipeline as a goal-driven loop (max 5 iterations).
+// Each iteration: init+start → poll → save → read recommendation → route.
 func Auto(projectRoot string, args []string) error {
-	// 1. Init
-	if err := Init(projectRoot, args); err != nil {
-		return fmt.Errorf("init: %w", err)
-	}
-
-	// 2. Start
-	if err := Start(projectRoot, nil); err != nil {
-		return fmt.Errorf("start: %w", err)
-	}
-
-	// 3. Poll until complete
-	fmt.Println("Waiting for run to complete...")
 	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
-	status, err := pollUntilComplete(statusPath, 30*time.Second, 4*time.Hour)
-	if err != nil {
-		return fmt.Errorf("poll: %w", err)
-	}
+	initArgs := args // first iteration uses the user's original args
 
-	// 4. Save
-	if err := Save(projectRoot, nil); err != nil {
-		return fmt.Errorf("save: %w", err)
-	}
+	for i := 0; i < maxAutoIterations; i++ {
+		fmt.Printf("\n=== auto iteration %d/%d ===\n", i+1, maxAutoIterations)
 
-	// 5. Drop the completed run
-	if err := Drop(projectRoot, nil); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: drop failed: %v\n", err)
-	}
-
-	// 6. Route based on recommendation
-	rec := status.Recommendation
-	fmt.Printf("Master recommendation: %s\n", rec)
-
-	switch rec {
-	case "debate":
-		fmt.Println("Starting debate round...")
-		if err := Debate(projectRoot, nil); err != nil {
-			return fmt.Errorf("debate: %w", err)
+		// Init + Start
+		if err := Init(projectRoot, initArgs); err != nil {
+			return fmt.Errorf("init (iter %d): %w", i, err)
 		}
 		if err := Start(projectRoot, nil); err != nil {
-			return fmt.Errorf("start debate: %w", err)
+			return fmt.Errorf("start (iter %d): %w", i, err)
 		}
-		if _, err := pollUntilComplete(statusPath, 30*time.Second, 4*time.Hour); err != nil {
-			return fmt.Errorf("poll debate: %w", err)
+
+		// Poll until complete
+		fmt.Println("Waiting for run to complete...")
+		status, err := pollUntilComplete(statusPath, 30*time.Second, 4*time.Hour)
+		if err != nil {
+			return fmt.Errorf("poll (iter %d): %w", i, err)
 		}
+
+		// Save
 		if err := Save(projectRoot, nil); err != nil {
-			return fmt.Errorf("save debate: %w", err)
+			return fmt.Errorf("save (iter %d): %w", i, err)
 		}
+
+		// Keep session if master requested it
+		if status.KeepSession != "" {
+			fmt.Printf("Keeping session %s...\n", status.KeepSession)
+			if err := Keep(projectRoot, []string{status.KeepSession}); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: keep failed: %v\n", err)
+			}
+		}
+
+		// Drop the completed run
 		if err := Drop(projectRoot, nil); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: drop failed: %v\n", err)
 		}
-		// After debate, implement
-		fmt.Println("Starting implementation...")
-		if err := Implement(projectRoot, nil); err != nil {
-			return fmt.Errorf("implement: %w", err)
-		}
-		if err := Start(projectRoot, nil); err != nil {
-			return fmt.Errorf("start implement: %w", err)
-		}
-		if _, err := pollUntilComplete(statusPath, 30*time.Second, 4*time.Hour); err != nil {
-			return fmt.Errorf("poll implement: %w", err)
-		}
-		fmt.Println("Implementation complete. Run: goalx review -> goalx keep")
 
-	case "implement":
-		fmt.Println("Skipping debate -- findings are consistent. Starting implementation...")
-		if err := Implement(projectRoot, nil); err != nil {
-			return fmt.Errorf("implement: %w", err)
-		}
-		if err := Start(projectRoot, nil); err != nil {
-			return fmt.Errorf("start implement: %w", err)
-		}
-		if _, err := pollUntilComplete(statusPath, 30*time.Second, 4*time.Hour); err != nil {
-			return fmt.Errorf("poll implement: %w", err)
-		}
-		fmt.Println("Implementation complete. Run: goalx review -> goalx keep")
+		rec := status.Recommendation
+		fmt.Printf("Master recommendation: %s (acceptance_met=%v)\n", rec, status.AcceptanceMet)
 
-	case "done":
-		fmt.Println("Research objective achieved. No code changes needed.")
-		fmt.Println("Results saved to .goalx/runs/")
+		// Terminal conditions
+		if status.AcceptanceMet || rec == "done" {
+			fmt.Println("Objective achieved. Results saved.")
+			return nil
+		}
 
-	case "more-research":
-		fmt.Println("Master recommends more research. Review the summary and add new directions.")
-		fmt.Println("Run: goalx observe or goalx review to see findings so far.")
+		// Route to next iteration
+		switch rec {
+		case "debate":
+			fmt.Println("Starting debate round...")
+			if err := Debate(projectRoot, nil); err != nil {
+				return fmt.Errorf("debate (iter %d): %w", i, err)
+			}
+			initArgs = nil // subsequent Start uses goalx.yaml as-is
 
-	default:
-		fmt.Printf("Unknown recommendation %q. Review results manually.\n", rec)
-		fmt.Println("Run: goalx review -> goalx next")
+		case "implement":
+			fmt.Println("Starting implementation...")
+			if err := Implement(projectRoot, nil); err != nil {
+				return fmt.Errorf("implement (iter %d): %w", i, err)
+			}
+			initArgs = nil
+
+		case "more-research":
+			obj := status.NextObjective
+			if obj == "" {
+				fmt.Println("more-research recommended but no next_objective provided. Stopping.")
+				return nil
+			}
+			fmt.Printf("Re-initializing with new objective: %s\n", obj)
+			initArgs = []string{"--research", obj}
+
+		default:
+			fmt.Printf("Unknown recommendation %q. Stopping.\n", rec)
+			return nil
+		}
 	}
 
+	fmt.Printf("Reached max iterations (%d). Stopping.\n", maxAutoIterations)
 	return nil
 }
 

@@ -22,6 +22,7 @@ type ProtocolData struct {
 	Target         goalx.TargetConfig
 	Context        goalx.ContextConfig
 	TmuxSession    string
+	ProjectRoot       string
 	SummaryPath       string
 	AcceptancePath    string
 	MasterJournalPath string
