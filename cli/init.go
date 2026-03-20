@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	ar "github.com/vonbai/autoresearch"
 	"gopkg.in/yaml.v3"
@@ -67,7 +68,7 @@ func Init(projectRoot string, args []string) error {
 		}
 	}
 
-	cfg.Budget = ar.BudgetConfig{MaxDuration: 6 * 3600_000_000_000} // 6h in nanoseconds
+	cfg.Budget = ar.BudgetConfig{MaxDuration: 6 * time.Hour}
 
 	outPath := filepath.Join(projectRoot, "goalx.yaml")
 	data, err := yaml.Marshal(&cfg)

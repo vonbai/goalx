@@ -18,7 +18,7 @@ func Report(projectRoot string, args []string) error {
 		rest = nil
 	}
 	if len(rest) > 0 {
-		return fmt.Errorf("usage: ar report [--run NAME]")
+		return fmt.Errorf("usage: goalx report [--run NAME]")
 	}
 
 	rc, err := ResolveRun(projectRoot, runName)
