@@ -57,7 +57,11 @@ func Save(projectRoot string, args []string) error {
 	for i := range sessions {
 		num := i + 1
 		wtPath := WorktreePath(rc.RunDir, rc.Config.Name, num)
-		reportPath := filepath.Join(wtPath, "report.md")
+		reportFile := "report.md"
+		if len(rc.Config.Target.Files) > 0 && rc.Config.Target.Files[0] != "" {
+			reportFile = rc.Config.Target.Files[0]
+		}
+		reportPath := filepath.Join(wtPath, reportFile)
 		destName := fmt.Sprintf("session-%d-report.md", num)
 		if err := copyFileIfExists(reportPath, filepath.Join(saveDir, destName)); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not copy %s report: %v\n", SessionName(num), err)
