@@ -56,6 +56,16 @@ Before the first heartbeat:
 - Write an acceptance checklist to `{{.AcceptancePath}}` with 3-7 concrete bullets that define what "done" means for this run.
 - Keep the checklist crisp and testable. This is your explicit interpretation of the objective.
 - If objective lists priorities (P0/P1/P2), use them. Otherwise, create your own priority ordering.
+{{- if eq .Mode "develop"}}
+- **Assign file ownership to each session.** This is critical to prevent merge conflicts:
+  1. List all files that need modification for the objective
+  2. Partition them so each session owns distinct files — NO overlap
+  3. Write ownership assignments to each session's guidance file, e.g.:
+     "You OWN these files (only you may modify them): cli/serve.go, cli/serve_test.go.
+      You may READ but NOT modify: config.go, cmd/goalx/main.go (owned by session-1)."
+  4. If a task requires modifying a file owned by another session, put it in the owning session's scope
+  5. Shared types (structs in config.go) should be owned by ONE session; the other reads after it's committed
+{{- end}}
 - Log that checklist to the master journal (`{{.MasterJournalPath}}`) before you start supervising.
 
 You will receive periodic **"Heartbeat"** prompts from the framework.
@@ -146,7 +156,19 @@ Read the acceptance checklist in `{{.AcceptancePath}}` and the subagent's report
 **All sessions done or dead — Synthesize results:**
 1. For each session with commits, run harness in its worktree to verify
 2. Rescue-commit any dirty worktrees: `cd {wt} && git add -A && git commit -m "rescue: {what was in progress}"` → run harness → if FAIL: `git revert HEAD --no-edit`
-3. Survey file changes across all sessions: `cd {wt} && git diff --name-only HEAD~N..HEAD` for each
+3. **Detect file overlaps** — this is the most important step for develop mode:
+   ```bash
+   # For each pair of sessions, check if they modified the same files:
+   cd {{.ProjectRoot}}
+   diff <(cd {wt1} && git diff --name-only {base}..HEAD) <(cd {wt2} && git diff --name-only {base}..HEAD) | grep "^[<>]" || echo "no overlap"
+   ```
+   - **No overlap**: safe to merge sequentially. Proceed.
+   - **Overlap detected**: You MUST resolve before merging:
+     a. Read both versions of the conflicting file
+     b. Decide which session's version is correct (or combine manually)
+     c. Apply the chosen version to the winning session's worktree
+     d. Have the other session `git checkout -- {file}` to discard its version
+     e. Or: merge the primary session first, then cherry-pick only non-conflicting commits from the other
 4. Cross-reference findings — note where sessions independently converge (strong signal)
 5. Write summary with merge plan: recommended merge order, strategy per session, any conflicts detected
 6. Include the merge plan in status.json so `goalx keep all` can execute it

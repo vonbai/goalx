@@ -54,6 +54,20 @@ func MergeWorktree(projectRoot, branch string) error {
 		return fmt.Errorf("project worktree is dirty; commit or stash changes before merge")
 	}
 
+	// Pre-check for conflicts using merge-tree
+	head, _ := exec.Command("git", "-C", projectRoot, "rev-parse", "HEAD").Output()
+	branchRev, _ := exec.Command("git", "-C", projectRoot, "rev-parse", branch).Output()
+	if len(head) > 0 && len(branchRev) > 0 {
+		mtOut, mtErr := exec.Command("git", "-C", projectRoot, "merge-tree",
+			strings.TrimSpace(string(head)),
+			strings.TrimSpace(string(head)),
+			strings.TrimSpace(string(branchRev)),
+		).CombinedOutput()
+		if mtErr != nil && strings.Contains(string(mtOut), "<<<<<<") {
+			return fmt.Errorf("merge conflict detected with %s — resolve manually or let master handle:\n%s", branch, string(mtOut)[:min(len(mtOut), 500)])
+		}
+	}
+
 	out, err := exec.Command("git", "-C", projectRoot, "merge", "--ff-only", branch).CombinedOutput()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "note: fast-forward not possible, creating merge commit\n")
@@ -63,6 +77,13 @@ func MergeWorktree(projectRoot, branch string) error {
 		}
 	}
 	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // TagArchive creates a git tag pointing at the given branch.
