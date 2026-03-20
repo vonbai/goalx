@@ -25,6 +25,10 @@ func Observe(projectRoot string, args []string) error {
 	}
 
 	rc, err := ResolveRun(projectRoot, runName)
+	if err != nil && runName == "" {
+		// Fallback: find the only active run
+		rc, err = findSingleActiveRun(projectRoot)
+	}
 	if err != nil {
 		return err
 	}
@@ -115,4 +119,32 @@ func printPaneCapture(tmuxSession, window string) {
 	for _, l := range nonEmpty[start:] {
 		fmt.Println(l)
 	}
+}
+
+// findSingleActiveRun finds the only active run for this project.
+// Returns error if zero or multiple active runs.
+func findSingleActiveRun(projectRoot string) (*RunContext, error) {
+	home, _ := os.UserHomeDir()
+	runsDir := filepath.Join(home, ".autoresearch", "runs", ar.ProjectID(projectRoot))
+	entries, err := os.ReadDir(runsDir)
+	if err != nil {
+		return nil, fmt.Errorf("no runs found")
+	}
+	var active []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		tmuxSess := ar.TmuxSessionName(projectRoot, e.Name())
+		if SessionExists(tmuxSess) {
+			active = append(active, e.Name())
+		}
+	}
+	if len(active) == 0 {
+		return nil, fmt.Errorf("no active runs found")
+	}
+	if len(active) > 1 {
+		return nil, fmt.Errorf("multiple active runs: %s (specify one)", strings.Join(active, ", "))
+	}
+	return ResolveRun(projectRoot, active[0])
 }

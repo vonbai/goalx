@@ -24,6 +24,7 @@ type Config struct {
 	Name           string          `yaml:"name"`
 	Mode           Mode            `yaml:"mode"`
 	Objective      string          `yaml:"objective"`
+	Description    string          `yaml:"description,omitempty"`
 	Preset         string          `yaml:"preset,omitempty"`
 	Engine         string          `yaml:"engine,omitempty"`
 	Model          string          `yaml:"model,omitempty"`

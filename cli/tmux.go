@@ -3,6 +3,7 @@ package cli
 import (
 	"os/exec"
 	"strconv"
+	"time"
 )
 
 // SessionExists returns true if a tmux session with the given name exists.
@@ -27,7 +28,9 @@ func RenameWindow(session string, index int, name string) error {
 }
 
 // SendKeys sends keystrokes to a tmux target, followed by Enter.
+// Includes a short delay to ensure the target pane's shell is ready.
 func SendKeys(target, keys string) error {
+	time.Sleep(200 * time.Millisecond)
 	return exec.Command("tmux", "send-keys", "-t", target, keys, "Enter").Run()
 }
 

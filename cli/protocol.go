@@ -13,6 +13,7 @@ import (
 // ProtocolData is passed to master.md.tmpl and program.md.tmpl.
 type ProtocolData struct {
 	Objective      string
+	Description    string
 	Mode           ar.Mode
 	Sessions       []SessionData
 	Master         ar.MasterConfig

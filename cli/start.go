@@ -73,6 +73,9 @@ func Start(projectRoot string, args []string) error {
 		}
 	}
 
+	// Clear stale status.json from previous runs
+	os.Remove(filepath.Join(projectRoot, ".goalx", "status.json"))
+
 	// 8. Snapshot config (YAML for consistency with input format)
 	cfgYAML, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -168,6 +171,7 @@ func Start(projectRoot string, args []string) error {
 	// 11. Render protocols
 	masterData := ProtocolData{
 		Objective:      cfg.Objective,
+		Description:    cfg.Description,
 		Mode:           cfg.Mode,
 		Sessions:       sessionDataList,
 		Master:         cfg.Master,
@@ -188,6 +192,7 @@ func Start(projectRoot string, args []string) error {
 	for i, sd := range sessionDataList {
 		subData := ProtocolData{
 			Objective:    cfg.Objective,
+			Description:  cfg.Description,
 			Mode:         cfg.Mode,
 			Target:       cfg.Target,
 			Harness:      cfg.Harness,

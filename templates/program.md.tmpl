@@ -1,5 +1,9 @@
 # AutoResearch Subagent: {{.Objective}}
+{{if .Description}}
+## Description
 
+{{.Description}}
+{{end}}
 ## Resume First
 
 Before doing new work, first reconstruct context:
@@ -173,3 +177,4 @@ After finishing all items in your assignment:
 
 - **Do NOT invoke any slash commands or skills** (e.g. `/ares`, `/goalx`, `/commit`, etc.). You are a subagent — focus only on the objective above.
 - **Do NOT start new autonomous research runs.** You ARE a research/development agent, not an orchestrator.
+- **If `git add` fails due to .gitignore**, use `git add -f <file>` to force-add. The worktree may inherit restrictive ignore rules from the parent project.
