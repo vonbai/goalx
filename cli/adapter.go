@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // GenerateAdapter configures engine-specific adapter files in a worktree.
@@ -40,9 +41,10 @@ func GenerateAdapter(engine, worktreePath, guidancePath string) error {
 		}
 	}
 
+	quotedGuidancePath := shellQuote(guidancePath)
 	stopCmd := fmt.Sprintf(
-		`cat %s 2>/dev/null | grep -q . && printf '\n⚠️ MASTER GUIDANCE PENDING — read %s and follow it NOW\n' || true`,
-		guidancePath, guidancePath,
+		`cat %s 2>/dev/null | grep -q . && printf '\n⚠️ MASTER GUIDANCE PENDING — read %%s and follow it NOW\n' %s || true`,
+		quotedGuidancePath, quotedGuidancePath,
 	)
 	hooks = append(hooks, map[string]string{
 		"event":   "Stop",
@@ -71,4 +73,8 @@ func GenerateAdapter(engine, worktreePath, guidancePath string) error {
 	}
 	// File not tracked — nothing to do, it's already invisible to git
 	return nil
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
