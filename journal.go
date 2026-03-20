@@ -11,10 +11,11 @@ import (
 // JournalEntry is a single line in a subagent or master journal.
 type JournalEntry struct {
 	// Subagent fields
-	Round  int    `json:"round,omitempty"`
-	Commit string `json:"commit,omitempty"`
-	Desc   string `json:"desc,omitempty"`
-	Status string `json:"status,omitempty"`
+	Round      int    `json:"round,omitempty"`
+	Commit     string `json:"commit,omitempty"`
+	Desc       string `json:"desc,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+	Status     string `json:"status,omitempty"`
 
 	// Master fields
 	Ts       string `json:"ts,omitempty"`

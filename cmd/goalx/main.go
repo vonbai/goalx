@@ -27,16 +27,23 @@ Usage:
 Run 'goalx <command> --help' for details.`
 
 func main() {
+	if os.Getenv("HOME") == "" {
+		fmt.Fprintln(os.Stderr, "fatal: HOME is not set")
+		os.Exit(1)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: cannot determine working directory: %v\n", err)
+		os.Exit(1)
+	}
+
 	if len(os.Args) < 2 {
 		fmt.Println(usage)
 		os.Exit(0)
 	}
-
-	cwd, _ := os.Getwd()
 	args := os.Args[2:]
 	cmd := os.Args[1]
 
-	var err error
 	switch cmd {
 	case "start":
 		err = cli.Start(cwd, args)

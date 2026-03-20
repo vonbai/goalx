@@ -103,7 +103,7 @@ Read the acceptance checklist in `{{.AcceptancePath}}` and the subagent's report
 - Restart the subagent.
 
 {{range .Sessions}}
-Restart command for **{{.Name}}**: `tmux send-keys -t {{$.TmuxSession}}:{{.WindowName}} "{{.EngineCommand}} '{{.Prompt}}'" Enter`
+Restart command for **{{.Name}}**: `tmux send-keys -t {{$.TmuxSession}}:{{.WindowName}} C-c && sleep 1 && tmux send-keys -t {{$.TmuxSession}}:{{.WindowName}} "{{.EngineCommand}} '{{.Prompt}}'" Enter`
 {{end}}
 
 **Budget exhausted ({{.Budget.MaxDuration}} elapsed):**
