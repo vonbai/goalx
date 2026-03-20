@@ -1,53 +1,35 @@
-# goalx.yaml — Develop: 实施辩论共识的 P0-P3 修复
-name: fix-consensus
+# goalx.yaml — implement fixes from goalx
+name: implement
 mode: develop
 objective: |
-  实施架构调研辩论达成共识的 P0-P3 修复清单。
+  实施 research 发现的修复清单，严格按 context 中的 summary.md 优先级执行：
 
-  严格按照 docs/research-round2/debate-summary.md 中的共识执行，不做额外改动。
-
-  Batch 1 (互不依赖，可并行):
-    P0-1: journal.go 字段 + program.md.tmpl 模板对齐（"question"→"desc"，加 confidence 字段）
-    P0-2: cli/report.go "ar report"→"goalx report"
-    P1-2: cli/adapter.go echo→printf 修复 \n bug
-    P1-3: templates/master.md.tmpl restart 命令前加 C-c
-    P3-1: cmd/goalx/main.go 启动检查 HOME + cwd
-    P3-2: cli/init.go 纳秒→time.Hour
-    P3-3: cli/start.go heartbeat floor 警告
-
-  Batch 2 (有依赖):
-    P2-1: 删除 config.go 死代码 LoadBaseConfig + loadBaseConfig
-    P2-2: 删除 config.go ResolveSubagentCommand passthrough
-    P2-3: 删除 templates/report.md.tmpl
-    P1-1: 提取 session-path helpers（新建 cli/session_paths.go）
-
-  完成标准: go build + go test + go vet 全部通过
+  CRITICAL: 修复 ghost observe 命令（main.go 缺 case）
+  P0-1: goalx add 更新 config snapshot（写回 goalx.yaml 到 runDir）
+  P0-2: subagent engine command 加 --disable-slash-commands（start.go + add.go，仅 claude-code）
+  P1-1: mergeConfig 修复 Target.Readonly 丢失（config.go）
+  P1-2: Implement() 加 mode 过滤（implement.go findLatestSavedRun 优先 debate）
+  LOW: config.go 拆出 strategies.go（降到 500 行以下）
 preset: default
 engine: claude-code
-model: opus
+model: sonnet
 parallel: 2
 diversity_hints:
-  - "你负责 Batch 1: P0-1, P0-2, P1-2, P1-3, P3-1, P3-2, P3-3。这些文件互不依赖，逐个修复，每个修完跑一次 go build 验证。"
-  - "你负责 Batch 2: P2-1, P2-2, P2-3, P1-1。先删死代码（P2），再提取 session-path helpers（P1-1）。每步跑 go build + go test。"
-context:
-  files:
-    - docs/research-round2/debate-summary.md
+    - 你负责优先级最高的修复项（P0 + P1 中不依赖其他文件的项）。逐个修复，每个修完跑一次 gate 验证。
+    - 你负责剩余修复项（P2 + 重构类 P1）。先做独立的删除/清理，再做涉及多文件的重构。每步跑 gate。
 target:
-  files:
-    - journal.go
-    - config.go
-    - cli/
-    - cmd/goalx/main.go
-    - templates/
-  readonly:
-    - docs/
-    - go.mod
-    - go.sum
+    files:
+        - .
 harness:
-  command: go build ./... && go test ./... -count=1 && go vet ./...
+    command: go build ./... && go test ./... -count=1 && go vet ./...
+context:
+    files:
+        - /data/dev/autoresearch/.goalx/runs/goalx/session-1-report.md
+        - /data/dev/autoresearch/.goalx/runs/goalx/session-2-report.md
+        - /data/dev/autoresearch/.goalx/runs/goalx/session-3-report.md
+        - /data/dev/autoresearch/.goalx/runs/goalx/summary.md
 budget:
-  max_duration: 2h0m0s
+    max_duration: 2h0m0s
 master:
-  engine: claude-code
-  model: opus
-  check_interval: 5m0s
+    engine: claude-code
+    model: opus
