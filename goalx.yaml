@@ -1,18 +1,10 @@
-# goalx.yaml — implement fixes from goalx
+# goalx.yaml — implement fixes from push-and-presets
 name: implement
 mode: develop
-objective: |
-  实施 research 发现的修复清单，严格按 context 中的 summary.md 优先级执行：
-
-  CRITICAL: 修复 ghost observe 命令（main.go 缺 case）
-  P0-1: goalx add 更新 config snapshot（写回 goalx.yaml 到 runDir）
-  P0-2: subagent engine command 加 --disable-slash-commands（start.go + add.go，仅 claude-code）
-  P1-1: mergeConfig 修复 Target.Readonly 丢失（config.go）
-  P1-2: Implement() 加 mode 过滤（implement.go findLatestSavedRun 优先 debate）
-  LOW: config.go 拆出 strategies.go（降到 500 行以下）
+objective: 实施 push-and-presets 的共识修复清单。严格按照 context 中的文档执行，不做额外改动。
 preset: default
-engine: claude-code
-model: sonnet
+engine: codex
+model: codex
 parallel: 2
 diversity_hints:
     - 你负责优先级最高的修复项（P0 + P1 中不依赖其他文件的项）。逐个修复，每个修完跑一次 gate 验证。
@@ -24,10 +16,11 @@ harness:
     command: go build ./... && go test ./... -count=1 && go vet ./...
 context:
     files:
-        - /data/dev/autoresearch/.goalx/runs/goalx/session-1-report.md
-        - /data/dev/autoresearch/.goalx/runs/goalx/session-2-report.md
-        - /data/dev/autoresearch/.goalx/runs/goalx/session-3-report.md
-        - /data/dev/autoresearch/.goalx/runs/goalx/summary.md
+        - /data/dev/autoresearch/.goalx/runs/push-and-presets/session-1-report.md
+        - /data/dev/autoresearch/.goalx/runs/push-and-presets/session-2-report.md
+        - /data/dev/autoresearch/.goalx/runs/push-and-presets/session-3-report.md
+        - /data/dev/autoresearch/.goalx/runs/push-and-presets/session-4-report.md
+        - /data/dev/autoresearch/.goalx/runs/push-and-presets/session-5-report.md
 budget:
     max_duration: 2h0m0s
 master:
