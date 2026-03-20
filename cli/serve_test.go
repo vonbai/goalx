@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	goalx "github.com/vonbai/goalx"
@@ -127,6 +129,220 @@ func TestServeHandlerListsProjectsAndRuns(t *testing.T) {
 			t.Fatalf("second run = %+v", resp.Runs[1])
 		}
 	})
+}
+
+func TestServeHandlerGoalxActionRoutes(t *testing.T) {
+	workspace := t.TempDir()
+
+	type call struct {
+		projectRoot string
+		action      string
+		args        []string
+	}
+
+	cases := []struct {
+		name       string
+		path       string
+		body       string
+		wantAction string
+		wantArgs   []string
+	}{
+		{
+			name:       "init",
+			path:       "/projects/goalx/goalx/init",
+			body:       `{"objective":"audit auth","mode":"research","parallel":2,"name":"auth-audit","context":["README.md","docs/arch.md"],"strategies":["depth","security"]}`,
+			wantAction: "init",
+			wantArgs:   []string{"audit auth", "--research", "--parallel", "2", "--name", "auth-audit", "--context", "README.md,docs/arch.md", "--strategy", "depth,security"},
+		},
+		{
+			name:       "start",
+			path:       "/projects/goalx/goalx/start",
+			body:       `{"objective":"implement serve","mode":"develop","parallel":1}`,
+			wantAction: "start",
+			wantArgs:   []string{"implement serve", "--develop", "--parallel", "1"},
+		},
+		{
+			name:       "auto",
+			path:       "/projects/goalx/goalx/auto",
+			body:       `{"objective":"research remote management","mode":"research","parallel":3}`,
+			wantAction: "auto",
+			wantArgs:   []string{"research remote management", "--research", "--parallel", "3"},
+		},
+		{
+			name:       "observe",
+			path:       "/projects/goalx/goalx/observe",
+			body:       `{"run":"auth-audit"}`,
+			wantAction: "observe",
+			wantArgs:   []string{"--run", "auth-audit"},
+		},
+		{
+			name:       "status",
+			path:       "/projects/goalx/goalx/status",
+			body:       `{"run":"auth-audit","session":"session-1"}`,
+			wantAction: "status",
+			wantArgs:   []string{"--run", "auth-audit", "session-1"},
+		},
+		{
+			name:       "add",
+			path:       "/projects/goalx/goalx/add",
+			body:       `{"run":"auth-audit","direction":"investigate authz"}`,
+			wantAction: "add",
+			wantArgs:   []string{"investigate authz", "--run", "auth-audit"},
+		},
+		{
+			name:       "stop",
+			path:       "/projects/goalx/goalx/stop",
+			body:       `{"run":"auth-audit"}`,
+			wantAction: "stop",
+			wantArgs:   []string{"--run", "auth-audit"},
+		},
+		{
+			name:       "save",
+			path:       "/projects/goalx/goalx/save",
+			body:       `{"run":"auth-audit"}`,
+			wantAction: "save",
+			wantArgs:   []string{"--run", "auth-audit"},
+		},
+		{
+			name:       "keep",
+			path:       "/projects/goalx/goalx/keep",
+			body:       `{"run":"auth-audit","session":"session-2"}`,
+			wantAction: "keep",
+			wantArgs:   []string{"--run", "auth-audit", "session-2"},
+		},
+		{
+			name:       "drop",
+			path:       "/projects/goalx/goalx/drop",
+			body:       `{"run":"auth-audit"}`,
+			wantAction: "drop",
+			wantArgs:   []string{"--run", "auth-audit"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got call
+			app := newServeApp(goalx.ServeConfig{
+				Token:      "secret-token",
+				Workspaces: map[string]string{"goalx": workspace},
+			})
+			app.runCLI = func(projectRoot, action string, args []string) (string, error) {
+				got = call{projectRoot: projectRoot, action: action, args: append([]string(nil), args...)}
+				return "ok", nil
+			}
+
+			req := httptest.NewRequest(http.MethodPost, tc.path, bytes.NewBufferString(tc.body))
+			req.Header.Set("Authorization", "Bearer secret-token")
+			rec := httptest.NewRecorder()
+			app.routes().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+			}
+			if got.projectRoot != workspace || got.action != tc.wantAction || !reflect.DeepEqual(got.args, tc.wantArgs) {
+				t.Fatalf("call = %+v, want action=%q args=%v", got, tc.wantAction, tc.wantArgs)
+			}
+		})
+	}
+}
+
+func TestServeHandlerConfigEndpointReadsAndWritesGoalxYAML(t *testing.T) {
+	workspace := t.TempDir()
+	cfgDir := filepath.Join(workspace, ".goalx")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir cfg dir: %v", err)
+	}
+	cfgPath := filepath.Join(cfgDir, "goalx.yaml")
+	if err := os.WriteFile(cfgPath, []byte("name: before\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	app := newServeApp(goalx.ServeConfig{
+		Token:      "secret-token",
+		Workspaces: map[string]string{"goalx": workspace},
+	})
+
+	writeReq := httptest.NewRequest(http.MethodPost, "/projects/goalx/goalx/config", bytes.NewBufferString(`{"content":"name: after\nmode: research\n"}`))
+	writeReq.Header.Set("Authorization", "Bearer secret-token")
+	writeRec := httptest.NewRecorder()
+	app.routes().ServeHTTP(writeRec, writeReq)
+
+	if writeRec.Code != http.StatusOK {
+		t.Fatalf("write status = %d, want %d, body=%s", writeRec.Code, http.StatusOK, writeRec.Body.String())
+	}
+
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if string(data) != "name: after\nmode: research\n" {
+		t.Fatalf("goalx.yaml = %q", string(data))
+	}
+
+	readReq := httptest.NewRequest(http.MethodPost, "/projects/goalx/goalx/config", bytes.NewBufferString(`{}`))
+	readReq.Header.Set("Authorization", "Bearer secret-token")
+	readRec := httptest.NewRecorder()
+	app.routes().ServeHTTP(readRec, readReq)
+
+	if readRec.Code != http.StatusOK {
+		t.Fatalf("read status = %d, want %d, body=%s", readRec.Code, http.StatusOK, readRec.Body.String())
+	}
+
+	var resp struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(readRec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode config response: %v", err)
+	}
+	if resp.Content != "name: after\nmode: research\n" {
+		t.Fatalf("content = %q", resp.Content)
+	}
+}
+
+func TestServeHandlerTellWritesGuidanceAndNudgesSession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	workspace := t.TempDir()
+	writeRunSnapshot(t, workspace, "auth-audit", goalx.ModeResearch, "audit auth flow")
+	runDir := goalx.RunDir(workspace, "auth-audit")
+	guidanceDir := filepath.Join(runDir, "guidance")
+	if err := os.MkdirAll(guidanceDir, 0o755); err != nil {
+		t.Fatalf("mkdir guidance dir: %v", err)
+	}
+
+	var gotTarget, gotKeys string
+	app := newServeApp(goalx.ServeConfig{
+		Token:      "secret-token",
+		Workspaces: map[string]string{"goalx": workspace},
+	})
+	app.sendKeys = func(target, keys string) error {
+		gotTarget, gotKeys = target, keys
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/projects/goalx/goalx/tell", bytes.NewBufferString(`{"run":"auth-audit","session":"session-1","message":"focus on authz regressions"}`))
+	req.Header.Set("Authorization", "Bearer secret-token")
+	rec := httptest.NewRecorder()
+	app.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	guidancePath := GuidancePath(runDir, "session-1")
+	data, err := os.ReadFile(guidancePath)
+	if err != nil {
+		t.Fatalf("read guidance: %v", err)
+	}
+	if string(data) != "focus on authz regressions\n" {
+		t.Fatalf("guidance = %q", string(data))
+	}
+
+	wantTarget := goalx.TmuxSessionName(workspace, "auth-audit") + ":" + sessionWindowName("auth-audit", 1)
+	if gotTarget != wantTarget || gotKeys != "" {
+		t.Fatalf("sendKeys target=%q keys=%q, want target=%q keys=\"\"", gotTarget, gotKeys, wantTarget)
+	}
 }
 
 func writeRunSnapshot(t *testing.T, workspace, runName string, mode goalx.Mode, objective string) {
