@@ -189,27 +189,6 @@ func loadBaseConfigRaw(projectRoot string) (Config, map[string]EngineConfig, err
 	return cfg, engines, nil
 }
 
-func loadBaseConfig(projectRoot string) (Config, map[string]EngineConfig, error) {
-	cfg, engines, err := loadBaseConfigRaw(projectRoot)
-	if err != nil {
-		return Config{}, nil, err
-	}
-	applyPreset(&cfg)
-	if cfg.Parallel < 1 {
-		cfg.Parallel = 1
-	}
-	return cfg, engines, nil
-}
-
-// LoadBaseConfig loads built-in, user, and project config layers without goalx.yaml.
-func LoadBaseConfig(projectRoot string) (*Config, map[string]EngineConfig, error) {
-	cfg, engines, err := loadBaseConfig(projectRoot)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &cfg, engines, nil
-}
-
 // LoadRawBaseConfig loads built-in, user, and project config layers without
 // applying preset-derived engine/model defaults.
 func LoadRawBaseConfig(projectRoot string) (*Config, map[string]EngineConfig, error) {
@@ -352,12 +331,6 @@ func ResolveEngineCommand(engines map[string]EngineConfig, engine, model string)
 	}
 	cmd := strings.ReplaceAll(ec.Command, "{model_id}", modelID)
 	return cmd, nil
-}
-
-// ResolveSubagentCommand builds the launch command for subagents.
-// Subagents use the interactive CLI; trust is bootstrapped before launch.
-func ResolveSubagentCommand(engines map[string]EngineConfig, engine, model string) (string, error) {
-	return ResolveEngineCommand(engines, engine, model)
 }
 
 func resolveModelID(engines map[string]EngineConfig, engine, model string) (string, error) {

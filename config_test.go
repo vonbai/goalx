@@ -124,26 +124,6 @@ func TestResolveEngineCommandLiteralModel(t *testing.T) {
 	}
 }
 
-func TestResolveSubagentCommandClaude(t *testing.T) {
-	cmd, err := ResolveSubagentCommand(BuiltinEngines, "claude-code", "opus")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cmd != "claude --model claude-opus-4-6 --permission-mode auto" {
-		t.Errorf("cmd = %q", cmd)
-	}
-}
-
-func TestResolveSubagentCommandCodex(t *testing.T) {
-	cmd, err := ResolveSubagentCommand(BuiltinEngines, "codex", "codex")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cmd != "codex -m gpt-5.4 --full-auto" {
-		t.Errorf("cmd = %q", cmd)
-	}
-}
-
 func TestResolveEngineUnknown(t *testing.T) {
 	_, err := ResolveEngineCommand(BuiltinEngines, "unknown-engine", "x")
 	if err == nil {

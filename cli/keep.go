@@ -44,7 +44,7 @@ func Keep(projectRoot string, args []string) error {
 		}
 		fmt.Printf("Merged %s successfully.\n", branch)
 	} else {
-		wtPath := filepath.Join(rc.RunDir, "worktrees", rc.Config.Name+"-"+strconv.Itoa(idx))
+		wtPath := WorktreePath(rc.RunDir, rc.Config.Name, idx)
 		fmt.Printf("Research session preserved at: %s\n", wtPath)
 		fmt.Printf("Branch: %s\n", branch)
 	}

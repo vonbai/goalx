@@ -3,8 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strconv"
 )
 
 // Drop cleans up a run so the same name can be reused safely.
@@ -37,7 +35,7 @@ func Drop(projectRoot string, args []string) error {
 	// Remove all worktrees
 	count := sessionCount(rc.Config)
 	for num := 1; num <= count; num++ {
-		wtPath := filepath.Join(rc.RunDir, "worktrees", rc.Config.Name+"-"+strconv.Itoa(num))
+		wtPath := WorktreePath(rc.RunDir, rc.Config.Name, num)
 		branch := fmt.Sprintf("goalx/%s/%d", rc.Config.Name, num)
 		if err := RemoveWorktree(rc.ProjectRoot, wtPath); err != nil {
 			fmt.Printf("Warning: remove worktree %s: %v\n", wtPath, err)

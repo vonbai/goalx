@@ -33,8 +33,8 @@ func Report(projectRoot string, args []string) error {
 	// Per-session progress
 	sessions := ar.ExpandSessions(rc.Config)
 	for i := range sessions {
-		sName := fmt.Sprintf("session-%d", i+1)
-		jPath := filepath.Join(rc.RunDir, "journals", sName+".jsonl")
+		sName := SessionName(i + 1)
+		jPath := JournalPath(rc.RunDir, sName)
 		entries, _ := ar.LoadJournal(jPath)
 
 		fmt.Printf("--- %s ---\n", sName)

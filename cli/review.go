@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 
 	ar "github.com/vonbai/autoresearch"
 )
@@ -36,8 +35,8 @@ func Review(projectRoot string, args []string) error {
 	sessions := ar.ExpandSessions(rc.Config)
 	for i := range sessions {
 		num := i + 1
-		sName := fmt.Sprintf("session-%d", num)
-		wtPath := filepath.Join(rc.RunDir, "worktrees", rc.Config.Name+"-"+strconv.Itoa(num))
+		sName := SessionName(num)
+		wtPath := WorktreePath(rc.RunDir, rc.Config.Name, num)
 
 		fmt.Printf("--- %s ---\n", sName)
 
@@ -48,7 +47,7 @@ func Review(projectRoot string, args []string) error {
 		}
 
 		// Journal summary
-		jPath := filepath.Join(rc.RunDir, "journals", sName+".jsonl")
+		jPath := JournalPath(rc.RunDir, sName)
 		entries, _ := ar.LoadJournal(jPath)
 		fmt.Printf("Journal: %s\n", ar.Summary(entries))
 

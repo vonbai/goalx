@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	ar "github.com/vonbai/autoresearch"
 	"gopkg.in/yaml.v3"
@@ -88,10 +87,10 @@ func Start(projectRoot string, args []string) error {
 
 	for i, sess := range sessions {
 		num := i + 1
-		sName := fmt.Sprintf("session-%d", num)
-		wtPath := filepath.Join(runDir, "worktrees", cfg.Name+"-"+strconv.Itoa(num))
-		journalPath := filepath.Join(runDir, "journals", sName+".jsonl")
-		guidancePath := filepath.Join(runDir, "guidance", sName+".md")
+		sName := SessionName(num)
+		wtPath := WorktreePath(runDir, cfg.Name, num)
+		journalPath := JournalPath(runDir, sName)
+		guidancePath := GuidancePath(runDir, sName)
 		branch := fmt.Sprintf("goalx/%s/%d", cfg.Name, num)
 
 		// Resolve session engine/model (inherit from config if not set)
@@ -103,7 +102,7 @@ func Start(projectRoot string, args []string) error {
 		if sModel == "" {
 			sModel = cfg.Model
 		}
-		engineCmd, err := ar.ResolveSubagentCommand(engines, sEngine, sModel)
+		engineCmd, err := ar.ResolveEngineCommand(engines, sEngine, sModel)
 		if err != nil {
 			return fmt.Errorf("session-%d engine: %w", num, err)
 		}

@@ -27,11 +27,11 @@ func Status(projectRoot string, args []string) error {
 	// Session journals
 	sessions := ar.ExpandSessions(rc.Config)
 	for i := range sessions {
-		sName := fmt.Sprintf("session-%d", i+1)
+		sName := SessionName(i + 1)
 		if sessionFilter != "" && sName != sessionFilter {
 			continue
 		}
-		jPath := filepath.Join(rc.RunDir, "journals", sName+".jsonl")
+		jPath := JournalPath(rc.RunDir, sName)
 		entries, _ := ar.LoadJournal(jPath)
 
 		lastRound := "-"
