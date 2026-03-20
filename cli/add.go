@@ -119,8 +119,12 @@ func Add(projectRoot string, args []string) error {
 
 	// Update config snapshot with new session count
 	rc.Config.Parallel = newNum
-	if cfgYAML, err := yaml.Marshal(&rc.Config); err == nil {
-		_ = os.WriteFile(filepath.Join(rc.RunDir, "goalx.yaml"), cfgYAML, 0644)
+	cfgYAML, err := yaml.Marshal(&rc.Config)
+	if err != nil {
+		return fmt.Errorf("marshal config snapshot: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(rc.RunDir, "goalx.yaml"), cfgYAML, 0644); err != nil {
+		return fmt.Errorf("write config snapshot: %w", err)
 	}
 
 	fmt.Printf("Added %s to run '%s'\n", sName, rc.Name)
