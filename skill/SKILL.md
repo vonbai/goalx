@@ -16,6 +16,7 @@ Orchestration layer for GoalX CLI. Understands pipeline state, automates git/con
 3. **Suggest next.** After every action, tell the user what comes next.
 4. **Act, don't narrate.** Run commands, show results. Minimize commentary.
 5. **Analyze, don't dump.** For observe, read the output and tell the user what each agent is doing and whether anything is stuck — don't just paste raw tmux captures.
+6. **Respect the chain: User → Master → Subagent.** When the user wants to redirect research or give instructions, send to master (via `/goalx tell`). Master distributes to subagents. Only bypass master for urgent direct intervention.
 
 ## State Detection
 
@@ -162,14 +163,20 @@ goalx add "research direction" --run <NAME>
 ```
 Adds new subagent mid-run. Master notified automatically.
 
-### `/goalx guide <session> "message"`
+### `/goalx tell "message"` or `/goalx tell <target> "message"`
 
-Write guidance directly to a session, bypassing master:
+Send a message to the running session. **Default target is master** — master decides how to distribute to subagents.
+
 ```bash
-# Get paths from goalx status or the run directory
-echo "your guidance" > <run-dir>/guidance/<session>.md
-tmux send-keys -t <tmux-session>:<window> Enter
+# To master (preferred — master distributes):
+tmux send-keys -t <TMUX_SESSION>:master "user message here" Enter
+
+# To a specific session (bypass master — use sparingly):
+echo "guidance content" > <run-dir>/guidance/<session>.md
+tmux send-keys -t <TMUX_SESSION>:<window> Enter
 ```
+
+**Always prefer telling master.** Master is the director — it knows the context and will distribute appropriately. Only bypass master for urgent direct intervention.
 
 ### `/goalx diff [NAME] <a> [b]`
 
