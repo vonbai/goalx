@@ -60,6 +60,37 @@ func TestParseStatusArgs(t *testing.T) {
 	}
 }
 
+func TestParseSessionIndex(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    int
+		wantErr bool
+	}{
+		{name: "session 1", input: "session-1", want: 1},
+		{name: "session 99", input: "session-99", want: 99},
+		{name: "invalid", input: "invalid", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseSessionIndex(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseSessionIndex(%q) error = nil, want error", tc.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseSessionIndex(%q): %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Fatalf("parseSessionIndex(%q) = %d, want %d", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSessionCountPrefersExplicitSessions(t *testing.T) {
 	cfg := &ar.Config{
 		Parallel: 1,
