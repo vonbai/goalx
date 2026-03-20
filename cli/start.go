@@ -243,10 +243,9 @@ func Start(projectRoot string, args []string) error {
 	}
 
 	// Launch heartbeat window
-	checkSec := int(cfg.Master.CheckInterval.Seconds())
-	if checkSec < 30 {
-		fmt.Fprintf(os.Stderr, "⚠ check_interval %ds is below 30s minimum, using 300s\n", checkSec)
-		checkSec = 300
+	checkSec, warning := normalizeHeartbeatInterval(cfg.Master.CheckInterval)
+	if warning != "" {
+		fmt.Fprint(os.Stderr, warning)
 	}
 	hbCmd := HeartbeatCommand(tmuxSess, checkSec)
 	if err := NewWindow(tmuxSess, "heartbeat", "/tmp"); err != nil {
