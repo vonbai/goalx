@@ -1,0 +1,73 @@
+package cli
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	ar "github.com/vonbai/autoresearch"
+)
+
+func TestAddExtendsExplicitSessionsSnapshot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	runName := "add-run"
+	runDir := ar.RunDir(repo, runName)
+	for _, dir := range []string{
+		runDir,
+		filepath.Join(runDir, "journals"),
+		filepath.Join(runDir, "guidance"),
+		filepath.Join(runDir, "worktrees"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+engine: codex
+model: fast
+parallel: 1
+sessions:
+  - hint: first
+  - hint: second
+target:
+  files: ["."]
+harness:
+  command: "go test ./..."
+`)
+	if err := os.WriteFile(filepath.Join(runDir, "goalx.yaml"), snapshot, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+
+	if err := Add(repo, []string{"third direction", "--run", runName}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	cfg, err := ar.LoadYAML[ar.Config](filepath.Join(runDir, "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load updated snapshot: %v", err)
+	}
+	if len(cfg.Sessions) != 3 {
+		t.Fatalf("len(Sessions) = %d, want 3", len(cfg.Sessions))
+	}
+	if cfg.Sessions[2].Hint != "third direction" {
+		t.Fatalf("Sessions[2].Hint = %q, want %q", cfg.Sessions[2].Hint, "third direction")
+	}
+	if cfg.Parallel != 1 {
+		t.Fatalf("Parallel = %d, want 1 for explicit sessions config", cfg.Parallel)
+	}
+}

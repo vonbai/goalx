@@ -121,7 +121,11 @@ func Add(projectRoot string, args []string) error {
 	SendKeys(rc.TmuxSession+":master", masterMsg)
 
 	// Update config snapshot with new session count
-	rc.Config.Parallel = newNum
+	if len(rc.Config.Sessions) > 0 {
+		rc.Config.Sessions = append(rc.Config.Sessions, ar.SessionConfig{Hint: hint})
+	} else {
+		rc.Config.Parallel = newNum
+	}
 	cfgYAML, err := yaml.Marshal(&rc.Config)
 	if err != nil {
 		return fmt.Errorf("marshal config snapshot: %w", err)
