@@ -15,7 +15,10 @@ func Implement(projectRoot string, args []string) error {
 	savesDir := filepath.Join(projectRoot, ".goalx", "runs")
 
 	// Try to find a debate run first, fall back to any research run
-	run, runDir, err := findLatestSavedRun(savesDir, "")
+	run, runDir, err := findLatestSavedRun(savesDir, ar.ModeResearch)
+	if err != nil {
+		run, runDir, err = findLatestSavedRun(savesDir, "")
+	}
 	if err != nil {
 		return fmt.Errorf("no saved runs found in .goalx/runs/: %w", err)
 	}
