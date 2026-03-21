@@ -144,3 +144,85 @@ func TestEnsureEngineTrustedClaudeMergesAllowedTools(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureEngineTrustedClaudeInheritsSourceMCPConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	worktree := filepath.Join(t.TempDir(), "wt")
+	runGit(t, repo, "worktree", "add", worktree, "-b", "feature")
+
+	claudePath := filepath.Join(home, ".claude.json")
+	initial := map[string]any{
+		"projects": map[string]any{
+			repo: map[string]any{
+				"allowedTools": []any{"SourceTool"},
+				"mcpServers": map[string]any{
+					"context7": map[string]any{"type": "stdio", "command": "context7"},
+				},
+				"enabledMcpjsonServers":  []any{"context7"},
+				"disabledMcpjsonServers": []any{"legacy"},
+			},
+			worktree: map[string]any{
+				"allowedTools": []any{"WorktreeTool"},
+				"mcpServers": map[string]any{
+					"local": map[string]any{"type": "http", "url": "http://127.0.0.1:3000"},
+				},
+			},
+		},
+	}
+	raw, err := json.Marshal(initial)
+	if err != nil {
+		t.Fatalf("marshal initial json: %v", err)
+	}
+	if err := os.WriteFile(claudePath, raw, 0o644); err != nil {
+		t.Fatalf("write claude json: %v", err)
+	}
+
+	if err := EnsureEngineTrusted("claude-code", worktree); err != nil {
+		t.Fatalf("EnsureEngineTrusted: %v", err)
+	}
+
+	out, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatalf("read claude json: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal claude json: %v", err)
+	}
+	entry := doc["projects"].(map[string]any)[worktree].(map[string]any)
+
+	tools := entry["allowedTools"].([]any)
+	counts := map[string]int{}
+	for _, tool := range tools {
+		if s, ok := tool.(string); ok {
+			counts[s]++
+		}
+	}
+	for _, want := range []string{"SourceTool", "WorktreeTool", "Bash"} {
+		if counts[want] != 1 {
+			t.Fatalf("allowedTools %q count = %d, want 1; got %#v", want, counts[want], tools)
+		}
+	}
+
+	servers := entry["mcpServers"].(map[string]any)
+	if _, ok := servers["context7"]; !ok {
+		t.Fatalf("mcpServers missing inherited source server: %#v", servers)
+	}
+	if _, ok := servers["local"]; !ok {
+		t.Fatalf("mcpServers missing worktree-local server: %#v", servers)
+	}
+
+	enabled := entry["enabledMcpjsonServers"].([]any)
+	if len(enabled) != 1 || enabled[0] != "context7" {
+		t.Fatalf("enabledMcpjsonServers = %#v, want [context7]", enabled)
+	}
+	disabled := entry["disabledMcpjsonServers"].([]any)
+	if len(disabled) != 1 || disabled[0] != "legacy" {
+		t.Fatalf("disabledMcpjsonServers = %#v, want [legacy]", disabled)
+	}
+}
