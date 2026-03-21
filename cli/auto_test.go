@@ -406,6 +406,50 @@ func TestAutoDefaultsToResearchMode(t *testing.T) {
 	}
 }
 
+func TestAutoReturnsErrorForUnknownRecommendation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir goalx dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "goalx.yaml"), []byte("name: demo\nobjective: ship it\ntarget:\n  files: [README.md]\nharness:\n  command: go test ./...\n"), 0o644); err != nil {
+		t.Fatalf("write goalx.yaml: %v", err)
+	}
+
+	oldInit := autoInit
+	oldStart := autoStart
+	oldSave := autoSave
+	oldKeep := autoKeep
+	oldDrop := autoDrop
+	oldPollUntilComplete := autoPollUntilComplete
+	autoInit = func(string, []string) error { return nil }
+	autoStart = func(string, []string) error { return nil }
+	autoSave = func(string, []string) error { return nil }
+	autoKeep = func(string, []string) error { return nil }
+	autoDrop = func(string, []string) error { return nil }
+	autoPollUntilComplete = func(string, time.Duration, time.Duration) (*statusJSON, error) {
+		return &statusJSON{
+			Phase:          "complete",
+			Recommendation: "mystery",
+		}, nil
+	}
+	defer func() {
+		autoInit = oldInit
+		autoStart = oldStart
+		autoSave = oldSave
+		autoKeep = oldKeep
+		autoDrop = oldDrop
+		autoPollUntilComplete = oldPollUntilComplete
+	}()
+
+	err := Auto(projectRoot, []string{"ship it", "--research"})
+	if err == nil || !strings.Contains(err.Error(), `unknown recommendation "mystery"`) {
+		t.Fatalf("Auto error = %v, want unknown recommendation", err)
+	}
+}
+
 func TestAutoMoreResearchPreservesOriginalFlags(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -476,6 +520,30 @@ func TestAutoMoreResearchPreservesOriginalFlags(t *testing.T) {
 
 	if err := Auto(projectRoot, []string{"ship it", "--preset", "codex", "--parallel", "3"}); err != nil {
 		t.Fatalf("Auto: %v", err)
+	}
+}
+
+func TestPollUntilCompleteRequiresRecommendation(t *testing.T) {
+	statusPath := filepath.Join(t.TempDir(), "status.json")
+	writeStatus := func(raw string) {
+		t.Helper()
+		if err := os.WriteFile(statusPath, []byte(raw), 0o644); err != nil {
+			t.Fatalf("write status: %v", err)
+		}
+	}
+
+	writeStatus(`{"phase":"complete","recommendation":"","heartbeat":1}`)
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		writeStatus(`{"phase":"complete","recommendation":"done","heartbeat":2}`)
+	}()
+
+	got, err := pollUntilComplete(statusPath, 5*time.Millisecond, 200*time.Millisecond)
+	if err != nil {
+		t.Fatalf("pollUntilComplete: %v", err)
+	}
+	if got.Recommendation != "done" {
+		t.Fatalf("recommendation = %q, want done", got.Recommendation)
 	}
 }
 

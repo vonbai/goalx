@@ -157,8 +157,7 @@ func Auto(projectRoot string, args []string) (err error) {
 			needsInit = true
 
 		default:
-			fmt.Printf("Unknown recommendation %q. Stopping.\n", rec)
-			return nil
+			return fmt.Errorf("unknown recommendation %q", rec)
 		}
 	}
 
@@ -301,7 +300,7 @@ func pollUntilComplete(statusPath string, interval, timeout time.Duration) (*sta
 					fmt.Printf("  heartbeat %d -- phase: %s\n", s.Heartbeat, s.Phase)
 					lastHB = s.Heartbeat
 				}
-				if s.Phase == "complete" {
+				if s.Phase == "complete" && s.Recommendation != "" {
 					return &s, nil
 				}
 			}
