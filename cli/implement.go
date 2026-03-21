@@ -51,6 +51,10 @@ func Implement(projectRoot string, args []string) error {
 	if harness == "" {
 		harness = "go build ./... && go test ./... -count=1 && go vet ./..."
 	}
+	targetFiles := baseCfg.Target.Files
+	if len(targetFiles) == 0 {
+		targetFiles = []string{"."}
+	}
 
 	// Read saved config for objective context
 	savedCfg, _ := goalx.LoadYAML[goalx.Config](filepath.Join(runDir, "goalx.yaml"))
@@ -79,7 +83,7 @@ func Implement(projectRoot string, args []string) error {
 		},
 		Context: goalx.ContextConfig{Files: contextFiles},
 		Target: goalx.TargetConfig{
-			Files: []string{"."},
+			Files: targetFiles,
 		},
 		Harness: goalx.HarnessConfig{Command: harness},
 		Budget:  goalx.BudgetConfig{MaxDuration: 2 * 3600_000_000_000},
