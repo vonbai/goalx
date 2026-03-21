@@ -15,8 +15,9 @@ type startInitOptions struct {
 	Name         string
 	ContextPaths []string
 	Strategies   []string
-	Master       string // "engine/model" format
-	Auditor      string // "engine/model" format
+	Master       string   // "engine/model" format
+	Auditor      string   // "engine/model" format
+	Subs         []string // repeatable "engine/model:N" for explicit session list
 }
 
 func parseStartInitArgs(args []string) (startInitOptions, error) {
@@ -75,6 +76,12 @@ func parseStartInitArgs(args []string) (startInitOptions, error) {
 			}
 			i++
 			opts.Auditor = args[i]
+		case "--sub":
+			if i+1 >= len(args) {
+				return opts, fmt.Errorf("missing value for --sub")
+			}
+			i++
+			opts.Subs = append(opts.Subs, args[i])
 		default:
 			return opts, fmt.Errorf("unknown flag %q", args[i])
 		}

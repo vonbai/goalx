@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +77,33 @@ func Init(projectRoot string, args []string) error {
 		}
 		if cfg.Harness.Command == "" {
 			cfg.Harness = goalx.HarnessConfig{Command: "TODO: build + test command"}
+		}
+	}
+
+	// Expand --sub engine/model:N into explicit sessions
+	if len(opts.Subs) > 0 {
+		cfg.Parallel = 0 // --sub overrides --parallel
+		cfg.DiversityHints = nil
+		for _, sub := range opts.Subs {
+			spec, countStr := sub, "1"
+			if idx := strings.LastIndex(sub, ":"); idx > 0 {
+				spec = sub[:idx]
+				countStr = sub[idx+1:]
+			}
+			parts := strings.SplitN(spec, "/", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("invalid --sub format %q (expected engine/model or engine/model:N)", sub)
+			}
+			n, err := strconv.Atoi(countStr)
+			if err != nil || n < 1 {
+				return fmt.Errorf("invalid --sub count %q in %q", countStr, sub)
+			}
+			for j := 0; j < n; j++ {
+				cfg.Sessions = append(cfg.Sessions, goalx.SessionConfig{
+					Engine: parts[0],
+					Model:  parts[1],
+				})
+			}
 		}
 	}
 
