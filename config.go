@@ -123,6 +123,11 @@ var Presets = map[string]PresetConfig{
 		Research: SessionConfig{Engine: "claude-code", Model: "opus"},
 		Develop:  SessionConfig{Engine: "codex", Model: "codex"},
 	},
+	"hybrid": {
+		Master:   MasterConfig{Engine: "claude-code", Model: "opus"},
+		Research: SessionConfig{Engine: "claude-code", Model: "opus"},
+		Develop:  SessionConfig{Engine: "codex", Model: "codex"},
+	},
 }
 
 // BuiltinEngines are the default engine definitions.
