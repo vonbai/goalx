@@ -114,7 +114,7 @@ When the objective is genuinely achieved:
    ```
    For `implement`:
    ```json
-   {"phase":"complete","recommendation":"implement","heartbeat":5,"acceptance_met":true,"next_config":{"objective":"implement the agreed P0/P1 fixes","parallel":3,"diversity_hints":["P0 fixes","P1 fixes","verification"],"engine":"codex","model":"codex","budget_seconds":7200}}
+   {"phase":"complete","recommendation":"implement","heartbeat":5,"acceptance_met":true,"next_config":{"objective":"implement the agreed P0/P1 fixes","mode":"develop","parallel":3,"diversity_hints":["P0 fixes","P1 fixes","verification"],"engine":"codex","model":"codex","budget_seconds":7200}}
    ```
    For `debate`:
    ```json
@@ -122,10 +122,19 @@ When the objective is genuinely achieved:
    ```
    For `more-research`:
    ```json
-   {"phase":"complete","recommendation":"more-research","heartbeat":5,"acceptance_met":false,"next_objective":"investigate the unresolved auth edge cases","next_config":{"parallel":2,"strategies":["depth","adversarial"],"budget_seconds":3600}}
+   {"phase":"complete","recommendation":"more-research","heartbeat":5,"acceptance_met":false,"next_objective":"investigate the unresolved auth edge cases","next_config":{"parallel":2,"strategies":["depth","adversarial"],"budget_seconds":3600,"max_iterations":3,"context":["/path/to/prior-findings.md"]}}
    ```
-   Supported `next_config` keys: `parallel`, `engine`, `model`, `preset`, `diversity_hints`, `strategies`, `budget_seconds`, `objective`, `harness`.
+   Supported `next_config` keys: `parallel`, `engine`, `model`, `preset`, `diversity_hints`, `strategies`, `budget_seconds`, `objective`, `harness`, `mode`, `max_iterations`, `context`, `master_engine`, `master_model`, `sessions`.
    If `next_config` is omitted, the framework uses defaults. Do that only when you intentionally want framework defaults. Rules: parallel 1-10, engine from Available Engines, model must match the selected engine.
+
+   | Key | Type | Constraints | Description |
+   |-----|------|-------------|-------------|
+   | `mode` | string | `research` or `develop` | Override the next phase's mode |
+   | `max_iterations` | int | 1-20 | Override the auto loop iteration limit |
+   | `context` | []string | file paths | Extra context files to include |
+   | `master_engine` | string | valid engine name | Engine for the master agent |
+   | `master_model` | string | must match master_engine | Model for the master agent |
+   | `sessions` | []object | engine/model/hint per session | Per-session overrides |
    Set `keep_session` when a develop-mode session should be merged after the run.
 3. **Verification before `done`**:
 {{if eq .Mode "develop"}}
