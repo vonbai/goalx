@@ -24,11 +24,11 @@ GoalX launches parallel AI agents to research, debate, and implement — supervi
 goalx init "objective" --research --parallel 2
 ```
 - Pure investigation, no code changes
-- Pick strategies based on objective:
+- Pick dimensions based on objective:
   - Code audit → `depth,adversarial`
-  - Market/tech research → `web,comparative`
-  - Architecture review → `depth,experimental`
-  - Security audit → `security,adversarial`
+  - Market/tech research → `comparative,creative`
+  - Architecture review → `depth,evidence`
+  - Explore alternatives → `creative,feasibility`
 
 ### "Fix this" / "Implement X" / "Refactor Y"
 ```bash
@@ -72,6 +72,8 @@ goalx auto "objective" --research --parallel 2
 ### "Add another research angle mid-run"
 ```bash
 goalx add "investigate from security perspective" --run <NAME>
+# With specific engine/model:
+goalx add --engine codex --model gpt-5.4 "audit the implementation" --run <NAME>
 ```
 
 ## Configuration Guide
@@ -89,7 +91,7 @@ description: "optional supplementary context for subagents"
 mode: research    # or develop
 
 # Engine + Model
-preset: default   # claude (default), claude-h (all opus), codex (all gpt-5.4), mixed (codex master + claude sub)
+preset: claude    # claude (default), claude-h (all opus), codex (all gpt-5.4), mixed (codex master + claude sub)
 engine: claude-code  # or codex
 model: sonnet     # or opus
 

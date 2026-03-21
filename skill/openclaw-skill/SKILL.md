@@ -32,6 +32,7 @@ pj()      { python3 -m json.tool 2>/dev/null; }
 ```bash
 gx_get "$GOALX_URL/projects" | pj
 gx_get "$GOALX_URL/runs" | pj
+gx_get "$GOALX_URL/workspaces" | pj
 ```
 
 ### "Add this directory as a project"
@@ -51,7 +52,7 @@ gx_post "$GOALX_URL/projects/Y/goalx/auto" \
 gx_post "$GOALX_URL/projects/Y/goalx/init" \
   -d '{"objective":"X","mode":"develop","parallel":2}' | pj
 # Then configure target files and harness:
-gx_put "$GOALX_URL/projects/Y/goalx/config" \
+gx_post "$GOALX_URL/projects/Y/goalx/config" \
   -d '{"target":{"files":["src/"]},"harness":{"command":"make test"}}' | pj
 gx_post "$GOALX_URL/projects/Y/goalx/start" | pj
 ```
@@ -59,7 +60,7 @@ gx_post "$GOALX_URL/projects/Y/goalx/start" | pj
 ### "Use 2 opus + 1 codex" / Custom agent composition
 ```bash
 # Configure mixed model sessions
-gx_put "$GOALX_URL/projects/Y/goalx/config" \
+gx_post "$GOALX_URL/projects/Y/goalx/config" \
   -d '{"sessions":[
     {"engine":"claude-code","model":"opus","hint":"deep exploration"},
     {"engine":"claude-code","model":"opus","hint":"creative alternatives"},
@@ -84,12 +85,18 @@ gx_post "$GOALX_URL/projects/Y/goalx/tell" \
 ```bash
 gx_post "$GOALX_URL/projects/Y/goalx/add" \
   -d '{"direction":"Investigate from security perspective"}' | pj
+# With specific engine/model:
+gx_post "$GOALX_URL/projects/Y/goalx/add" \
+  -d '{"direction":"Audit the implementation","engine":"codex","model":"gpt-5.4"}' | pj
 ```
 
-### "Modify the config"
+### "Read or modify the config"
 ```bash
-gx_get "$GOALX_URL/projects/Y/goalx/config" | pj           # read
-gx_put "$GOALX_URL/projects/Y/goalx/config" -d '{...}' | pj  # update (partial)
+# Read (POST with empty body):
+gx_post "$GOALX_URL/projects/Y/goalx/config" -d '{}' | pj
+# Write (POST with content field):
+gx_post "$GOALX_URL/projects/Y/goalx/config" \
+  -d '{"content":"name: my-run\nobjective: ...\nmode: research\nparallel: 2"}' | pj
 ```
 
 ### "Save / Stop / Clean up"
