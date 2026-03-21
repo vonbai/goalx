@@ -29,6 +29,7 @@ func Debate(projectRoot string, args []string) error {
 
 	// Collect report files (absolute paths for worktree access)
 	var contextFiles []string
+	var sessionNames []string
 	absRunDir, _ := filepath.Abs(runDir)
 	entries, _ := os.ReadDir(runDir)
 	for _, e := range entries {
@@ -36,9 +37,38 @@ func Debate(projectRoot string, args []string) error {
 		if strings.HasSuffix(name, "-report.md") || name == "summary.md" {
 			contextFiles = append(contextFiles, filepath.Join(absRunDir, name))
 		}
+		if strings.HasSuffix(name, "-report.md") {
+			sessionNames = append(sessionNames, strings.TrimSuffix(name, "-report.md"))
+		}
 	}
 	if len(contextFiles) == 0 {
 		return fmt.Errorf("no reports found in %s", runDir)
+	}
+	sort.Strings(sessionNames)
+
+	var hints []string
+	if len(sessionNames) <= 1 {
+		sessionName := "session-1"
+		if len(sessionNames) == 1 {
+			sessionName = sessionNames[0]
+		}
+		hints = []string{
+			fmt.Sprintf("你是倡导者。用代码证据支持 %s 报告的结论和方案。", sessionName),
+			fmt.Sprintf("你是批评者。用代码证据挑战 %s 报告的每一个结论，寻找遗漏和替代方案。", sessionName),
+		}
+	} else {
+		for i, sessionName := range sessionNames {
+			others := make([]string, 0, len(sessionNames)-1)
+			for j, other := range sessionNames {
+				if i != j {
+					others = append(others, other)
+				}
+			}
+			hints = append(hints, fmt.Sprintf(
+				"你支持 %s 的观点。用代码证据辩护 %s 报告中的结论，挑战 %s 的结论。如果对方证据更强，愿意让步。最终输出共识清单。",
+				sessionName, sessionName, strings.Join(others, "、"),
+			))
+		}
 	}
 
 	// Generate debate config
@@ -48,10 +78,7 @@ func Debate(projectRoot string, args []string) error {
 		Objective: fmt.Sprintf("基于 %s 的独立调研报告，辩论分歧点并达成共识，输出统一的优先级修复清单", run),
 		Preset:    preset,
 		Parallel:  2,
-		DiversityHints: []string{
-			"你支持 session-1 的观点。用代码证据辩护 session-1 报告中的结论，挑战 session-2 的结论。如果对方证据更强，愿意让步。最终输出共识清单。",
-			"你支持 session-2 的观点。用代码证据辩护 session-2 报告中的结论，挑战 session-1 的结论。如果对方证据更强，愿意让步。最终输出共识清单。",
-		},
+		DiversityHints: hints,
 		Context: goalx.ContextConfig{Files: contextFiles},
 		Target: goalx.TargetConfig{
 			Files:    []string{"report.md"},
