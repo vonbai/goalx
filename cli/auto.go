@@ -52,6 +52,7 @@ type autoCompletionPayload struct {
 // Each iteration: init+start → poll → save → read recommendation → route.
 func Auto(projectRoot string, args []string) (err error) {
 	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
+	originalArgs := append([]string(nil), args...)
 	initArgs := append([]string(nil), args...) // first iteration uses the user's original args
 	if len(initArgs) > 0 && !hasMode(initArgs) {
 		initArgs = append(initArgs[:1:1], append([]string{"--research"}, initArgs[1:]...)...)
@@ -142,7 +143,13 @@ func Auto(projectRoot string, args []string) (err error) {
 				return nil
 			}
 			fmt.Printf("Re-initializing with new objective: %s\n", obj)
-			initArgs = []string{obj, "--research"}
+			initArgs = []string{obj}
+			if len(originalArgs) > 1 {
+				initArgs = append(initArgs, originalArgs[1:]...)
+			}
+			if !hasMode(initArgs) {
+				initArgs = append(initArgs, "--research")
+			}
 			needsInit = true
 
 		default:
