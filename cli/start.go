@@ -71,27 +71,7 @@ func Start(projectRoot string, args []string) (err error) {
 		fmt.Fprintln(os.Stderr, "")
 	}
 
-	// 6. Capture the configured session plan for the master protocol.
-	sessions := goalx.ExpandSessions(cfg)
-	plannedSessions := make([]PlannedSessionData, 0, len(sessions))
-	for i, sess := range sessions {
-		engine := sess.Engine
-		if engine == "" {
-			engine = cfg.Engine
-		}
-		model := sess.Model
-		if model == "" {
-			model = cfg.Model
-		}
-		plannedSessions = append(plannedSessions, PlannedSessionData{
-			Name:   SessionName(i + 1),
-			Engine: engine,
-			Model:  model,
-			Hint:   sess.Hint,
-		})
-	}
-
-	// 7. Create run directory structure
+	// 6. Create run directory structure
 	dirs := []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
@@ -140,9 +120,6 @@ func Start(projectRoot string, args []string) (err error) {
 		Objective:         cfg.Objective,
 		Description:       cfg.Description,
 		Mode:              cfg.Mode,
-		Preset:            cfg.Preset,
-		Engines:           engines,
-		PlannedSessions:   plannedSessions,
 		Master:            cfg.Master,
 		Harness:           cfg.Harness,
 		Budget:            cfg.Budget,
@@ -203,14 +180,6 @@ func Start(projectRoot string, args []string) (err error) {
 	fmt.Printf("✓ Run '%s' started\n", cfg.Name)
 	fmt.Printf("  tmux session: %s\n", tmuxSess)
 	fmt.Printf("  master: %s/%s\n", cfg.Master.Engine, cfg.Master.Model)
-	fmt.Printf("  planned sessions: %d\n", len(plannedSessions))
-	for _, planned := range plannedSessions {
-		hint := ""
-		if planned.Hint != "" {
-			hint = " (" + planned.Hint + ")"
-		}
-		fmt.Printf("    %s: %s/%s%s\n", planned.Name, planned.Engine, planned.Model, hint)
-	}
 	fmt.Printf("  run dir: %s\n", runDir)
 	fmt.Printf("  attach: goalx attach [--run %s] [master|session-N]\n", cfg.Name)
 	return nil

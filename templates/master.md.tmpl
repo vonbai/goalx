@@ -32,33 +32,11 @@ The user specified **{{.Mode}}** mode. Use this as guidance for your approach.
 {{end}}{{else}}
 No sessions yet. Launch them yourself with `goalx add`.
 {{end}}
-{{- if .PlannedSessions}}
-
-## Session Plan
-
-The configuration suggests these sessions. Launch them with `goalx add`, or adjust based on your assessment.
-{{range .PlannedSessions}}
-- **{{.Name}}**: {{.Engine}}/{{.Model}}{{if .Hint}} — {{.Hint}}{{end}}
-{{end}}
-{{- end}}
-{{- if .Engines}}
-
-## Available Engines
-
-| Engine | Best For | Models |
-|--------|----------|--------|
-{{range $name, $ec := .Engines}}| {{$name}} | {{$ec.Description}} | {{range $alias, $id := $ec.Models}}{{$alias}} {{end}} |
-{{end}}
-{{- end}}
 
 ## Current Configuration
 
 - Run: {{.RunName}}
-- Preset: {{.Preset}}
 - Master: {{.Master.Engine}}/{{.Master.Model}}
-{{- range .PlannedSessions}}
-- {{.Name}}: {{.Engine}}/{{.Model}}{{if .Hint}} ({{.Hint}}){{end}}
-{{- end}}
 {{- if or .Preferences.Research.Engines .Preferences.Research.Strategy .Preferences.Develop.Engines .Preferences.Develop.Strategy .Preferences.Simple.Engines .Preferences.Simple.Strategy}}
 
 ## User Preferences

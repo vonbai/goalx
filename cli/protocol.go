@@ -18,10 +18,7 @@ type ProtocolData struct {
 	Description       string
 	Mode              goalx.Mode
 	Engine            string
-	Preset            string
-	Engines           map[string]goalx.EngineConfig
 	Sessions          []SessionData
-	PlannedSessions   []PlannedSessionData
 	Master            goalx.MasterConfig
 	Harness           goalx.HarnessConfig
 	Budget            goalx.BudgetConfig
@@ -57,14 +54,6 @@ type SessionData struct {
 	Hint          string
 	EngineCommand string
 	Prompt        string
-}
-
-// PlannedSessionData describes a session the master may choose to launch.
-type PlannedSessionData struct {
-	Name   string
-	Engine string
-	Model  string
-	Hint   string
 }
 
 // RenderMasterProtocol renders master.md.tmpl to the run directory.

@@ -234,14 +234,6 @@ func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testin
 		AcceptancePath: "/tmp/acceptance.md",
 		StatusPath:     "/tmp/status.json",
 		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
-		PlannedSessions: []PlannedSessionData{
-			{
-				Name:   "session-1",
-				Engine: "codex",
-				Model:  "codex",
-				Hint:   "P0 fixes",
-			},
-		},
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -268,7 +260,7 @@ func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testin
 	}
 }
 
-func TestRenderMasterProtocolIncludesResearchPreflightDimensionSelection(t *testing.T) {
+func TestRenderMasterProtocolIncludesResearchModeLaunchGuidance(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
 		Objective:      "audit auth",
@@ -278,20 +270,6 @@ func TestRenderMasterProtocolIncludesResearchPreflightDimensionSelection(t *test
 		SummaryPath:    "/tmp/summary.md",
 		AcceptancePath: "/tmp/acceptance.md",
 		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
-		PlannedSessions: []PlannedSessionData{
-			{
-				Name:   "session-1",
-				Engine: "codex",
-				Model:  "codex",
-				Hint:   "depth",
-			},
-			{
-				Name:   "session-2",
-				Engine: "codex",
-				Model:  "codex",
-				Hint:   "adversarial",
-			},
-		},
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -304,15 +282,53 @@ func TestRenderMasterProtocolIncludesResearchPreflightDimensionSelection(t *test
 	}
 	text := string(out)
 	for _, want := range []string{
-		"## Session Plan",
-		"session-1",
-		"codex/codex",
-		"depth",
-		"adversarial",
+		"## Mode",
+		"The user specified **research** mode.",
 		"goalx add --run demo",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
+		}
+	}
+}
+
+func TestRenderMasterProtocolOmitsLegacyPlannedSessionsAndPresetDisplays(t *testing.T) {
+	runDir := t.TempDir()
+	outPath := filepath.Join(runDir, "master.md")
+	data := map[string]any{
+		"Objective": "ship it",
+		"RunName":   "demo",
+		"Mode":      goalx.ModeDevelop,
+		"Preset":    "claude",
+		"Engines":   goalx.BuiltinEngines,
+		"Master":    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		"PlannedSessions": []map[string]string{
+			{
+				"Name":   "session-1",
+				"Engine": "codex",
+				"Model":  "codex",
+				"Hint":   "P0 fixes",
+			},
+		},
+	}
+
+	if err := renderTemplate("templates/master.md.tmpl", outPath, data); err != nil {
+		t.Fatalf("renderTemplate: %v", err)
+	}
+
+	out, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, unwanted := range []string{
+		"## Session Plan",
+		"## Available Engines",
+		"- Preset: claude",
+		"session-1: codex/codex (P0 fixes)",
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("rendered master protocol should omit %q", unwanted)
 		}
 	}
 }
@@ -323,22 +339,12 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 		Objective:      "ship it",
 		RunName:        "demo",
 		Mode:           goalx.ModeDevelop,
-		Preset:         "claude",
-		Engines:        goalx.BuiltinEngines,
 		Master:         goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		TmuxSession:    "ar-demo",
 		SummaryPath:    "/tmp/summary.md",
 		AcceptancePath: "/tmp/acceptance.md",
 		StatusPath:     "/tmp/status.json",
 		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
-		PlannedSessions: []PlannedSessionData{
-			{
-				Name:   "session-1",
-				Engine: "codex",
-				Model:  "codex",
-				Hint:   "P0 fixes",
-			},
-		},
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -351,11 +357,8 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 	}
 	text := string(out)
 	for _, want := range []string{
-		"## Available Engines",
 		"## Current Configuration",
 		"- Run: demo",
-		"- Preset: claude",
-		"session-1: codex/codex (P0 fixes)",
 		"goalx save demo && goalx debate && goalx start",
 		"goalx save demo && goalx implement && goalx start",
 		"goalx stop --run demo",
