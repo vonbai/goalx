@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -112,11 +113,22 @@ func ensureClaudeTrusted(path string) error {
 
 	projects := coerceObject(doc["projects"])
 	entry := coerceObject(projects[path])
-	entry["allowedTools"] = mergeAllowedTools(coerceArray(entry["allowedTools"]), claudeAllowedTools)
+	sourceEntry := claudeSourceProjectEntry(path, projects)
+
+	entry["allowedTools"] = mergeAllowedTools(
+		mergeUniqueStrings(coerceArray(sourceEntry["allowedTools"]), coerceArray(entry["allowedTools"])),
+		claudeAllowedTools,
+	)
 	entry["mcpContextUris"] = coerceArray(entry["mcpContextUris"])
-	entry["mcpServers"] = coerceObject(entry["mcpServers"])
-	entry["enabledMcpjsonServers"] = coerceArray(entry["enabledMcpjsonServers"])
-	entry["disabledMcpjsonServers"] = coerceArray(entry["disabledMcpjsonServers"])
+	entry["mcpServers"] = mergeObjects(coerceObject(sourceEntry["mcpServers"]), coerceObject(entry["mcpServers"]))
+	entry["enabledMcpjsonServers"] = mergeUniqueStrings(
+		coerceArray(sourceEntry["enabledMcpjsonServers"]),
+		coerceArray(entry["enabledMcpjsonServers"]),
+	)
+	entry["disabledMcpjsonServers"] = mergeUniqueStrings(
+		coerceArray(sourceEntry["disabledMcpjsonServers"]),
+		coerceArray(entry["disabledMcpjsonServers"]),
+	)
 	entry["hasTrustDialogAccepted"] = true
 	entry["projectOnboardingSeenCount"] = 1
 	entry["hasClaudeMdExternalIncludesApproved"] = true
@@ -134,6 +146,64 @@ func ensureClaudeTrusted(path string) error {
 		return fmt.Errorf("write %s: %w", cfgPath, err)
 	}
 	return nil
+}
+
+func claudeSourceProjectEntry(path string, projects map[string]any) map[string]any {
+	sourcePath := claudeSourceProjectPath(path, projects)
+	if sourcePath == "" {
+		return map[string]any{}
+	}
+	return coerceObject(projects[sourcePath])
+}
+
+func claudeSourceProjectPath(path string, projects map[string]any) string {
+	if sourcePath := gitCommonDirProjectPath(path); sourcePath != "" {
+		if sourcePath != path {
+			if _, ok := projects[sourcePath]; ok {
+				return sourcePath
+			}
+		}
+	}
+
+	best := ""
+	for candidate := range projects {
+		if candidate == path || looksLikeWorktreeProjectPath(candidate) {
+			continue
+		}
+		if !pathHasPrefix(path, candidate) {
+			continue
+		}
+		if len(candidate) > len(best) {
+			best = candidate
+		}
+	}
+	return best
+}
+
+func gitCommonDirProjectPath(path string) string {
+	out, err := exec.Command("git", "-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		return ""
+	}
+	commonDir := strings.TrimSpace(string(out))
+	if commonDir == "" {
+		return ""
+	}
+	return filepath.Clean(filepath.Dir(commonDir))
+}
+
+func looksLikeWorktreeProjectPath(path string) bool {
+	path = filepath.ToSlash(filepath.Clean(path))
+	return strings.Contains(path, "/.goalx/") || strings.Contains(path, "/worktrees/")
+}
+
+func pathHasPrefix(path, prefix string) bool {
+	path = filepath.Clean(path)
+	prefix = filepath.Clean(prefix)
+	if path == prefix {
+		return true
+	}
+	return strings.HasPrefix(path, prefix+string(filepath.Separator))
 }
 
 func upsertTOMLKey(text, section, keyLine string) string {
@@ -216,6 +286,33 @@ func mergeAllowedTools(existing []any, required []string) []any {
 		}
 		merged = append(merged, tool)
 		seen[tool] = true
+	}
+	return merged
+}
+
+func mergeUniqueStrings(arrays ...[]any) []any {
+	var merged []any
+	seen := map[string]bool{}
+	for _, array := range arrays {
+		for _, item := range array {
+			s, ok := item.(string)
+			if !ok || seen[s] {
+				continue
+			}
+			merged = append(merged, s)
+			seen[s] = true
+		}
+	}
+	return merged
+}
+
+func mergeObjects(base, overlay map[string]any) map[string]any {
+	merged := map[string]any{}
+	for key, value := range base {
+		merged[key] = value
+	}
+	for key, value := range overlay {
+		merged[key] = value
 	}
 	return merged
 }

@@ -26,15 +26,6 @@ func Debate(projectRoot string, args []string, nc *nextConfigJSON) error {
 		return fmt.Errorf("load base config: %w", err)
 	}
 	savedCfg, _ := goalx.LoadYAML[goalx.Config](filepath.Join(runDir, "goalx.yaml"))
-	preset := savedCfg.Preset
-	if preset == "" {
-		preset = "claude"
-	}
-	master := savedCfg.Master
-	budget := savedCfg.Budget
-	if budget.MaxDuration == 0 {
-		budget.MaxDuration = 2 * 3600_000_000_000
-	}
 
 	// Collect report files (absolute paths for worktree access)
 	var contextFiles []string
@@ -80,35 +71,17 @@ func Debate(projectRoot string, args []string, nc *nextConfigJSON) error {
 		}
 	}
 
-	defaults := goalx.Config{
-		Preset: preset,
-		Mode:   goalx.ModeResearch,
-		Engine: savedCfg.Engine,
-		Model:  savedCfg.Model,
+	cfg := buildPhaseConfig(goalx.ModeResearch, savedCfg, engines, nc)
+	cfg.Name = "debate"
+	cfg.Objective = nextConfigObjective(fmt.Sprintf("基于 %s 的独立调研报告，辩论分歧点并达成共识，输出统一的优先级修复清单", run), nc)
+	cfg.DiversityHints = nextConfigHints(defaultHints, cfg.Parallel, nc)
+	cfg.Context = goalx.ContextConfig{Files: contextFiles}
+	cfg.Target = goalx.TargetConfig{
+		Files:    []string{"report.md"},
+		Readonly: []string{"."},
 	}
-	goalx.ApplyPreset(&defaults)
-	parallel := nextConfigParallel(2, nc)
-	engine, model := resolveNextEngineModel(engines, defaults.Engine, defaults.Model, nc)
+	cfg.Harness = goalx.HarnessConfig{Command: "test -s report.md && echo 'ok'"}
 
-	// Generate debate config
-	cfg := goalx.Config{
-		Name:           "debate",
-		Mode:           goalx.ModeResearch,
-		Objective:      nextConfigObjective(fmt.Sprintf("基于 %s 的独立调研报告，辩论分歧点并达成共识，输出统一的优先级修复清单", run), nc),
-		Preset:         preset,
-		Engine:         engine,
-		Model:          model,
-		Parallel:       parallel,
-		DiversityHints: nextConfigHints(defaultHints, parallel, nc),
-		Context:        goalx.ContextConfig{Files: contextFiles},
-		Target: goalx.TargetConfig{
-			Files:    []string{"report.md"},
-			Readonly: []string{"."},
-		},
-		Harness: goalx.HarnessConfig{Command: "test -s report.md && echo 'ok'"},
-		Master:  master,
-		Budget:  goalx.BudgetConfig{MaxDuration: nextConfigBudget(budget.MaxDuration, nc)},
-	}
 	goalx.ApplyPreset(&cfg)
 
 	goalxDir := filepath.Join(projectRoot, ".goalx")

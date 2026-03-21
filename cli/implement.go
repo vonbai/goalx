@@ -5,10 +5,61 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	goalx "github.com/vonbai/goalx"
 	"gopkg.in/yaml.v3"
 )
+
+func buildPhaseConfig(mode goalx.Mode, savedCfg goalx.Config, engines map[string]goalx.EngineConfig, nc *nextConfigJSON) goalx.Config {
+	preset := savedCfg.Preset
+	if preset == "" {
+		preset = "claude"
+	}
+
+	defaultEngine := savedCfg.Engine
+	defaultModel := savedCfg.Model
+	if nc != nil && nc.Preset != "" {
+		preset = nc.Preset
+		defaults := goalx.Config{Preset: preset, Mode: mode}
+		goalx.ApplyPreset(&defaults)
+		defaultEngine = defaults.Engine
+		defaultModel = defaults.Model
+	} else {
+		defaults := goalx.Config{
+			Preset: preset,
+			Mode:   mode,
+			Engine: defaultEngine,
+			Model:  defaultModel,
+		}
+		goalx.ApplyPreset(&defaults)
+		defaultEngine = defaults.Engine
+		defaultModel = defaults.Model
+	}
+
+	parallel := savedCfg.Parallel
+	if parallel < 1 {
+		parallel = 2
+	}
+
+	budget := savedCfg.Budget
+	if budget.MaxDuration == 0 {
+		budget.MaxDuration = 2 * time.Hour
+	}
+
+	engine, model := resolveNextEngineModel(engines, defaultEngine, defaultModel, nc)
+	return goalx.Config{
+		Mode:     mode,
+		Preset:   preset,
+		Engine:   engine,
+		Model:    model,
+		Parallel: nextConfigParallel(parallel, nc),
+		Master:   savedCfg.Master,
+		Budget: goalx.BudgetConfig{
+			MaxDuration: nextConfigBudget(budget.MaxDuration, nc),
+		},
+	}
+}
 
 // Implement generates a goalx.yaml for a develop round based on prior research/debate consensus.
 func Implement(projectRoot string, args []string, nc *nextConfigJSON) error {
@@ -65,50 +116,20 @@ func Implement(projectRoot string, args []string, nc *nextConfigJSON) error {
 	if objContext == "" {
 		objContext = run
 	}
-	preset := savedCfg.Preset
-	if preset == "" {
-		preset = "claude"
-	}
-	defaults := goalx.Config{
-		Preset: preset,
-		Mode:   goalx.ModeDevelop,
-		Engine: savedCfg.Engine,
-		Model:  savedCfg.Model,
-	}
-	goalx.ApplyPreset(&defaults)
-	parallel := savedCfg.Parallel
-	if parallel < 1 {
-		parallel = 2
-	}
-	parallel = nextConfigParallel(parallel, nc)
-	master := savedCfg.Master
-	budget := savedCfg.Budget
-	if budget.MaxDuration == 0 {
-		budget.MaxDuration = 2 * 3600_000_000_000
-	}
-	engine, model := resolveNextEngineModel(engines, defaults.Engine, defaults.Model, nc)
 	defaultHints := []string{
 		"你负责优先级最高的修复项（P0 + P1 中不依赖其他文件的项）。逐个修复，每个修完跑一次 gate 验证。",
 		"你负责剩余修复项（P2 + 重构类 P1）。先做独立的删除/清理，再做涉及多文件的重构。每步跑 gate。",
 	}
 
-	cfg := goalx.Config{
-		Name:           "implement",
-		Mode:           goalx.ModeDevelop,
-		Objective:      nextConfigObjective(fmt.Sprintf("实施 %s 的共识修复清单。严格按照 context 中的文档执行，不做额外改动。", run), nc),
-		Preset:         preset,
-		Engine:         engine,
-		Model:          model,
-		Parallel:       parallel,
-		DiversityHints: nextConfigHints(defaultHints, parallel, nc),
-		Context:        goalx.ContextConfig{Files: contextFiles},
-		Target: goalx.TargetConfig{
-			Files: targetFiles,
-		},
-		Harness: goalx.HarnessConfig{Command: harness},
-		Master:  master,
-		Budget:  goalx.BudgetConfig{MaxDuration: nextConfigBudget(budget.MaxDuration, nc)},
+	cfg := buildPhaseConfig(goalx.ModeDevelop, savedCfg, engines, nc)
+	cfg.Name = "implement"
+	cfg.Objective = nextConfigObjective(fmt.Sprintf("实施 %s 的共识修复清单。严格按照 context 中的文档执行，不做额外改动。", run), nc)
+	cfg.DiversityHints = nextConfigHints(defaultHints, cfg.Parallel, nc)
+	cfg.Context = goalx.ContextConfig{Files: contextFiles}
+	cfg.Target = goalx.TargetConfig{
+		Files: targetFiles,
 	}
+	cfg.Harness = goalx.HarnessConfig{Command: harness}
 	goalx.ApplyPreset(&cfg)
 
 	goalxDir := filepath.Join(projectRoot, ".goalx")

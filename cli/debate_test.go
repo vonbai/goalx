@@ -88,3 +88,64 @@ func TestDebateAppliesNextConfigOverrides(t *testing.T) {
 		t.Fatalf("diversity_hints = %#v, want next_config values", cfg.DiversityHints)
 	}
 }
+
+func TestDebateInheritsSavedParallelWithoutOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	writeSavedRunFixture(t, projectRoot, "research-a", goalx.Config{
+		Name:      "research-a",
+		Mode:      goalx.ModeResearch,
+		Objective: "audit auth flow",
+		Preset:    "claude",
+		Parallel:  5,
+	}, map[string]string{
+		"summary.md":          "# summary\n",
+		"session-1-report.md": "# report\n",
+	})
+
+	if err := Debate(projectRoot, nil, nil); err != nil {
+		t.Fatalf("Debate: %v", err)
+	}
+
+	cfg, err := goalx.LoadYAML[goalx.Config](filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load goalx.yaml: %v", err)
+	}
+	if cfg.Parallel != 5 {
+		t.Fatalf("parallel = %d, want 5", cfg.Parallel)
+	}
+}
+
+func TestDebateAppliesNextConfigPreset(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	writeSavedRunFixture(t, projectRoot, "research-a", goalx.Config{
+		Name:      "research-a",
+		Mode:      goalx.ModeResearch,
+		Objective: "audit auth flow",
+		Preset:    "codex",
+		Parallel:  2,
+	}, map[string]string{
+		"summary.md":          "# summary\n",
+		"session-1-report.md": "# report\n",
+	})
+
+	if err := Debate(projectRoot, nil, &nextConfigJSON{Preset: "claude"}); err != nil {
+		t.Fatalf("Debate: %v", err)
+	}
+
+	cfg, err := goalx.LoadYAML[goalx.Config](filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load goalx.yaml: %v", err)
+	}
+	if cfg.Preset != "claude" {
+		t.Fatalf("preset = %q, want claude", cfg.Preset)
+	}
+	if cfg.Engine != "claude-code" || cfg.Model != "sonnet" {
+		t.Fatalf("engine/model = %s/%s, want claude-code/sonnet", cfg.Engine, cfg.Model)
+	}
+}

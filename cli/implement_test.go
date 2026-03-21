@@ -139,3 +139,35 @@ func TestImplementResolvesNextConfigStrategiesIntoHints(t *testing.T) {
 		}
 	}
 }
+
+func TestImplementAppliesNextConfigPreset(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	writeSavedRunFixture(t, projectRoot, "debate", goalx.Config{
+		Name:      "debate",
+		Mode:      goalx.ModeResearch,
+		Objective: "consensus fixes",
+		Preset:    "claude",
+		Parallel:  2,
+	}, map[string]string{
+		"summary.md":          "# summary\n",
+		"session-1-report.md": "# report\n",
+	})
+
+	if err := Implement(projectRoot, nil, &nextConfigJSON{Preset: "claude-h"}); err != nil {
+		t.Fatalf("Implement: %v", err)
+	}
+
+	cfg, err := goalx.LoadYAML[goalx.Config](filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load goalx.yaml: %v", err)
+	}
+	if cfg.Preset != "claude-h" {
+		t.Fatalf("preset = %q, want claude-h", cfg.Preset)
+	}
+	if cfg.Engine != "claude-code" || cfg.Model != "opus" {
+		t.Fatalf("engine/model = %s/%s, want claude-code/opus", cfg.Engine, cfg.Model)
+	}
+}
