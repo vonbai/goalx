@@ -28,8 +28,17 @@ func TestNormalizeHeartbeatIntervalKeepsConfiguredValue(t *testing.T) {
 
 func TestHeartbeatCommand(t *testing.T) {
 	got := HeartbeatCommand("goalx-demo", 45)
-	want := "while sleep 45; do tmux send-keys -t goalx-demo:master 'Heartbeat: execute check cycle now.' Enter; done"
-	if got != want {
-		t.Fatalf("HeartbeatCommand() = %q, want %q", got, want)
+	// Smart heartbeat: idle detection + force after 3 skips
+	if !strings.Contains(got, "sleep 45") {
+		t.Fatalf("missing sleep interval in %q", got)
+	}
+	if !strings.Contains(got, "goalx-demo:master") {
+		t.Fatalf("missing tmux target in %q", got)
+	}
+	if !strings.Contains(got, "SKIP") {
+		t.Fatalf("missing skip counter in %q", got)
+	}
+	if !strings.Contains(got, "grep -qE") {
+		t.Fatalf("missing idle detection in %q", got)
 	}
 }
