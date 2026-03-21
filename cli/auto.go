@@ -62,14 +62,20 @@ func Auto(projectRoot string, args []string) (err error) {
 	needsInit := true
 	var finalStatus *statusJSON
 	var lastPhaseStartedAt time.Time
+	notified := false
 
-	defer func() {
-		if err != nil || finalStatus == nil {
+	notifyCompletion := func() {
+		if notified || err != nil || finalStatus == nil {
 			return
 		}
+		notified = true
 		if notifyErr := notifyAutoCompletion(projectRoot, finalStatus); notifyErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: completion webhook failed: %v\n", notifyErr)
 		}
+	}
+
+	defer func() {
+		notifyCompletion()
 	}()
 
 	for i := 0; i < maxAutoIterations; i++ {
@@ -119,9 +125,7 @@ func Auto(projectRoot string, args []string) (err error) {
 		if status.AcceptanceMet || rec == "done" {
 			fmt.Println("Objective achieved. Results saved.")
 			printAutoResults(projectRoot, status, lastPhaseStartedAt)
-			if err := notifyAutoCompletion(projectRoot, status); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: notify failed: %v\n", err)
-			}
+			notifyCompletion()
 			return nil
 		}
 
