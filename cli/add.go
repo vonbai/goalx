@@ -136,6 +136,7 @@ func Add(projectRoot string, args []string) error {
 	subData := ProtocolData{
 		Objective:     rc.Config.Objective,
 		Mode:          rc.Config.Mode,
+		Engine:        engine,
 		Target:        rc.Config.Target,
 		Harness:       rc.Config.Harness,
 		Context:       rc.Config.Context,
