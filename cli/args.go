@@ -18,6 +18,7 @@ type startInitOptions struct {
 	Master       string   // "engine/model" format
 	Auditor      string   // "engine/model" format
 	Subs         []string // repeatable "engine/model:N" for explicit session list
+	Preset       string
 }
 
 func parseStartInitArgs(args []string) (startInitOptions, error) {
@@ -82,6 +83,12 @@ func parseStartInitArgs(args []string) (startInitOptions, error) {
 			}
 			i++
 			opts.Subs = append(opts.Subs, args[i])
+		case "--preset":
+			if i+1 >= len(args) {
+				return opts, fmt.Errorf("missing value for --preset")
+			}
+			i++
+			opts.Preset = args[i]
 		default:
 			return opts, fmt.Errorf("unknown flag %q", args[i])
 		}

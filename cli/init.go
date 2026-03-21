@@ -38,6 +38,9 @@ func Init(projectRoot string, args []string) error {
 	cfg.Parallel = parallel
 	cfg.Sessions = nil
 	cfg.DiversityHints = nil
+	if opts.Preset != "" {
+		cfg.Preset = opts.Preset
+	}
 	goalx.ApplyPreset(&cfg)
 
 	// Override master engine/model from --master flag
