@@ -25,6 +25,7 @@ var (
 	autoKeep              = Keep
 	autoDrop              = Drop
 	autoPollUntilComplete = pollUntilComplete
+	autoVerifyHarness     = verifyHarness
 	autoHTTPClient        = &http.Client{Timeout: 10 * time.Second}
 )
 
@@ -100,33 +101,38 @@ func Auto(projectRoot string, args []string) (err error) {
 		}
 		finalStatus = status
 
+		if status.Recommendation == "done" {
+			if err := autoVerifyHarness(projectRoot); err != nil {
+				return fmt.Errorf("verify harness (iter %d): %w", i, err)
+			}
+		}
+
 		// Save
 		if err := autoSave(projectRoot, nil); err != nil {
 			return fmt.Errorf("save (iter %d): %w", i, err)
 		}
 
-		// Keep session if master requested it
-		if status.KeepSession != "" {
-			fmt.Printf("Keeping session %s...\n", status.KeepSession)
-			if err := autoKeep(projectRoot, []string{status.KeepSession}); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: keep failed: %v\n", err)
-			}
-		}
-
-		// Drop the completed run
-		if err := autoDrop(projectRoot, nil); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: drop failed: %v\n", err)
-		}
-
 		rec := status.Recommendation
 		fmt.Printf("Master recommendation: %s (acceptance_met=%v)\n", rec, status.AcceptanceMet)
 
-		// Terminal conditions
-		if status.AcceptanceMet || rec == "done" {
+		if rec == "done" {
+			if status.KeepSession != "" {
+				fmt.Printf("Keeping session %s...\n", status.KeepSession)
+				if err := autoKeep(projectRoot, []string{status.KeepSession}); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: keep failed: %v\n", err)
+				}
+			}
+			if err := autoDrop(projectRoot, nil); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: drop failed: %v\n", err)
+			}
 			fmt.Println("Objective achieved. Results saved.")
 			printAutoResults(projectRoot, status, lastPhaseStartedAt)
 			notifyCompletion()
 			return nil
+		}
+
+		if err := autoDrop(projectRoot, nil); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: drop failed: %v\n", err)
 		}
 
 		// Route to next iteration
@@ -168,6 +174,38 @@ func Auto(projectRoot string, args []string) (err error) {
 
 	printAutoResults(projectRoot, finalStatus, lastPhaseStartedAt)
 	fmt.Printf("Reached max iterations (%d). Stopping.\n", maxAutoIterations)
+	return nil
+}
+
+func verifyHarness(projectRoot string) error {
+	rc, err := ResolveRun(projectRoot, "")
+	if err != nil {
+		return fmt.Errorf("resolve run: %w", err)
+	}
+
+	command := strings.TrimSpace(rc.Config.Harness.Command)
+	if command == "" {
+		return nil
+	}
+
+	for num := 1; num <= sessionCount(rc.Config); num++ {
+		worktreePath := WorktreePath(rc.RunDir, rc.Config.Name, num)
+		if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return fmt.Errorf("stat worktree %s: %w", SessionName(num), err)
+		}
+
+		resolved := ResolveHarness(command, worktreePath)
+		fmt.Printf("Verifying harness in %s: %s\n", SessionName(num), resolved)
+		cmd := exec.Command("sh", "-c", resolved)
+		cmd.Dir = worktreePath
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("harness failed in %s:\n%s%w", SessionName(num), out, err)
+		}
+	}
+
 	return nil
 }
 
