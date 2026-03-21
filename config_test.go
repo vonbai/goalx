@@ -113,7 +113,7 @@ func TestResolveEngineCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cmd != "claude --model claude-opus-4-6 --permission-mode auto" {
+	if cmd != "claude --model claude-opus-4-6 --permission-mode bypassPermissions" {
 		t.Errorf("cmd = %q", cmd)
 	}
 }
