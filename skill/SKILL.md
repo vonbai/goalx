@@ -1,207 +1,99 @@
 ---
 name: goalx
-description: Use when the user wants to run autonomous research, start parallel AI agents for code analysis, launch develop sessions, check agent progress, or manage the research→debate→develop lifecycle. Also use when the user mentions goalx, research runs, subagents, master/session agents, or wants to investigate/analyze/audit code autonomously. Even if they just say "research this" or "investigate that" or "look into X in the background", this skill likely applies.
+description: Use when the user wants to run autonomous research or develop sessions, monitor GoalX progress, add subagents, or manage the research -> debate -> implement pipeline.
 allowed-tools: Bash, Read, Glob, Grep, Write, Edit
 user-invocable: true
 ---
 
-# GoalX — Intelligent Research Orchestrator
+# GoalX
 
-GoalX launches parallel AI agents to research, debate, and implement — supervised by a master agent that drives the objective to completion. Your job as the skill user is to translate what the user wants into the right goalx configuration and commands.
-
-## Core Rules
-
-1. **Git is invisible.** Handle dirty worktree silently before start/keep.
-2. **State-aware.** Run `goalx next` before every action.
-3. **Respect the chain: User → Master → Subagent.** Redirect instructions via `/goalx tell`, not directly to sessions.
-4. **Configure intelligently.** Don't just pass through user words — pick the right mode, strategy, parallel count, and context based on what they actually need.
-5. **Analyze, don't dump.** Interpret observe output; tell the user what's happening, not raw tmux captures.
-
-## Scenario Guide — What to Do When
-
-### "Research this" / "Investigate X" / "Look into Y"
+GoalX is an orchestration CLI for unattended research and develop runs. Prefer the simplest path that matches the user's intent.
+## Operating Rules
+1. Run `goalx next` before acting on an existing workspace.
+2. Keep Git hygiene invisible. Explain the effect of a dirty tree, then handle it before `start` or `keep`.
+3. Route direction changes through the master. Do not type ad-hoc instructions into subagent panes unless the user explicitly asks.
+4. Interpret `goalx observe` output. Report what matters instead of dumping raw tmux noise.
+## Quick Start
+### Default path: autonomous research
 ```bash
-goalx init "objective" --research --parallel 2
+goalx auto "objective"
 ```
-- Pure investigation, no code changes
-- Pick dimensions based on objective:
-  - Code audit → `depth,adversarial`
-  - Market/tech research → `comparative,creative`
-  - Architecture review → `depth,evidence`
-  - Explore alternatives → `creative,feasibility`
-
-### "Fix this" / "Implement X" / "Refactor Y"
+- `goalx auto` defaults to research mode when no mode flag is provided.
+- Add `--context /abs/path/a,/abs/path/b` when local files or repos matter.
+- Add `--parallel` or `--strategy` only when the user clearly wants control.
+### Explicit control
 ```bash
-goalx init "objective" --develop --parallel 2
+goalx init "objective" --research
+goalx start
 ```
-- Code changes expected. Set `target.files` and `harness.command` in `.goalx/goalx.yaml`
-
-### "Compare this project with X" / "Reference another codebase"
-```bash
-goalx init "objective" --research --context /path/to/other-project
-```
-- `--context` accepts directories (auto-discovers key files) and file paths
-- After init, edit `.goalx/goalx.yaml` to add URLs or notes:
-  ```yaml
-  context:
-    files:
-      - /path/to/other-project/
-    refs:
-      - https://github.com/xxx/yyy
-      - "This project uses event-sourcing, compare with CQRS approach"
-  ```
-
-### "Just research, don't write code"
-- Use `--research` mode. Master will `recommendation: done` when findings are complete
-- No implement phase needed
-
-### "Run it fully automatic"
-```bash
-goalx auto "objective" --research --parallel 2
-```
-- Runs research → debate (if needed) → implement → keep automatically
-- Master decides each transition
-
-### "I want to redirect the research / change direction"
-```bash
-/goalx tell "focus on security aspects instead of performance"
-```
-- Sends to master, who redistributes to subagents
-- For urgent direct control: `/goalx tell session-1 "stop current direction, investigate X"`
-
-### "Add another research angle mid-run"
-```bash
-goalx add "investigate from security perspective" --run <NAME>
-# With specific engine/model:
-goalx add --engine codex --model gpt-5.4 "audit the implementation" --run <NAME>
-```
-
-## Configuration Guide
-
-After `goalx init`, the config is at `.goalx/goalx.yaml`. You should edit it when the defaults don't match the user's needs.
-
-### Key fields to configure:
-
+- Use `init` + `start` when the user wants to inspect or edit `.goalx/goalx.yaml` first.
+- Use `--develop` when code changes are the primary goal.
+### Develop mode checklist
+Before `goalx start` or `goalx auto ... --develop`, make sure `.goalx/goalx.yaml` scopes writable files and defines a real gate:
 ```yaml
-# Objective — what master evaluates against
-objective: "clear, specific objective"
-description: "optional supplementary context for subagents"
-
-# Mode
-mode: research    # or develop
-
-# Engine + Model
-preset: claude    # claude (default), claude-h (all opus), codex (all gpt-5.4), mixed (codex master + claude sub)
-engine: claude-code  # or codex
-model: sonnet     # or opus
-
-# Strategies (research mode)
-# Auto-assigned if omitted. Override when you know the right approach:
-diversity_hints:
-  - "Depth-first: pick most impactful area, go deep"
-  - "Adversarial: find bugs, flaws, challenge assumptions"
-
-# Context — any reference material (files, URLs, notes)
-context:
-  files:
-    - /path/to/local/file.md
-    - /path/to/other-project/
-  refs:
-    - https://github.com/xxx/relevant-project
-    - "Background: the system processes 10k events/sec"
-
-# Target (develop mode)
 target:
-  files: [cli/, config.go]     # what subagents can modify
-  readonly: [docs/, go.mod]    # read but don't modify
-
-# Gate (develop mode)
+  files: [cli/, config.go]
 harness:
-  command: "go build ./... && go test ./... -count=1"
+  command: "go build ./... && go test ./... -count=1 && go vet ./..."
+```
+## Scenario Guide
+- Research, investigate, audit: `goalx auto "objective"` or `goalx init "objective" --research`
+- Fix, implement, refactor: `goalx init "objective" --develop`, review config, then `goalx start`
+- Full unattended loop: `goalx auto "objective" --develop` or `goalx auto "objective"`
+- Compare against another repo, doc set, or local artifact: add `--context /abs/path1,/abs/path2`
+- Add another angle mid-run: `goalx add "direction" --run NAME`
+- Need a different engine for the new session: `goalx add --engine codex --model fast "direction" --run NAME`
+- Check progress: `goalx observe [NAME]`, `goalx status [NAME]`, `goalx attach [NAME] [window]`
+## Flags and Config
+`init`, `start "objective"`, and `auto` accept `--research`, `--develop`, `--parallel N`, `--name NAME`, `--context path1,path2`, `--strategy a,b`, `--preset claude|claude-h|codex|mixed`, `--master engine/model`, `--auditor engine/model`, and repeatable `--sub engine/model[:count]`.
+`add` accepts `--run NAME`, `--engine ENGINE`, and `--model MODEL`.
+Built-in presets: `claude`, `claude-h`, `codex`, `mixed`.
+Built-in strategy names: `depth`, `breadth`, `creative`, `feasibility`, `adversarial`, `evidence`, `comparative`, `user`.
 
-# Parallel sessions
-parallel: 2       # 1-4 subagents
-
-# Heartbeat
+Common config fields:
+```yaml
+objective: "clear goal"
+description: "optional extra context"
+mode: research
+preset: claude
+parallel: 2
+diversity_hints:
+  - "custom session hint"
+context:
+  files: [/abs/path]
+  refs: ["https://example.com/spec"]
+target:
+  files: [cli/]
+  readonly: [docs/]
+harness:
+  command: "go test ./..."
+budget:
+  max_duration: 2h
+  max_rounds: 6
 master:
-  check_interval: 2m0s   # how often master checks progress
+  engine: claude-code
+  model: opus
+  check_interval: 2m
+sessions:
+  - hint: "depth pass"
 ```
-
-### When to edit config vs use CLI flags:
-- **CLI flags**: quick settings (`--parallel`, `--strategy`, `--master`, `--auditor`, `--sub`)
-- **Edit yaml**: multi-line objective, context refs/URLs, custom diversity hints, harness, target files, per-session hints
-
-### Session Orchestration
-
-Use `--sub engine/model:N` to explicitly compose agents:
-
-```bash
-# 2 opus exploring + 1 codex auditing
-goalx init "obj" --research --sub claude-code/opus:2 --auditor codex/gpt-5.4
-
-# 3 codex dev + 1 opus reviewing
-goalx init "obj" --develop --master codex/gpt-5.4 --sub codex/gpt-5.4:3 --auditor claude-code/opus
-
-# mixed team
-goalx init "obj" --research --sub claude-code/opus:1 --sub codex/gpt-5.4:1
-```
-
-`--sub` overrides `--parallel`. Count defaults to 1 if omitted. Combine with `--auditor` for N workers + 1 reviewer.
-
-For per-session hints, edit `sessions:` in `.goalx/goalx.yaml` after init.
-
-Quick patterns with presets:
-- "all opus" → `--preset claude-h --parallel 3`
-- "all codex" → `--preset codex --parallel 2`
-- "codex master + claude sub" → `--preset mixed --parallel 2`
-
-Presets: `claude` (default), `claude-h` (all opus), `codex` (all gpt-5.4), `mixed` (codex master + claude sub)
-
-## Commands Reference
-
-| Command | Use when |
-|---------|----------|
-| `goalx init "obj" [flags]` | Start new research/develop |
-| `goalx start` | Launch after config is ready |
-| `goalx auto "obj" [flags]` | Full auto pipeline |
-| `goalx observe [NAME]` | Check what agents are doing |
-| `goalx status [NAME]` | Journal-based progress |
-| `goalx tell "msg"` | Redirect master (default) or session |
-| `goalx add "direction"` | Add subagent mid-run |
-| `goalx save [NAME]` | Save artifacts to .goalx/runs/ |
-| `goalx debate` | Generate debate config from prior research |
-| `goalx implement` | Generate develop config from consensus |
-| `goalx keep [NAME] [session]` | Merge session branch to main |
-| `goalx review [NAME]` | Compare session outputs |
-| `goalx next` | What should I do next? |
-| `goalx stop [NAME]` | Graceful shutdown |
-| `goalx drop [NAME]` | Cleanup worktrees + branches |
-| `goalx list` | List all runs |
-| `goalx diff [NAME] <a> [b]` | Compare sessions |
-| `goalx attach [window]` | Print tmux attach commands |
-
-## Observe — How to React
-
-After `goalx observe`, analyze and decide:
-
-| What you see | What to do |
-|-------------|------------|
-| All agents working normally | Report progress, wait |
-| Agent stuck/idle for 2+ heartbeats | `/goalx tell "session-N seems stuck, check on it"` |
-| Wrong direction | `/goalx tell "redirect: focus on X instead of Y"` |
-| Need more angles | `goalx add "new research direction"` |
-| Research quality too shallow | `/goalx tell "push deeper on finding X, need evidence"` |
-| phase=complete | `goalx save` → suggest next step |
-
-## Pipeline
-
-```
-init → start → [observe...] → save
-                                 ↓
-debate → start → [observe...] → save    (if disagreements)
-                                 ↓
-implement → start → [observe...] → keep  (if code changes needed)
-```
-
-`goalx auto` runs this entire loop. Master decides transitions.
-Pure research ends at `save` with `recommendation: done`.
+`preset` is usually enough. Reach for top-level `engine`, `model`, `master`, `auditor`, or `sub` only when the user asks for explicit composition.
+## Command Reference
+- `goalx init "obj" [flags]`, `goalx start`, `goalx start "obj" [flags]`, `goalx auto "obj" [flags]`: create and launch runs
+- `goalx observe [NAME]`, `goalx status [NAME] [session-N]`, `goalx attach [NAME] [window]`: inspect live progress
+- `goalx add "direction" [--run NAME]`, `goalx review [NAME]`, `goalx diff [NAME] <a> [b]`: expand or compare session work
+- `goalx save [NAME]`, `goalx debate`, `goalx implement`, `goalx next`: move the pipeline forward
+- `goalx keep [NAME] <session>`, `goalx stop [NAME]`, `goalx drop [NAME]`: merge, stop, or clean up a run
+- `goalx list`, `goalx archive`, `goalx report`, `goalx serve`: supporting management commands
+## Observe and React
+- Healthy run: summarize progress and wait.
+- Stuck or shallow run: check `goalx status`, then redirect the master with a concise instruction or add a new angle.
+- Wrong direction: steer the master; avoid direct subagent interruption unless necessary.
+- `phase":"complete"` in status: run `goalx next`, then usually `save`, `debate`, `implement`, or `keep`.
+- Multiple active runs: use `goalx observe NAME` or `goalx attach NAME master`.
+## Useful Defaults
+- Preset `claude`: master `claude-code/opus`, research `claude-code/sonnet`, develop `codex/codex`
+- Preset `claude-h`: all `claude-code/opus`
+- Preset `codex`: all `codex/codex`
+- Preset `mixed`: master `codex/codex`, research `claude-code/opus`, develop `codex/codex`
+- Default strategies by parallel: `1 -> depth`, `2 -> depth, adversarial`, `3 -> depth, adversarial, evidence`, `4+ -> depth, adversarial, evidence, comparative`
