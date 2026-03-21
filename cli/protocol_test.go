@@ -181,12 +181,11 @@ func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testin
 	}
 	text := string(out)
 	for _, want := range []string{
-		"## Startup",
-		"Write an acceptance checklist",
+		"## Your Job",
+		"acceptance criteria",
 		"/tmp/acceptance.md",
 		"goalx add --run demo",
-		"Do NOT wait for external heartbeat prompts.",
-		"## Guidance Writing Principles",
+		"strategist and referee",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
@@ -230,11 +229,12 @@ func TestRenderMasterProtocolIncludesResearchPreflightDimensionSelection(t *test
 	}
 	text := string(out)
 	for _, want := range []string{
-		"Assess the objective's scope (quick fix vs deep research)",
-		"Review the configured session plan and decide which sessions to launch immediately versus later.",
-		"Launch each chosen session yourself with `goalx add --run demo ...`.",
-		"Write a distinct dimension assignment to each launched session's guidance file.",
-		"Write an acceptance checklist (3-7 testable bullets)",
+		"## Session Plan",
+		"session-1",
+		"codex/codex",
+		"depth",
+		"adversarial",
+		"goalx add --run demo",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
@@ -280,18 +280,12 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 		"## Current Configuration",
 		"- Run: demo",
 		"- Preset: claude",
-		"- session-1: codex/codex (P0 fixes)",
-		"Write summary to `/tmp/summary.md`",
-		"Update `/tmp/status.json`. Include `next_config` for every non-`done` recommendation:",
-		"Supported `next_config` keys: `parallel`, `engine`, `model`, `preset`, `diversity_hints`, `strategies`, `budget_seconds`, `objective`, `harness`, `mode`, `max_iterations`, `context`, `master_engine`, `master_model`, `sessions`.",
-		`{"phase":"complete","recommendation":"implement","heartbeat":5,"acceptance_met":true,"next_config":{"objective":"implement the agreed P0/P1 fixes","mode":"develop","parallel":3,"diversity_hints":["P0 fixes","P1 fixes","verification"],"engine":"codex","model":"codex","budget_seconds":7200}}`,
-		`{"phase":"complete","recommendation":"debate","heartbeat":5,"acceptance_met":false,"next_config":{"objective":"debate the remaining disagreements","parallel":2,"diversity_hints":["advocate position","critic position"]}}`,
-		`{"phase":"complete","recommendation":"more-research","heartbeat":5,"acceptance_met":false,"next_objective":"investigate the unresolved auth edge cases","next_config":{"parallel":2,"strategies":["depth","adversarial"],"budget_seconds":3600,"max_iterations":3,"context":["/path/to/prior-findings.md"]}}`,
-		`{"phase":"complete","recommendation":"done","heartbeat":3,"acceptance_met":true,"keep_session":"session-1","next_objective":""}`,
-		"| `implement` | Acceptance criteria are met for this phase and the next step is code changes. | true |",
-		"Functional verification: for each acceptance checklist item, record concrete PASS/FAIL evidence beyond the gate.",
-		"Set `keep_session` when a develop-mode session should be merged after the run.",
-		"Default action for the first 3+ check cycles is **push deeper**.",
+		"session-1: codex/codex (P0 fixes)",
+		"## Completion Contract",
+		"Supported `next_config` keys:",
+		"Set `keep_session` when a develop-mode session should be merged.",
+		"| `done` | Objective fully achieved | `true` |",
+		"| `implement` | Research phase complete, code changes next | `true` |",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)

@@ -239,11 +239,8 @@ esac
 		t.Fatalf("read fake tmux log: %v", err)
 	}
 	logText := string(logData)
-	if strings.Contains(logText, "new-window") {
-		t.Fatalf("start should not create extra tmux windows:\n%s", logText)
-	}
-	if strings.Contains(logText, "heartbeat") {
-		t.Fatalf("start should not launch heartbeat:\n%s", logText)
+	if !strings.Contains(logText, "new-window") || !strings.Contains(logText, "heartbeat") {
+		t.Fatalf("start should create heartbeat window:\n%s", logText)
 	}
 	if !strings.Contains(logText, "new-session -d -s "+goalx.TmuxSessionName(repo, cfg.Name)+" -n master") {
 		t.Fatalf("start log missing master session creation:\n%s", logText)

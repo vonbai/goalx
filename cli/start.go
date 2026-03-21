@@ -185,6 +185,19 @@ func Start(projectRoot string, args []string) (err error) {
 		return fmt.Errorf("launch master: %w", err)
 	}
 
+	// Launch heartbeat window (pure timer — wakes master periodically)
+	checkSec, warning := normalizeHeartbeatInterval(cfg.Master.CheckInterval)
+	if warning != "" {
+		fmt.Fprint(os.Stderr, warning)
+	}
+	hbCmd := HeartbeatCommand(tmuxSess, checkSec)
+	if err := NewWindow(tmuxSess, "heartbeat", "/tmp"); err != nil {
+		return fmt.Errorf("tmux heartbeat window: %w", err)
+	}
+	if err := SendKeys(tmuxSess+":heartbeat", hbCmd); err != nil {
+		return fmt.Errorf("launch heartbeat: %w", err)
+	}
+
 	// 14. Print status
 	fmt.Printf("✓ Run '%s' started\n", cfg.Name)
 	fmt.Printf("  tmux session: %s\n", tmuxSess)
