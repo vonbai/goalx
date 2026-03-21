@@ -16,8 +16,9 @@ import (
 )
 
 const maxAutoIterations = 5
-const maxHeartbeatStallPolls = 5
 const maxNextConfigParallel = 10
+const minHeartbeatStallPolls = 10
+const defaultHeartbeatCheckInterval = 2 * time.Minute
 
 var (
 	autoInit              = Init
@@ -27,7 +28,12 @@ var (
 	autoDrop              = Drop
 	autoDebate            = Debate
 	autoImplement         = Implement
-	autoPollUntilComplete = pollUntilComplete
+	autoResolveRun        = ResolveRun
+	autoKillSession       = KillSession
+	autoPollUntilComplete = func(statusPath string, interval, timeout time.Duration) (*statusJSON, error) {
+		return pollUntilCompleteWithHeartbeat(statusPath, interval, timeout, autoPollHeartbeatInterval)
+	}
+	autoPollHeartbeatInterval = defaultHeartbeatCheckInterval
 	autoVerifyHarness     = verifyHarness
 	autoHTTPClient        = &http.Client{Timeout: 10 * time.Second}
 )
@@ -80,6 +86,9 @@ func Auto(projectRoot string, args []string) (err error) {
 	var finalStatus *statusJSON
 	var lastPhaseStartedAt time.Time
 	notified := false
+	activeTmuxSession := ""
+	prevHeartbeatInterval := autoPollHeartbeatInterval
+	autoPollHeartbeatInterval = defaultHeartbeatCheckInterval
 
 	notifyCompletion := func() {
 		if notified || err != nil || finalStatus == nil {
@@ -92,6 +101,12 @@ func Auto(projectRoot string, args []string) (err error) {
 	}
 
 	defer func() {
+		autoPollHeartbeatInterval = prevHeartbeatInterval
+		if err != nil && activeTmuxSession != "" {
+			if killErr := autoKillSession(activeTmuxSession); killErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: cleanup tmux session %s: %v\n", activeTmuxSession, killErr)
+			}
+		}
 		notifyCompletion()
 	}()
 
@@ -108,10 +123,23 @@ func Auto(projectRoot string, args []string) (err error) {
 		if err := autoStart(projectRoot, nil); err != nil {
 			return fmt.Errorf("start (iter %d): %w", i, err)
 		}
+		activeTmuxSession = ""
+		autoPollHeartbeatInterval = defaultHeartbeatCheckInterval
+		pollTimeout := 4 * time.Hour
+		if rc, resolveErr := autoResolveRun(projectRoot, ""); resolveErr == nil && rc != nil {
+			activeTmuxSession = rc.TmuxSession
+			autoPollHeartbeatInterval = rc.Config.Master.CheckInterval
+			if autoPollHeartbeatInterval <= 0 {
+				autoPollHeartbeatInterval = defaultHeartbeatCheckInterval
+			}
+			if rc.Config.Budget.MaxDuration > 0 {
+				pollTimeout = rc.Config.Budget.MaxDuration
+			}
+		}
 
 		// Poll until complete
 		fmt.Println("Waiting for run to complete...")
-		status, err := autoPollUntilComplete(statusPath, 30*time.Second, 4*time.Hour)
+		status, err := autoPollUntilComplete(statusPath, 30*time.Second, pollTimeout)
 		if err != nil {
 			return fmt.Errorf("poll (iter %d): %w", i, err)
 		}
@@ -142,6 +170,7 @@ func Auto(projectRoot string, args []string) (err error) {
 			if err := autoDrop(projectRoot, nil); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: drop failed: %v\n", err)
 			}
+			activeTmuxSession = ""
 			fmt.Println("Objective achieved. Results saved.")
 			printAutoResults(projectRoot, status, lastPhaseStartedAt)
 			notifyCompletion()
@@ -151,6 +180,7 @@ func Auto(projectRoot string, args []string) (err error) {
 		if err := autoDrop(projectRoot, nil); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: drop failed: %v\n", err)
 		}
+		activeTmuxSession = ""
 
 		// Route to next iteration
 		switch rec {
@@ -514,9 +544,15 @@ func hasMode(args []string) bool {
 
 // pollUntilComplete reads status.json every interval until phase=complete or timeout.
 func pollUntilComplete(statusPath string, interval, timeout time.Duration) (*statusJSON, error) {
+	return pollUntilCompleteWithHeartbeat(statusPath, interval, timeout, defaultHeartbeatCheckInterval)
+}
+
+func pollUntilCompleteWithHeartbeat(statusPath string, interval, timeout, checkInterval time.Duration) (*statusJSON, error) {
 	deadline := time.Now().Add(timeout)
 	lastHB := -1
 	stalledPolls := 0
+	heartbeatChanges := 0
+	stallLimit := heartbeatStallPollLimit(checkInterval, interval)
 
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(statusPath)
@@ -526,10 +562,11 @@ func pollUntilComplete(statusPath string, interval, timeout time.Duration) (*sta
 				if s.Heartbeat != lastHB {
 					fmt.Printf("  heartbeat %d -- phase: %s\n", s.Heartbeat, s.Phase)
 					lastHB = s.Heartbeat
+					heartbeatChanges++
 					stalledPolls = 0
-				} else {
+				} else if heartbeatChanges >= 2 {
 					stalledPolls++
-					if s.Phase != "complete" && stalledPolls >= maxHeartbeatStallPolls {
+					if s.Phase != "complete" && stalledPolls >= stallLimit {
 						return nil, fmt.Errorf("heartbeat stalled at %d while phase=%s", s.Heartbeat, s.Phase)
 					}
 				}
@@ -543,4 +580,17 @@ func pollUntilComplete(statusPath string, interval, timeout time.Duration) (*sta
 	return nil, fmt.Errorf("timeout after %v waiting for completion", timeout)
 }
 
-// duplicate removed — kept first declaration above
+func heartbeatStallPollLimit(checkInterval, pollInterval time.Duration) int {
+	if checkInterval <= 0 {
+		checkInterval = defaultHeartbeatCheckInterval
+	}
+	if pollInterval <= 0 {
+		return minHeartbeatStallPolls
+	}
+
+	limit := int((checkInterval*4 + pollInterval - 1) / pollInterval)
+	if limit < minHeartbeatStallPolls {
+		return minHeartbeatStallPolls
+	}
+	return limit
+}
