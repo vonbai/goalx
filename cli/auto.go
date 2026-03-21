@@ -52,7 +52,10 @@ type autoCompletionPayload struct {
 // Each iteration: init+start → poll → save → read recommendation → route.
 func Auto(projectRoot string, args []string) (err error) {
 	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
-	initArgs := args // first iteration uses the user's original args
+	initArgs := append([]string(nil), args...) // first iteration uses the user's original args
+	if len(initArgs) > 0 && !hasMode(initArgs) {
+		initArgs = append(initArgs[:1:1], append([]string{"--research"}, initArgs[1:]...)...)
+	}
 	needsInit := true
 	var finalStatus *statusJSON
 
@@ -199,6 +202,15 @@ func notifyAutoCompletion(projectRoot string, status *statusJSON) error {
 		return fmt.Errorf("status %s", resp.Status)
 	}
 	return fmt.Errorf("status %s: %s", resp.Status, string(msg))
+}
+
+func hasMode(args []string) bool {
+	for _, arg := range args {
+		if arg == "--research" || arg == "--develop" {
+			return true
+		}
+	}
+	return false
 }
 
 // pollUntilComplete reads status.json every interval until phase=complete or timeout.
