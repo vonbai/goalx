@@ -21,23 +21,24 @@ const (
 
 // Config is the merged configuration for a single run.
 type Config struct {
-	Name           string           `yaml:"name"`
-	Mode           Mode             `yaml:"mode"`
-	Objective      string           `yaml:"objective"`
-	Description    string           `yaml:"description,omitempty"`
-	Preset         string           `yaml:"preset,omitempty"`
-	Engine         string           `yaml:"engine,omitempty"`
-	Model          string           `yaml:"model,omitempty"`
-	Parallel       int              `yaml:"parallel,omitempty"`
-	DiversityHints []string         `yaml:"diversity_hints,omitempty"`
-	Sessions       []SessionConfig  `yaml:"sessions,omitempty"`
-	Target         TargetConfig     `yaml:"target"`
-	Harness        HarnessConfig    `yaml:"harness,omitempty"`
-	Acceptance     AcceptanceConfig `yaml:"acceptance,omitempty"`
-	Context        ContextConfig    `yaml:"context,omitempty"`
-	Budget         BudgetConfig     `yaml:"budget,omitempty"`
-	Master         MasterConfig     `yaml:"master,omitempty"`
-	Serve          ServeConfig      `yaml:"serve,omitempty"`
+	Name           string            `yaml:"name"`
+	Mode           Mode              `yaml:"mode"`
+	Objective      string            `yaml:"objective"`
+	Description    string            `yaml:"description,omitempty"`
+	Preset         string            `yaml:"preset,omitempty"`
+	Preferences    PreferencesConfig `yaml:"preferences,omitempty"`
+	Engine         string            `yaml:"engine,omitempty"`
+	Model          string            `yaml:"model,omitempty"`
+	Parallel       int               `yaml:"parallel,omitempty"`
+	DiversityHints []string          `yaml:"diversity_hints,omitempty"`
+	Sessions       []SessionConfig   `yaml:"sessions,omitempty"`
+	Target         TargetConfig      `yaml:"target"`
+	Harness        HarnessConfig     `yaml:"harness,omitempty"`
+	Acceptance     AcceptanceConfig  `yaml:"acceptance,omitempty"`
+	Context        ContextConfig     `yaml:"context,omitempty"`
+	Budget         BudgetConfig      `yaml:"budget,omitempty"`
+	Master         MasterConfig      `yaml:"master,omitempty"`
+	Serve          ServeConfig       `yaml:"serve,omitempty"`
 }
 
 type TargetConfig struct {
@@ -84,6 +85,17 @@ type SessionConfig struct {
 	Model  string `yaml:"model,omitempty"`
 }
 
+type PreferencesConfig struct {
+	Research PreferencePolicy `yaml:"research,omitempty"`
+	Develop  PreferencePolicy `yaml:"develop,omitempty"`
+	Simple   PreferencePolicy `yaml:"simple,omitempty"`
+}
+
+type PreferencePolicy struct {
+	Engines  []string `yaml:"engines,omitempty"`
+	Strategy string   `yaml:"strategy,omitempty"`
+}
+
 // EngineConfig defines how to launch an AI engine.
 type EngineConfig struct {
 	Description string            `yaml:"description,omitempty"`
@@ -101,11 +113,12 @@ type PresetConfig struct {
 
 // UserConfig is the top-level user config file (~/.goalx/config.yaml).
 type UserConfig struct {
-	Defaults   Config                  `yaml:"defaults,omitempty"`
-	Engines    map[string]EngineConfig `yaml:"engines,omitempty"`
-	Serve      ServeConfig             `yaml:"serve,omitempty"`
-	Presets    map[string]PresetConfig `yaml:"presets,omitempty"`
-	Strategies map[string]string       `yaml:"strategies,omitempty"`
+	Defaults    Config                  `yaml:"defaults,omitempty"`
+	Engines     map[string]EngineConfig `yaml:"engines,omitempty"`
+	Preferences PreferencesConfig       `yaml:"preferences,omitempty"`
+	Serve       ServeConfig             `yaml:"serve,omitempty"`
+	Presets     map[string]PresetConfig `yaml:"presets,omitempty"`
+	Strategies  map[string]string       `yaml:"strategies,omitempty"`
 }
 
 // Presets — named engine/model combinations for different workflows.
@@ -211,6 +224,7 @@ func loadBaseConfigRaw(projectRoot string) (Config, map[string]EngineConfig, err
 		return Config{}, nil, fmt.Errorf("user config: %w", err)
 	}
 	mergeConfig(&cfg, &userCfg.Defaults)
+	mergePreferencesConfig(&cfg.Preferences, &userCfg.Preferences)
 	// Merge serve config from user level
 	if userCfg.Serve.Bind != "" {
 		cfg.Serve = userCfg.Serve
@@ -525,6 +539,7 @@ func mergeConfig(base, overlay *Config) {
 	if overlay.Preset != "" {
 		base.Preset = overlay.Preset
 	}
+	mergePreferencesConfig(&base.Preferences, &overlay.Preferences)
 	if overlay.Engine != "" {
 		base.Engine = overlay.Engine
 	}
@@ -584,6 +599,21 @@ func mergeConfig(base, overlay *Config) {
 	}
 	if overlay.Serve.NotificationURL != "" {
 		base.Serve.NotificationURL = overlay.Serve.NotificationURL
+	}
+}
+
+func mergePreferencesConfig(base, overlay *PreferencesConfig) {
+	mergePreferencePolicy(&base.Research, overlay.Research)
+	mergePreferencePolicy(&base.Develop, overlay.Develop)
+	mergePreferencePolicy(&base.Simple, overlay.Simple)
+}
+
+func mergePreferencePolicy(base *PreferencePolicy, overlay PreferencePolicy) {
+	if len(overlay.Engines) > 0 {
+		base.Engines = overlay.Engines
+	}
+	if overlay.Strategy != "" {
+		base.Strategy = overlay.Strategy
 	}
 }
 

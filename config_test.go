@@ -3,6 +3,7 @@ package goalx
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -355,6 +356,69 @@ serve:
 	}
 }
 
+func TestLoadConfigMergesTopLevelUserPreferences(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	userGoalxDir := filepath.Join(home, ".goalx")
+	if err := os.MkdirAll(userGoalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir user config dir: %v", err)
+	}
+	userCfg := []byte(strings.TrimSpace(`
+preferences:
+  research:
+    engines: [claude-code/opus, codex/gpt-5.4]
+    strategy: multi-perspective
+`) + "\n")
+	if err := os.WriteFile(filepath.Join(userGoalxDir, "config.yaml"), userCfg, 0o644); err != nil {
+		t.Fatalf("write user config: %v", err)
+	}
+
+	projectRoot := t.TempDir()
+	projectGoalxDir := filepath.Join(projectRoot, ".goalx")
+	if err := os.MkdirAll(projectGoalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	projectCfg := []byte(strings.TrimSpace(`
+preferences:
+  develop:
+    engines: [codex/gpt-5.4]
+    strategy: speed
+`) + "\n")
+	if err := os.WriteFile(filepath.Join(projectGoalxDir, "config.yaml"), projectCfg, 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+	runCfg := []byte(strings.TrimSpace(`
+name: demo
+mode: develop
+objective: ship it
+target:
+  files: [README.md]
+harness:
+  command: go test ./...
+`) + "\n")
+	if err := os.WriteFile(filepath.Join(projectGoalxDir, "goalx.yaml"), runCfg, 0o644); err != nil {
+		t.Fatalf("write run config: %v", err)
+	}
+
+	cfg, _, err := LoadConfig(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !reflect.DeepEqual(cfg.Preferences.Research.Engines, []string{"claude-code/opus", "codex/gpt-5.4"}) {
+		t.Fatalf("research engines = %#v, want user preferences", cfg.Preferences.Research.Engines)
+	}
+	if cfg.Preferences.Research.Strategy != "multi-perspective" {
+		t.Fatalf("research strategy = %q, want multi-perspective", cfg.Preferences.Research.Strategy)
+	}
+	if !reflect.DeepEqual(cfg.Preferences.Develop.Engines, []string{"codex/gpt-5.4"}) {
+		t.Fatalf("develop engines = %#v, want project preferences", cfg.Preferences.Develop.Engines)
+	}
+	if cfg.Preferences.Develop.Strategy != "speed" {
+		t.Fatalf("develop strategy = %q, want speed", cfg.Preferences.Develop.Strategy)
+	}
+}
+
 func TestLoadConfigFiltersContextFilesToExternalRefs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -543,6 +607,36 @@ func TestMergeConfigServeFieldLevel(t *testing.T) {
 	}
 	if len(base.Serve.Workspaces) != 1 || base.Serve.Workspaces["quantos"] != "/srv/quantos" {
 		t.Fatalf("Serve.Workspaces = %#v, want overlay workspaces", base.Serve.Workspaces)
+	}
+}
+
+func TestMergeConfigPreferencesFieldLevel(t *testing.T) {
+	base := Config{
+		Preferences: PreferencesConfig{
+			Research: PreferencePolicy{Strategy: "multi-perspective"},
+			Simple:   PreferencePolicy{Engines: []string{"claude-code/haiku"}},
+		},
+	}
+	overlay := Config{
+		Preferences: PreferencesConfig{
+			Research: PreferencePolicy{Engines: []string{"claude-code/opus", "codex/gpt-5.4"}},
+			Develop:  PreferencePolicy{Strategy: "speed"},
+		},
+	}
+
+	mergeConfig(&base, &overlay)
+
+	if !reflect.DeepEqual(base.Preferences.Research.Engines, []string{"claude-code/opus", "codex/gpt-5.4"}) {
+		t.Fatalf("Research.Engines = %#v, want overlay engines", base.Preferences.Research.Engines)
+	}
+	if base.Preferences.Research.Strategy != "multi-perspective" {
+		t.Fatalf("Research.Strategy = %q, want preserved base strategy", base.Preferences.Research.Strategy)
+	}
+	if base.Preferences.Develop.Strategy != "speed" {
+		t.Fatalf("Develop.Strategy = %q, want overlay strategy", base.Preferences.Develop.Strategy)
+	}
+	if !reflect.DeepEqual(base.Preferences.Simple.Engines, []string{"claude-code/haiku"}) {
+		t.Fatalf("Simple.Engines = %#v, want preserved base engines", base.Preferences.Simple.Engines)
 	}
 }
 
