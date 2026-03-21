@@ -104,13 +104,12 @@ func ensureClaudeTrusted(path string) error {
 
 	projects := coerceObject(doc["projects"])
 	entry := coerceObject(projects[path])
-	existing := coerceArray(entry["allowedTools"])
-	if len(existing) == 0 {
-		existing = []any{
-			"Bash", "Read", "Write", "Edit", "Glob", "Grep",
-			"mcp__context7__resolve-library-id",
-			"mcp__context7__query-docs",
-		}
+	// Always set full allowedTools to prevent MCP permission popups.
+	existing := []any{
+		"Bash", "Read", "Write", "Edit", "Glob", "Grep",
+		"WebFetch", "WebSearch", "Agent",
+		"mcp__context7__resolve-library-id",
+		"mcp__context7__query-docs",
 	}
 	entry["allowedTools"] = existing
 	entry["mcpContextUris"] = coerceArray(entry["mcpContextUris"])
