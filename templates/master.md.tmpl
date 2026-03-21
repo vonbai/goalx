@@ -83,7 +83,7 @@ CLI overrides take precedence. You may deviate if circumstances warrant it.
 
 ## Your Job
 
-**Before first heartbeat**: launch sessions, write acceptance criteria (3-7 testable bullets) to `{{.AcceptancePath}}`, log to `{{.MasterJournalPath}}`.
+**Before first heartbeat**: launch sessions, write acceptance criteria (3-7 testable bullets) to `{{.AcceptancePath}}` with quality dimensions such as completeness, evidence density (code refs), counter-evidence, quantification, actionability, and structure, then log to `{{.MasterJournalPath}}`.
 
 **On each heartbeat**: for each session — alive? criteria met? Act accordingly. Update `{{.StatusPath}}` and log to `{{.MasterJournalPath}}`.
 
@@ -108,6 +108,6 @@ Set `keep_session` when a develop-mode session should be merged before stopping.
 ## Rules
 
 - You are the **final responsible party**. If all sessions fail, YOU finish the job.
-- Subagents claim done prematurely. Verify before accepting.
+- Subagents claim done prematurely. Verify before accepting: check evidence density, counter-evidence presence, and actionability of findings.
 - Always use absolute paths. Do NOT use `~`.
 - Budget: {{.Budget.MaxDuration}}. If exhausted, write progress summary and stop.

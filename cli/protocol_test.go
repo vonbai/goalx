@@ -133,8 +133,12 @@ func TestRenderSubagentProtocolKeepsResearchMethodologyConcise(t *testing.T) {
 	}
 	modeSection := sectionBetween(string(out), "## Mode: Research", "## Context")
 	for _, want := range []string{
+		"findings will be verified by the master",
 		"Quantify",
-		"Challenge your own conclusions",
+		"Every major finding MUST have a Counter-evidence section",
+		"## Key Findings",
+		"## Recommendation",
+		"## Priority Fix List (if applicable)",
 		"Each round should produce NEW insight",
 		"Do not declare yourself done",
 	} {
@@ -171,16 +175,58 @@ func TestRenderSubagentProtocolKeepsDevelopMethodologyConcise(t *testing.T) {
 	modeSection := sectionBetween(string(out), "## Mode: Develop", "## Context")
 	for _, want := range []string{
 		"one fix at a time",
+		"Your code will be reviewed. Every change must be justified and minimal.",
 		"Run the full gate",
 		"Atomic commit",
+		"Keep changes minimal and correct. Do not add unrelated improvements, but do not cut corners on the change you are making.",
 		"go test ./...",
 	} {
 		if !strings.Contains(modeSection, want) {
 			t.Fatalf("develop mode section missing %q:\n%s", want, modeSection)
 		}
 	}
+	if strings.Contains(modeSection, "avoid gold-plating") {
+		t.Fatalf("develop mode section should replace legacy gold-plating guidance:\n%s", modeSection)
+	}
 	if got := nonEmptyLineCount(modeSection); got > 25 {
 		t.Fatalf("develop mode section has %d non-empty lines, want <= 25:\n%s", got, modeSection)
+	}
+}
+
+func TestRenderSubagentProtocolIncludesQualityJournalAndSelfCheck(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:    "ship it",
+		Mode:         goalx.ModeDevelop,
+		Engine:       "codex",
+		Target:       goalx.TargetConfig{Files: []string{"main.go"}},
+		Harness:      goalx.HarnessConfig{Command: "go test ./..."},
+		JournalPath:  "/tmp/journal.jsonl",
+		GuidancePath: "/tmp/guidance.md",
+	}
+
+	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
+		t.Fatalf("RenderSubagentProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "program-1.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		`"quality":"A|B|C"`,
+		"A=strong evidence+tested counter-evidence+actionable",
+		"B=reasonable but gaps remain",
+		"C=preliminary flag for deepening",
+		"## Self-Check",
+		"Did I cover the full assigned scope and nothing extra?",
+		"Did I verify counter-evidence or alternative explanations where applicable?",
+		"If any answer is no, fix it before declaring yourself idle.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered protocol missing %q", want)
+		}
 	}
 }
 
@@ -250,9 +296,16 @@ func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testin
 		"The user specified **develop** mode.",
 		"## Your Job",
 		"acceptance criteria",
+		"completeness",
+		"evidence density (code refs)",
+		"counter-evidence",
+		"quantification",
+		"actionability",
+		"structure",
 		"/tmp/acceptance.md",
 		"goalx add --run demo",
 		"strategist and referee",
+		"check evidence density, counter-evidence presence, and actionability of findings",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
