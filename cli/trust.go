@@ -119,7 +119,7 @@ func ensureClaudeTrusted(path string) error {
 	entry["disabledMcpjsonServers"] = coerceArray(entry["disabledMcpjsonServers"])
 	entry["hasTrustDialogAccepted"] = true
 	entry["projectOnboardingSeenCount"] = 1
-	entry["hasClaudeMdExternalIncludesApproved"] = false
+	entry["hasClaudeMdExternalIncludesApproved"] = true
 	entry["hasClaudeMdExternalIncludesWarningShown"] = false
 	entry["hasCompletedProjectOnboarding"] = true
 	projects[path] = entry

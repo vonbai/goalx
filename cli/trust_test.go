@@ -88,6 +88,9 @@ func TestEnsureEngineTrustedClaudeWritesProjectTrust(t *testing.T) {
 	if got := entry["hasCompletedProjectOnboarding"]; got != true {
 		t.Fatalf("hasCompletedProjectOnboarding = %#v, want true", got)
 	}
+	if got := entry["hasClaudeMdExternalIncludesApproved"]; got != true {
+		t.Fatalf("hasClaudeMdExternalIncludesApproved = %#v, want true", got)
+	}
 	if got := entry["projectOnboardingSeenCount"]; got != float64(1) {
 		t.Fatalf("projectOnboardingSeenCount = %#v, want 1", got)
 	}
