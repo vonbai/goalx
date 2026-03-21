@@ -120,6 +120,7 @@ func Start(projectRoot string, args []string) (err error) {
 		Objective:         cfg.Objective,
 		Description:       cfg.Description,
 		Mode:              cfg.Mode,
+		Engines:           engines,
 		Master:            cfg.Master,
 		Harness:           cfg.Harness,
 		Budget:            cfg.Budget,

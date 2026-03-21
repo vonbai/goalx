@@ -323,7 +323,6 @@ func TestRenderMasterProtocolOmitsLegacyPlannedSessionsAndPresetDisplays(t *test
 	text := string(out)
 	for _, unwanted := range []string{
 		"## Session Plan",
-		"## Available Engines",
 		"- Preset: claude",
 		"session-1: codex/codex (P0 fixes)",
 	} {
@@ -339,6 +338,7 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 		Objective:      "ship it",
 		RunName:        "demo",
 		Mode:           goalx.ModeDevelop,
+		Engines:        goalx.BuiltinEngines,
 		Master:         goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		TmuxSession:    "ar-demo",
 		SummaryPath:    "/tmp/summary.md",
@@ -357,6 +357,7 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 	}
 	text := string(out)
 	for _, want := range []string{
+		"## Available Engines",
 		"## Current Configuration",
 		"- Run: demo",
 		"goalx save demo && goalx debate && goalx start",

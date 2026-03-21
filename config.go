@@ -517,7 +517,7 @@ func RunDir(projectRoot, name string) string {
 
 // TmuxSessionName returns the tmux session name for a run.
 func TmuxSessionName(projectRoot, name string) string {
-	return "goalx-" + ProjectID(projectRoot) + "-" + name
+	return "gx-" + name
 }
 
 // Slugify generates a URL-safe slug from a string.

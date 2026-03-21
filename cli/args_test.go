@@ -100,3 +100,9 @@ func TestSessionCountPrefersExplicitSessions(t *testing.T) {
 		t.Fatalf("sessionCount = %d, want 2", got)
 	}
 }
+
+func TestSessionWindowNameOmitsRunNamePrefix(t *testing.T) {
+	if got := sessionWindowName("demo-run", 2); got != "session-2" {
+		t.Fatalf("sessionWindowName = %q, want session-2", got)
+	}
+}

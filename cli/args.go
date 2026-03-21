@@ -146,7 +146,7 @@ func sessionCount(cfg *goalx.Config) int {
 }
 
 func sessionWindowName(runName string, idx int) string {
-	return fmt.Sprintf("%s-%d", runName, idx)
+	return fmt.Sprintf("session-%d", idx)
 }
 
 func resolveWindowName(runName, name string) (string, error) {

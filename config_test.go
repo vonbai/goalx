@@ -46,7 +46,7 @@ func TestRunDir(t *testing.T) {
 
 func TestTmuxSessionName(t *testing.T) {
 	name := TmuxSessionName("/home/user/projects/myapp", "event-sourcing")
-	if name != "goalx-home-user-projects-myapp-event-sourcing" {
+	if name != "gx-event-sourcing" {
 		t.Errorf("TmuxSessionName = %q", name)
 	}
 }
