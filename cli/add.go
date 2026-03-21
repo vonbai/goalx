@@ -12,13 +12,13 @@ import (
 
 // Add creates a new subagent session in a running run.
 func Add(projectRoot string, args []string) error {
-	// Parse: goalx add "hint/direction" [--run NAME] [--engine ENGINE] [--model MODEL]
+	// Parse: goalx add "hint/direction" [--run NAME] [--engine ENGINE] [--model MODEL] [--strategy NAME]
 	runName, rest, err := extractRunFlag(args)
 	if err != nil {
 		return err
 	}
 
-	// Extract --engine and --model flags from rest args
+	// Extract flags from rest args
 	var flagEngine, flagModel string
 	var hintParts []string
 	for i := 0; i < len(rest); i++ {
@@ -35,12 +35,22 @@ func Add(projectRoot string, args []string) error {
 			}
 			i++
 			flagModel = rest[i]
+		case "--strategy":
+			if i+1 >= len(rest) {
+				return fmt.Errorf("missing value for --strategy")
+			}
+			i++
+			hints, err := goalx.ResolveStrategies(strings.Split(rest[i], ","))
+			if err != nil {
+				return err
+			}
+			hintParts = append(hintParts, hints...)
 		default:
 			hintParts = append(hintParts, rest[i])
 		}
 	}
 	if len(hintParts) == 0 {
-		return fmt.Errorf("usage: goalx add \"research direction\" [--run NAME] [--engine ENGINE] [--model MODEL]")
+		return fmt.Errorf("usage: goalx add \"research direction\" [--run NAME] [--engine ENGINE] [--model MODEL] [--strategy NAME]")
 	}
 	hint := strings.Join(hintParts, " ")
 
