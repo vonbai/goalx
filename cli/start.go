@@ -127,6 +127,7 @@ func Start(projectRoot string, args []string) error {
 			WorktreePath:  wtPath,
 			JournalPath:   journalPath,
 			GuidancePath:  guidancePath,
+			Engine:        sEngine,
 			EngineCommand: engineCmd,
 			Prompt:        prompt,
 		})
@@ -204,6 +205,7 @@ func Start(projectRoot string, args []string) error {
 			Objective:    cfg.Objective,
 			Description:  cfg.Description,
 			Mode:         cfg.Mode,
+			Engine:       sd.Engine,
 			Target:       cfg.Target,
 			Harness:      cfg.Harness,
 			Context:      cfg.Context,

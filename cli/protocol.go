@@ -45,6 +45,7 @@ type SessionData struct {
 	WorktreePath  string
 	JournalPath   string
 	GuidancePath  string
+	Engine        string
 	EngineCommand string
 	Prompt        string
 }
