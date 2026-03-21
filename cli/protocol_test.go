@@ -111,6 +111,45 @@ func TestRenderSubagentProtocolIncludesCodexGuidance(t *testing.T) {
 	}
 }
 
+func TestRenderSubagentProtocolIncludesTeamContext(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:      "investigate auth",
+		Mode:           goalx.ModeResearch,
+		Engine:         "codex",
+		Target:         goalx.TargetConfig{Files: []string{"report.md"}},
+		SessionName:    "session-1",
+		JournalPath:    "/tmp/journal.jsonl",
+		GuidancePath:   "/tmp/guidance.md",
+		AcceptancePath: "/tmp/acceptance.md",
+		Sessions: []SessionData{
+			{Name: "session-1", WorktreePath: "/tmp/worktree-1"},
+			{Name: "session-2", WorktreePath: "/tmp/worktree-2"},
+		},
+	}
+
+	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
+		t.Fatalf("RenderSubagentProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "program-1.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"## Team Context",
+		"session-1",
+		"session-2",
+		"of 2 sessions",
+		"acceptance.md",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered protocol missing %q", want)
+		}
+	}
+}
+
 func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{

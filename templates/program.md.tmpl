@@ -20,6 +20,22 @@ Before doing new work, first reconstruct context:
 3. Inspect the current worktree state: `git status --short && git log --oneline -5`
 4. Then continue from the latest recorded state instead of restarting from scratch
 
+{{if .Sessions}}
+## Team Context
+
+You are **{{.SessionName}}** of {{len .Sessions}} sessions working in parallel on the same objective.
+
+### Roster
+{{range $i, $s := .Sessions}}
+- **{{$s.Name}}**: worktree `{{$s.WorktreePath}}`
+{{end}}
+
+{{if .AcceptancePath}}### Acceptance Criteria
+
+Master's acceptance checklist: `{{.AcceptancePath}}` (read-only — master evaluates these)
+{{end}}
+{{end}}
+
 {{if eq .Mode "research"}}
 ## Mode: Research — Hypothesis-Driven Exploration
 
