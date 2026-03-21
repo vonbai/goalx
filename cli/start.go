@@ -172,9 +172,13 @@ func Start(projectRoot string, args []string) error {
 	masterProtocolPath := filepath.Join(runDir, "master.md")
 	masterPrompt := goalx.ResolvePrompt(engines, cfg.Master.Engine, masterProtocolPath)
 	acceptancePath := filepath.Join(runDir, "acceptance.md")
+	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
 
 	if err := EnsureEngineTrusted(cfg.Master.Engine, absProjectRoot); err != nil {
 		return fmt.Errorf("trust bootstrap master: %w", err)
+	}
+	if err := GenerateMasterAdapter(cfg.Master.Engine, absProjectRoot, statusPath); err != nil {
+		return fmt.Errorf("generate master adapter: %w", err)
 	}
 
 	// 11. Render protocols
@@ -193,7 +197,7 @@ func Start(projectRoot string, args []string) error {
 		SummaryPath:       filepath.Join(runDir, "summary.md"),
 		AcceptancePath:    acceptancePath,
 		MasterJournalPath: filepath.Join(runDir, "master.jsonl"),
-		StatusPath:        filepath.Join(projectRoot, ".goalx", "status.json"),
+		StatusPath:        statusPath,
 		EngineCommand:     masterCmd,
 	}
 	if err := RenderMasterProtocol(masterData, runDir); err != nil {

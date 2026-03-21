@@ -62,3 +62,71 @@ func TestGenerateAdapterQuotesGuidancePath(t *testing.T) {
 		t.Fatalf("hook output = %q, want path %q", string(out), guidancePath)
 	}
 }
+
+func TestGenerateMasterAdapterBlocksStopUntilStatusComplete(t *testing.T) {
+	projectRoot := t.TempDir()
+	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
+	if err := os.MkdirAll(filepath.Dir(statusPath), 0o755); err != nil {
+		t.Fatalf("mkdir status dir: %v", err)
+	}
+
+	if err := GenerateMasterAdapter("claude-code", projectRoot, statusPath); err != nil {
+		t.Fatalf("GenerateMasterAdapter first: %v", err)
+	}
+	if err := GenerateMasterAdapter("claude-code", projectRoot, statusPath); err != nil {
+		t.Fatalf("GenerateMasterAdapter second: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(projectRoot, ".claude", "hooks.json"))
+	if err != nil {
+		t.Fatalf("read hooks.json: %v", err)
+	}
+
+	var doc struct {
+		Hooks []struct {
+			Event   string `json:"event"`
+			Command string `json:"command"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("unmarshal hooks.json: %v", err)
+	}
+	if len(doc.Hooks) != 1 {
+		t.Fatalf("len(Hooks) = %d, want 1", len(doc.Hooks))
+	}
+
+	runHook := func() (string, error) {
+		out, err := exec.Command("bash", "-lc", doc.Hooks[0].Command).CombinedOutput()
+		return string(out), err
+	}
+
+	out, err := runHook()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("missing status should block stop, err=%v out=%q", err, out)
+	}
+	if exitErr.ExitCode() != 2 {
+		t.Fatalf("missing status exit code = %d, want 2", exitErr.ExitCode())
+	}
+	if !strings.Contains(out, statusPath) {
+		t.Fatalf("missing status output = %q, want path %q", out, statusPath)
+	}
+
+	if err := os.WriteFile(statusPath, []byte(`{"phase":"running"}`), 0o644); err != nil {
+		t.Fatalf("write running status: %v", err)
+	}
+	out, err = runHook()
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("running status should block stop, err=%v out=%q", err, out)
+	}
+	if exitErr.ExitCode() != 2 {
+		t.Fatalf("running status exit code = %d, want 2", exitErr.ExitCode())
+	}
+
+	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete"}`), 0o644); err != nil {
+		t.Fatalf("write complete status: %v", err)
+	}
+	if out, err = runHook(); err != nil {
+		t.Fatalf("complete status should allow stop, err=%v out=%q", err, out)
+	}
+}
