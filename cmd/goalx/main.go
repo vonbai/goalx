@@ -26,6 +26,7 @@ Usage:
   goalx implement                      Generate develop config from consensus
   goalx drop    [--run NAME]           Cleanup branch + worktree
   goalx report  [--run NAME]           Generate markdown report from journal
+  goalx result  [NAME]                 Show saved summary or merged result details
   goalx add     "direction" [--run NAME] Add new subagent to running run
   goalx observe [NAME]                 Capture live output from all tmux windows
   goalx auto    "objective" [flags]   Full pipeline: research → debate → implement
@@ -81,6 +82,8 @@ func main() {
 		err = cli.Drop(cwd, args)
 	case "report":
 		err = cli.Report(cwd, args)
+	case "result":
+		err = cli.Result(cwd, args)
 	case "debate":
 		err = cli.Debate(cwd, args)
 	case "implement":
