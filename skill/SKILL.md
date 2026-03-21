@@ -9,16 +9,18 @@ user-invocable: true
 
 GoalX is an orchestration CLI for unattended research and develop runs. Prefer the simplest path that matches the user's intent.
 ## Operating Rules
-1. Run `goalx next` before acting on an existing workspace.
-2. Keep Git hygiene invisible. Explain the effect of a dirty tree, then handle it before `start` or `keep`.
-3. Route direction changes through the master. Do not type ad-hoc instructions into subagent panes unless the user explicitly asks.
-4. Interpret `goalx observe` output. Report what matters instead of dumping raw tmux noise.
+1. objective 写简洁目标，不要展开成任务清单。master 会从 context 自行推断细节。
+2. Run `goalx next` before acting on an existing workspace.
+3. Keep Git hygiene invisible. Explain the effect of a dirty tree, then handle it before `start` or `keep`.
+4. Route direction changes through the master. Do not type ad-hoc instructions into subagent panes unless the user explicitly asks.
+5. Interpret `goalx observe` output. Report what matters instead of dumping raw tmux noise.
 ## Quick Start
 ### Default path: autonomous research
 ```bash
 goalx auto "objective"
 ```
 - `goalx auto` defaults to research mode when no mode flag is provided.
+- Keep the objective short. Put supporting detail in `--context`, saved runs, or project files instead of expanding it into a checklist.
 - Add `--context /abs/path/a,/abs/path/b` when external files, saved runs, or other repos matter.
 - Add `--parallel` or `--strategy` only when the user clearly wants control.
 ### Explicit control
@@ -27,18 +29,10 @@ goalx init "objective" --research
 goalx start
 ```
 - Use `init` + `start` when the user wants to inspect or edit `.goalx/goalx.yaml` first.
-- Use `--develop` when code changes are the primary goal.
-### Develop mode checklist
-Before `goalx start` or `goalx auto ... --develop`, make sure `.goalx/goalx.yaml` scopes writable files and defines a real gate:
-```yaml
-target:
-  files: [cli/, config.go]
-harness:
-  command: "go build ./... && go test ./... -count=1 && go vet ./..."
-```
+- Use `--develop` when code changes are the primary goal. GoalX can infer target/harness for common projects, so only edit them when the user wants explicit control.
 ## Scenario Guide
 - Research, investigate, audit: `goalx auto "objective"` or `goalx init "objective" --research`
-- Fix, implement, refactor: `goalx init "objective" --develop`, review config, then `goalx start`
+- Fix, implement, refactor: `goalx auto "objective" --develop` for the shortest path, or `goalx init "objective" --develop` when the user wants to inspect config first
 - Full unattended loop: `goalx auto "objective" --develop` or `goalx auto "objective"`
 - Compare against another repo, doc set, or local artifact: add `--context /abs/path1,/abs/path2`
 - Add another angle mid-run: `goalx add "direction" --run NAME`
@@ -50,34 +44,16 @@ harness:
 Built-in presets: `claude`, `claude-h`, `codex`, `mixed`.
 Built-in strategy names: `depth`, `breadth`, `creative`, `feasibility`, `adversarial`, `evidence`, `comparative`, `user`.
 
-Common config fields:
+Most runs only need `objective`, plus optional `preset`, `context`, and `parallel`. Reach for lower-level fields only when the user explicitly wants to override GoalX defaults.
+
+Minimal config example:
 ```yaml
 objective: "clear goal"
-description: "optional extra context"
-mode: research
 preset: claude
-parallel: 2
-diversity_hints:
-  - "custom session hint"
 context:
   files: [/abs/path/outside/current-worktree]
-  refs: ["https://example.com/spec"]
-target:
-  files: [cli/]
-  readonly: [docs/]
-harness:
-  command: "go test ./..."
-budget:
-  max_duration: 2h
-  max_rounds: 6
-master:
-  engine: claude-code
-  model: opus
-  check_interval: 2m
-sessions:
-  - hint: "depth pass"
 ```
-`preset` is usually enough. Reach for top-level `engine`, `model`, `master`, `auditor`, or `sub` only when the user asks for explicit composition.
+Use explicit `target`, `harness`, `master`, or per-session overrides only when the user asks for them or automatic inference is clearly wrong.
 ## Command Reference
 - `goalx init "obj" [flags]`, `goalx start`, `goalx start "obj" [flags]`, `goalx auto "obj" [flags]`: create and launch runs
 - `goalx observe [NAME]`, `goalx status [NAME] [session-N]`, `goalx attach [NAME] [window]`: inspect live progress

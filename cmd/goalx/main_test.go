@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,5 +62,46 @@ func TestMainSupportsResultCommand(t *testing.T) {
 
 	if !strings.Contains(string(out), "# summary from result") {
 		t.Fatalf("result output missing summary:\n%s", string(out))
+	}
+}
+
+func TestRunCommandStopsActiveRunOnSignal(t *testing.T) {
+	oldStart := mainStart
+	oldStop := mainStop
+	oldNotify := notifySignalsContext
+	defer func() {
+		mainStart = oldStart
+		mainStop = oldStop
+		notifySignalsContext = oldNotify
+	}()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	stopCalls := 0
+	mainStart = func(string, []string) error {
+		close(started)
+		<-release
+		return nil
+	}
+	mainStop = func(string, []string) error {
+		stopCalls++
+		close(release)
+		return nil
+	}
+	notifySignalsContext = func(parent context.Context, _ ...os.Signal) (context.Context, context.CancelFunc) {
+		ctx, cancel := context.WithCancel(parent)
+		go func() {
+			<-started
+			cancel()
+		}()
+		return ctx, func() {}
+	}
+
+	err := runCommand(t.TempDir(), "start", nil)
+	if !errors.Is(err, errInterrupted) {
+		t.Fatalf("runCommand error = %v, want errInterrupted", err)
+	}
+	if stopCalls != 1 {
+		t.Fatalf("stop calls = %d, want 1", stopCalls)
 	}
 }

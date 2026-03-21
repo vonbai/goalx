@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/vonbai/goalx/cli"
 )
@@ -35,6 +39,14 @@ Usage:
 
 Run 'goalx <command> --help' for details.`
 
+var (
+	errInterrupted       = errors.New("interrupted by signal")
+	mainStart            = cli.Start
+	mainAuto             = cli.Auto
+	mainStop             = cli.Stop
+	notifySignalsContext = signal.NotifyContext
+)
+
 func main() {
 	if os.Getenv("HOME") == "" {
 		fmt.Fprintln(os.Stderr, "fatal: HOME is not set")
@@ -53,60 +65,89 @@ func main() {
 	args := os.Args[2:]
 	cmd := os.Args[1]
 
-	switch cmd {
-	case "start":
-		err = cli.Start(cwd, args)
-	case "auto":
-		err = cli.Auto(cwd, args)
-	case "init":
-		err = cli.Init(cwd, args)
-	case "list":
-		err = cli.List(cwd, args)
-	case "status":
-		err = cli.Status(cwd, args)
-	case "attach":
-		err = cli.Attach(cwd, args)
-	case "stop":
-		err = cli.Stop(cwd, args)
-	case "review":
-		err = cli.Review(cwd, args)
-	case "diff":
-		err = cli.Diff(cwd, args)
-	case "keep":
-		err = cli.Keep(cwd, args)
-	case "archive":
-		err = cli.Archive(cwd, args)
-	case "save":
-		err = cli.Save(cwd, args)
-	case "drop":
-		err = cli.Drop(cwd, args)
-	case "report":
-		err = cli.Report(cwd, args)
-	case "result":
-		err = cli.Result(cwd, args)
-	case "debate":
-		err = cli.Debate(cwd, args)
-	case "implement":
-		err = cli.Implement(cwd, args)
-	case "add":
-		err = cli.Add(cwd, args)
-	case "observe":
-		err = cli.Observe(cwd, args)
-	case "serve":
-		err = cli.Serve(cwd, args)
-	case "next":
-		err = cli.Next(cwd, args)
-	case "--help", "-h", "help":
+	if cmd == "--help" || cmd == "-h" || cmd == "help" {
 		fmt.Println(usage)
 		return
-	default:
+	}
+
+	if err = runCommand(cwd, cmd, args); errors.Is(err, errUnknownCommand) {
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(1)
 	}
-
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goalx %s: %v\n", cmd, err)
 		os.Exit(1)
+	}
+}
+
+var errUnknownCommand = errors.New("unknown command")
+
+func runCommand(cwd, cmd string, args []string) error {
+	switch cmd {
+	case "start":
+		return runWithSignalCleanup(cwd, func() error { return mainStart(cwd, args) })
+	case "auto":
+		return runWithSignalCleanup(cwd, func() error { return mainAuto(cwd, args) })
+	case "init":
+		return cli.Init(cwd, args)
+	case "list":
+		return cli.List(cwd, args)
+	case "status":
+		return cli.Status(cwd, args)
+	case "attach":
+		return cli.Attach(cwd, args)
+	case "stop":
+		return cli.Stop(cwd, args)
+	case "review":
+		return cli.Review(cwd, args)
+	case "diff":
+		return cli.Diff(cwd, args)
+	case "keep":
+		return cli.Keep(cwd, args)
+	case "archive":
+		return cli.Archive(cwd, args)
+	case "save":
+		return cli.Save(cwd, args)
+	case "drop":
+		return cli.Drop(cwd, args)
+	case "report":
+		return cli.Report(cwd, args)
+	case "result":
+		return cli.Result(cwd, args)
+	case "debate":
+		return cli.Debate(cwd, args)
+	case "implement":
+		return cli.Implement(cwd, args)
+	case "add":
+		return cli.Add(cwd, args)
+	case "observe":
+		return cli.Observe(cwd, args)
+	case "serve":
+		return cli.Serve(cwd, args)
+	case "next":
+		return cli.Next(cwd, args)
+	default:
+		return errUnknownCommand
+	}
+}
+
+func runWithSignalCleanup(cwd string, run func() error) error {
+	ctx, stop := notifySignalsContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- run()
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		if err := mainStop(cwd, nil); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: cleanup stop failed: %v\n", err)
+		}
+		return errInterrupted
 	}
 }

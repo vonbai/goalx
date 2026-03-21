@@ -10,7 +10,7 @@ import (
 )
 
 // Start executes the full goalx start workflow.
-func Start(projectRoot string, args []string) error {
+func Start(projectRoot string, args []string) (err error) {
 	if len(args) > 0 {
 		if _, err := parseStartInitArgs(args); err != nil {
 			return err
@@ -39,6 +39,35 @@ func Start(projectRoot string, args []string) error {
 	// 4. Compute paths
 	runDir := goalx.RunDir(projectRoot, cfg.Name)
 	tmuxSess := goalx.TmuxSessionName(projectRoot, cfg.Name)
+	absProjectRoot, _ := filepath.Abs(projectRoot)
+	type cleanupWorktree struct {
+		path   string
+		branch string
+	}
+	var createdWorktrees []cleanupWorktree
+	tmuxCreated := false
+	defer func() {
+		if err == nil {
+			return
+		}
+		if tmuxCreated {
+			if killErr := KillSession(tmuxSess); killErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: cleanup tmux session %s: %v\n", tmuxSess, killErr)
+			}
+		}
+		for i := len(createdWorktrees) - 1; i >= 0; i-- {
+			wt := createdWorktrees[i]
+			if rmErr := RemoveWorktree(absProjectRoot, wt.path); rmErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: cleanup worktree %s: %v\n", wt.path, rmErr)
+			}
+			if delErr := DeleteBranch(absProjectRoot, wt.branch); delErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: cleanup branch %s: %v\n", wt.branch, delErr)
+			}
+		}
+		if rmErr := os.RemoveAll(runDir); rmErr != nil && !os.IsNotExist(rmErr) {
+			fmt.Fprintf(os.Stderr, "warning: cleanup run dir %s: %v\n", runDir, rmErr)
+		}
+	}()
 
 	// 5. Check conflicts
 	if _, err := os.Stat(runDir); err == nil {
@@ -86,7 +115,6 @@ func Start(projectRoot string, args []string) error {
 	}
 
 	// 9. Build session data
-	absProjectRoot, _ := filepath.Abs(projectRoot)
 	var sessionDataList []SessionData
 
 	for i, sess := range sessions {
@@ -136,6 +164,7 @@ func Start(projectRoot string, args []string) error {
 		if err := CreateWorktree(absProjectRoot, wtPath, branch); err != nil {
 			return fmt.Errorf("create worktree %s: %w", sName, err)
 		}
+		createdWorktrees = append(createdWorktrees, cleanupWorktree{path: wtPath, branch: branch})
 
 		// Initialize empty journal
 		if err := os.WriteFile(journalPath, nil, 0644); err != nil {
@@ -172,9 +201,13 @@ func Start(projectRoot string, args []string) error {
 	masterProtocolPath := filepath.Join(runDir, "master.md")
 	masterPrompt := goalx.ResolvePrompt(engines, cfg.Master.Engine, masterProtocolPath)
 	acceptancePath := filepath.Join(runDir, "acceptance.md")
+	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
 
 	if err := EnsureEngineTrusted(cfg.Master.Engine, absProjectRoot); err != nil {
 		return fmt.Errorf("trust bootstrap master: %w", err)
+	}
+	if err := GenerateMasterAdapter(cfg.Master.Engine, absProjectRoot, statusPath); err != nil {
+		return fmt.Errorf("generate master adapter: %w", err)
 	}
 
 	// 11. Render protocols
@@ -193,7 +226,7 @@ func Start(projectRoot string, args []string) error {
 		SummaryPath:       filepath.Join(runDir, "summary.md"),
 		AcceptancePath:    acceptancePath,
 		MasterJournalPath: filepath.Join(runDir, "master.jsonl"),
-		StatusPath:        filepath.Join(projectRoot, ".goalx", "status.json"),
+		StatusPath:        statusPath,
 		EngineCommand:     masterCmd,
 	}
 	if err := RenderMasterProtocol(masterData, runDir); err != nil {
@@ -235,6 +268,7 @@ func Start(projectRoot string, args []string) error {
 	if err := NewSession(tmuxSess, "master"); err != nil {
 		return fmt.Errorf("tmux new-session: %w", err)
 	}
+	tmuxCreated = true
 
 	// Set master working directory to project root
 	if err := SendKeys(tmuxSess+":master", "cd "+absProjectRoot); err != nil {

@@ -15,7 +15,39 @@ func GenerateAdapter(engine, worktreePath, guidancePath string) error {
 		return nil
 	}
 
-	claudeDir := filepath.Join(worktreePath, ".claude")
+	quotedGuidancePath := shellQuote(guidancePath)
+	quotedGuidanceMessage := shellQuote("GUIDANCE PENDING: read " + guidancePath + " and follow it now")
+	stopCmd := fmt.Sprintf(
+		`if cat %s 2>/dev/null | grep -q .; then printf '%%s\n' %s >&2; exit 2; fi`,
+		quotedGuidancePath, quotedGuidanceMessage,
+	)
+	return appendClaudeHook(worktreePath, map[string]string{
+		"event":   "Stop",
+		"command": stopCmd,
+	})
+}
+
+// GenerateMasterAdapter configures a project-level Stop hook for the master
+// agent so it does not exit before status.json reaches phase=complete.
+func GenerateMasterAdapter(engine, projectRoot, statusPath string) error {
+	if engine != "claude-code" {
+		return nil
+	}
+
+	quotedStatusPath := shellQuote(statusPath)
+	quotedMessage := shellQuote("RUN INCOMPLETE: keep waiting until " + statusPath + ` reports "phase":"complete"`)
+	stopCmd := fmt.Sprintf(
+		`if [ ! -f %s ] || ! grep -Eq '"phase"[[:space:]]*:[[:space:]]*"complete"' %s; then printf '%%s\n' %s >&2; exit 2; fi`,
+		quotedStatusPath, quotedStatusPath, quotedMessage,
+	)
+	return appendClaudeHook(projectRoot, map[string]string{
+		"event":   "Stop",
+		"command": stopCmd,
+	})
+}
+
+func appendClaudeHook(root string, hook map[string]string) error {
+	claudeDir := filepath.Join(root, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		return fmt.Errorf("create .claude dir: %w", err)
 	}
@@ -40,17 +72,12 @@ func GenerateAdapter(engine, worktreePath, guidancePath string) error {
 			return fmt.Errorf("parse hooks array: %w", err)
 		}
 	}
-
-	quotedGuidancePath := shellQuote(guidancePath)
-	quotedGuidanceMessage := shellQuote("GUIDANCE PENDING: read " + guidancePath + " and follow it now")
-	stopCmd := fmt.Sprintf(
-		`if cat %s 2>/dev/null | grep -q .; then printf '%%s\n' %s >&2; exit 2; fi`,
-		quotedGuidancePath, quotedGuidanceMessage,
-	)
-	hooks = append(hooks, map[string]string{
-		"event":   "Stop",
-		"command": stopCmd,
-	})
+	for _, existing := range hooks {
+		if existing["event"] == hook["event"] && existing["command"] == hook["command"] {
+			return markHookFileAssumeUnchanged(root)
+		}
+	}
+	hooks = append(hooks, hook)
 
 	raw, err := json.Marshal(hooks)
 	if err != nil {
@@ -65,12 +92,15 @@ func GenerateAdapter(engine, worktreePath, guidancePath string) error {
 	if err := os.WriteFile(hooksPath, out, 0o644); err != nil {
 		return fmt.Errorf("write hooks.json: %w", err)
 	}
+	return markHookFileAssumeUnchanged(root)
+}
 
+func markHookFileAssumeUnchanged(root string) error {
 	// Only assume-unchanged if the file is already tracked by git.
 	// If it's new (not in index), it won't be committed unless explicitly added.
-	if err := exec.Command("git", "-C", worktreePath, "ls-files", "--error-unmatch", ".claude/hooks.json").Run(); err == nil {
+	if err := exec.Command("git", "-C", root, "ls-files", "--error-unmatch", ".claude/hooks.json").Run(); err == nil {
 		// File is tracked — mark assume-unchanged so our edits don't show in diffs
-		return exec.Command("git", "-C", worktreePath, "update-index", "--assume-unchanged", ".claude/hooks.json").Run()
+		return exec.Command("git", "-C", root, "update-index", "--assume-unchanged", ".claude/hooks.json").Run()
 	}
 	// File not tracked — nothing to do, it's already invisible to git
 	return nil

@@ -26,6 +26,7 @@ func Debate(projectRoot string, args []string) error {
 	if preset == "" {
 		preset = "claude"
 	}
+	master := savedCfg.Master
 	budget := savedCfg.Budget
 	if budget.MaxDuration == 0 {
 		budget.MaxDuration = 2 * 3600_000_000_000
@@ -89,6 +90,7 @@ func Debate(projectRoot string, args []string) error {
 			Readonly: []string{"."},
 		},
 		Harness: goalx.HarnessConfig{Command: "test -s report.md && echo 'ok'"},
+		Master:  master,
 		Budget:  budget,
 	}
 	goalx.ApplyPreset(&cfg)
