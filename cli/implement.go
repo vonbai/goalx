@@ -73,6 +73,7 @@ func Implement(projectRoot string, args []string) error {
 	if parallel < 1 {
 		parallel = 2
 	}
+	master := savedCfg.Master
 	budget := savedCfg.Budget
 	if budget.MaxDuration == 0 {
 		budget.MaxDuration = 2 * 3600_000_000_000
@@ -93,6 +94,7 @@ func Implement(projectRoot string, args []string) error {
 			Files: targetFiles,
 		},
 		Harness: goalx.HarnessConfig{Command: harness},
+		Master:  master,
 		Budget:  budget,
 	}
 	goalx.ApplyPreset(&cfg)
