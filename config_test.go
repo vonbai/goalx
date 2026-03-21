@@ -120,6 +120,18 @@ func TestResolveEngineCommand(t *testing.T) {
 	}
 }
 
+func TestResolveEngineCommandUsesBypassPermissionsInSandbox(t *testing.T) {
+	t.Setenv("IS_SANDBOX", "1")
+
+	cmd, err := ResolveEngineCommand(BuiltinEngines, "claude-code", "opus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd != "claude --model claude-opus-4-6 --permission-mode bypassPermissions" {
+		t.Errorf("cmd = %q", cmd)
+	}
+}
+
 func TestResolveEngineCommandCodex(t *testing.T) {
 	cmd, err := ResolveEngineCommand(BuiltinEngines, "codex", "codex")
 	if err != nil {

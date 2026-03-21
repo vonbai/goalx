@@ -363,6 +363,9 @@ func ResolveEngineCommand(engines map[string]EngineConfig, engine, model string)
 		return "", err
 	}
 	cmd := strings.ReplaceAll(ec.Command, "{model_id}", modelID)
+	if engine == "claude-code" && os.Getenv("IS_SANDBOX") == "1" {
+		cmd = strings.ReplaceAll(cmd, "--permission-mode auto", "--permission-mode bypassPermissions")
+	}
 	return cmd, nil
 }
 
