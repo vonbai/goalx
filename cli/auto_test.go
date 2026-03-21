@@ -18,6 +18,7 @@ import (
 func TestAutoPostsCompletionWebhookWhenConfigured(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
@@ -46,7 +47,7 @@ target:
 harness:
   command: go test ./...
 serve:
-  notification_url: ` + server.URL + `
+  notification_url: `+server.URL+`
 `) + "\n")
 	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "goalx.yaml"), cfg, 0o644); err != nil {
 		t.Fatalf("write goalx.yaml: %v", err)
@@ -111,6 +112,7 @@ serve:
 func TestAutoIgnoresCompletionWebhookFailure(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
@@ -165,6 +167,7 @@ serve:
 func TestAutoPostsCompletionWebhookOnlyOnce(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
@@ -186,7 +189,7 @@ target:
 harness:
   command: go test ./...
 serve:
-  notification_url: ` + server.URL + `
+  notification_url: `+server.URL+`
 `) + "\n")
 	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "goalx.yaml"), cfg, 0o644); err != nil {
 		t.Fatalf("write goalx.yaml: %v", err)
@@ -230,6 +233,7 @@ serve:
 func TestAutoSkipsInitAfterDebate(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := t.TempDir()
 	writeSavedRunFixture(t, projectRoot, "research-a", goalx.Config{
@@ -294,6 +298,7 @@ func TestAutoSkipsInitAfterDebate(t *testing.T) {
 func TestAutoSkipsInitAfterImplement(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := t.TempDir()
 	writeSavedRunFixture(t, projectRoot, "debate", goalx.Config{
@@ -355,9 +360,219 @@ func TestAutoSkipsInitAfterImplement(t *testing.T) {
 	}
 }
 
+func TestAutoImplementContinuesWhenAcceptanceMetTrue(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
+
+	projectRoot := t.TempDir()
+	writeSavedRunFixture(t, projectRoot, "debate", goalx.Config{
+		Name:      "debate",
+		Mode:      goalx.ModeResearch,
+		Objective: "consensus fixes",
+		Preset:    "codex",
+		Parallel:  2,
+	}, map[string]string{
+		"summary.md":          "# summary\n",
+		"session-1-report.md": "# report\n",
+	})
+
+	oldInit := autoInit
+	oldStart := autoStart
+	oldSave := autoSave
+	oldKeep := autoKeep
+	oldDrop := autoDrop
+	oldPollUntilComplete := autoPollUntilComplete
+	initCalls := 0
+	autoInit = func(string, []string) error {
+		initCalls++
+		if initCalls > 1 {
+			return errUnexpectedSecondInit
+		}
+		return nil
+	}
+	autoStart = func(string, []string) error { return nil }
+	autoSave = func(string, []string) error { return nil }
+	autoKeep = func(string, []string) error { return nil }
+	autoDrop = func(string, []string) error { return nil }
+	pollCalls := 0
+	autoPollUntilComplete = func(string, time.Duration, time.Duration) (*statusJSON, error) {
+		pollCalls++
+		switch pollCalls {
+		case 1:
+			return &statusJSON{Phase: "complete", Recommendation: "implement", AcceptanceMet: true}, nil
+		case 2:
+			return &statusJSON{Phase: "complete", Recommendation: "done", AcceptanceMet: true}, nil
+		default:
+			t.Fatalf("unexpected poll call %d", pollCalls)
+			return nil, nil
+		}
+	}
+	defer func() {
+		autoInit = oldInit
+		autoStart = oldStart
+		autoSave = oldSave
+		autoKeep = oldKeep
+		autoDrop = oldDrop
+		autoPollUntilComplete = oldPollUntilComplete
+	}()
+
+	if err := Auto(projectRoot, []string{"ship it", "--research"}); err != nil {
+		t.Fatalf("Auto: %v", err)
+	}
+	if initCalls != 1 {
+		t.Fatalf("init calls = %d, want 1", initCalls)
+	}
+	if pollCalls != 2 {
+		t.Fatalf("poll calls = %d, want 2", pollCalls)
+	}
+}
+
+func TestAutoKeepsSessionOnlyWhenDone(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
+
+	projectRoot := t.TempDir()
+	writeSavedRunFixture(t, projectRoot, "debate", goalx.Config{
+		Name:      "debate",
+		Mode:      goalx.ModeResearch,
+		Objective: "consensus fixes",
+		Preset:    "codex",
+		Parallel:  2,
+	}, map[string]string{
+		"summary.md":          "# summary\n",
+		"session-1-report.md": "# report\n",
+	})
+
+	oldInit := autoInit
+	oldStart := autoStart
+	oldSave := autoSave
+	oldKeep := autoKeep
+	oldDrop := autoDrop
+	oldPollUntilComplete := autoPollUntilComplete
+	initCalls := 0
+	autoInit = func(string, []string) error {
+		initCalls++
+		if initCalls > 1 {
+			return errUnexpectedSecondInit
+		}
+		return nil
+	}
+	autoStart = func(string, []string) error { return nil }
+	autoSave = func(string, []string) error { return nil }
+	keepCalls := 0
+	autoKeep = func(_ string, sessions []string) error {
+		keepCalls++
+		if len(sessions) != 1 || sessions[0] != "session-1" {
+			t.Fatalf("keep sessions = %v, want [session-1]", sessions)
+		}
+		return nil
+	}
+	autoDrop = func(string, []string) error { return nil }
+	pollCalls := 0
+	autoPollUntilComplete = func(string, time.Duration, time.Duration) (*statusJSON, error) {
+		pollCalls++
+		switch pollCalls {
+		case 1:
+			return &statusJSON{Phase: "complete", Recommendation: "implement", KeepSession: "session-1"}, nil
+		case 2:
+			return &statusJSON{Phase: "complete", Recommendation: "done", AcceptanceMet: true, KeepSession: "session-1"}, nil
+		default:
+			t.Fatalf("unexpected poll call %d", pollCalls)
+			return nil, nil
+		}
+	}
+	defer func() {
+		autoInit = oldInit
+		autoStart = oldStart
+		autoSave = oldSave
+		autoKeep = oldKeep
+		autoDrop = oldDrop
+		autoPollUntilComplete = oldPollUntilComplete
+	}()
+
+	if err := Auto(projectRoot, []string{"ship it", "--research"}); err != nil {
+		t.Fatalf("Auto: %v", err)
+	}
+	if initCalls != 1 {
+		t.Fatalf("init calls = %d, want 1", initCalls)
+	}
+	if keepCalls != 1 {
+		t.Fatalf("keep calls = %d, want 1", keepCalls)
+	}
+}
+
+func TestAutoDoneFailsWhenHarnessVerificationFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	writeRootConfigFixture(t, projectRoot, goalx.Config{
+		Name:      "demo-run",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship it",
+		Target: goalx.TargetConfig{
+			Files: []string{"README.md"},
+		},
+		Harness: goalx.HarnessConfig{Command: "false"},
+	})
+	writeSavedRunFixture(t, projectRoot, "demo-run", goalx.Config{
+		Name:      "demo-run",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship it",
+		Target: goalx.TargetConfig{
+			Files: []string{"README.md"},
+		},
+		Harness: goalx.HarnessConfig{Command: "false"},
+	}, map[string]string{
+		"summary.md": "# summary\n",
+	})
+	worktreePath := filepath.Join(projectRoot, ".goalx", "runs", "demo-run", "worktrees", "demo-run-1")
+	if err := os.MkdirAll(worktreePath, 0o755); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+
+	oldInit := autoInit
+	oldStart := autoStart
+	oldSave := autoSave
+	oldKeep := autoKeep
+	oldDrop := autoDrop
+	oldPollUntilComplete := autoPollUntilComplete
+	autoInit = func(string, []string) error { return nil }
+	autoStart = func(string, []string) error { return nil }
+	autoSave = func(string, []string) error { return nil }
+	autoKeep = func(string, []string) error { return nil }
+	autoDrop = func(string, []string) error { return nil }
+	autoPollUntilComplete = func(string, time.Duration, time.Duration) (*statusJSON, error) {
+		return &statusJSON{
+			Phase:          "complete",
+			Recommendation: "done",
+			AcceptanceMet:  true,
+		}, nil
+	}
+	defer func() {
+		autoInit = oldInit
+		autoStart = oldStart
+		autoSave = oldSave
+		autoKeep = oldKeep
+		autoDrop = oldDrop
+		autoPollUntilComplete = oldPollUntilComplete
+	}()
+
+	err := Auto(projectRoot, []string{"ship it", "--develop"})
+	if err == nil {
+		t.Fatal("Auto returned nil, want harness verification failure")
+	}
+	if !strings.Contains(err.Error(), "verify harness") {
+		t.Fatalf("Auto error = %v, want verify harness failure", err)
+	}
+}
+
 func TestAutoMoreResearchPath(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
@@ -425,6 +640,7 @@ func TestAutoMoreResearchPath(t *testing.T) {
 func TestAutoDefaultsToResearchMode(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
@@ -474,6 +690,7 @@ func TestAutoDefaultsToResearchMode(t *testing.T) {
 func TestAutoReturnsErrorForUnknownRecommendation(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
@@ -518,6 +735,7 @@ func TestAutoReturnsErrorForUnknownRecommendation(t *testing.T) {
 func TestAutoMoreResearchPreservesOriginalFlags(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
@@ -627,6 +845,7 @@ func TestPollUntilCompleteDetectsStalledHeartbeat(t *testing.T) {
 func TestAutoPrintsResearchResultsSummary(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := t.TempDir()
 	writeRootConfigFixture(t, projectRoot, goalx.Config{
@@ -718,6 +937,7 @@ done
 func TestAutoPrintsDevelopDiffAfterKeep(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubAutoVerifyHarness(t, func(string) error { return nil })
 
 	projectRoot := initGitRepo(t)
 	writeAndCommit(t, projectRoot, "README.md", "base\n", "base commit")
@@ -780,6 +1000,16 @@ func TestAutoPrintsDevelopDiffAfterKeep(t *testing.T) {
 }
 
 var errUnexpectedSecondInit = errors.New("unexpected second init")
+
+func stubAutoVerifyHarness(t *testing.T, fn func(string) error) {
+	t.Helper()
+
+	oldVerifyHarness := autoVerifyHarness
+	autoVerifyHarness = fn
+	t.Cleanup(func() {
+		autoVerifyHarness = oldVerifyHarness
+	})
+}
 
 func writeSavedRunFixture(t *testing.T, projectRoot, runName string, cfg goalx.Config, files map[string]string) {
 	t.Helper()
