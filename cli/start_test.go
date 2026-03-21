@@ -126,3 +126,126 @@ esac
 		t.Fatalf("cleanup log missing kill-session for %s:\n%s", tmuxSess, string(logData))
 	}
 }
+
+func TestStartLaunchesOnlyMaster(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	goalxDir := filepath.Join(repo, ".goalx")
+	if err := os.MkdirAll(goalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	cfg := goalx.Config{
+		Name:      "demo",
+		Mode:      goalx.ModeResearch,
+		Objective: "audit auth flow",
+		Engine:    "codex",
+		Model:     "codex",
+		Parallel:  2,
+		Target: goalx.TargetConfig{
+			Files: []string{"README.md"},
+		},
+		Harness: goalx.HarnessConfig{Command: "test -f README.md"},
+		Master: goalx.MasterConfig{
+			Engine: "codex",
+			Model:  "codex",
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(goalxDir, "goalx.yaml"), data, 0o644); err != nil {
+		t.Fatalf("write goalx.yaml: %v", err)
+	}
+
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	tmuxPath := filepath.Join(binDir, "tmux")
+	script := `#!/bin/sh
+set -eu
+state="${GOALX_FAKE_TMUX_STATE:?}"
+mkdir -p "$state"
+log="$state/log"
+cmd="$1"
+shift
+echo "$cmd $*" >> "$log"
+case "$cmd" in
+  has-session)
+    target="$2"
+    if [ -f "$state/session_$target" ]; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  new-session)
+    name=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "-s" ]; then
+        shift
+        name="$1"
+        break
+      fi
+      shift
+    done
+    : > "$state/session_$name"
+    exit 0
+    ;;
+  kill-session)
+    target="$2"
+    rm -f "$state/session_$target"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
+
+	if err := Start(repo, nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	runDir := goalx.RunDir(repo, cfg.Name)
+	for _, path := range []string{
+		filepath.Join(runDir, "master.md"),
+		filepath.Join(runDir, "master.jsonl"),
+		filepath.Join(runDir, "acceptance.md"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected %s to exist: %v", path, err)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(runDir, "program-1.md"),
+		filepath.Join(runDir, "journals", "session-1.jsonl"),
+		WorktreePath(runDir, cfg.Name, 1),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be absent, stat err = %v", path, err)
+		}
+	}
+
+	logData, err := os.ReadFile(filepath.Join(stateDir, "log"))
+	if err != nil {
+		t.Fatalf("read fake tmux log: %v", err)
+	}
+	logText := string(logData)
+	if strings.Contains(logText, "new-window") {
+		t.Fatalf("start should not create extra tmux windows:\n%s", logText)
+	}
+	if strings.Contains(logText, "heartbeat") {
+		t.Fatalf("start should not launch heartbeat:\n%s", logText)
+	}
+	if !strings.Contains(logText, "new-session -d -s "+goalx.TmuxSessionName(repo, cfg.Name)+" -n master") {
+		t.Fatalf("start log missing master session creation:\n%s", logText)
+	}
+}

@@ -53,9 +53,11 @@ func Observe(projectRoot string, args []string) error {
 	fmt.Println()
 
 	// Sessions
-	sessions := goalx.ExpandSessions(rc.Config)
-	for i := range sessions {
-		num := i + 1
+	sessionIndexes, err := existingSessionIndexes(rc.RunDir)
+	if err != nil {
+		return err
+	}
+	for _, num := range sessionIndexes {
 		windowName := sessionWindowName(rc.Config.Name, num)
 		fmt.Printf("### %s\n", SessionName(num))
 		printPaneCapture(rc.TmuxSession, windowName)
@@ -68,9 +70,8 @@ func Observe(projectRoot string, args []string) error {
 	if err == nil {
 		configured := make(map[string]bool)
 		configured["master"] = true
-		configured["heartbeat"] = true
-		for i := range sessions {
-			configured[sessionWindowName(rc.Config.Name, i+1)] = true
+		for _, num := range sessionIndexes {
+			configured[sessionWindowName(rc.Config.Name, num)] = true
 		}
 		for _, w := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if w != "" && !configured[w] {
@@ -80,11 +81,6 @@ func Observe(projectRoot string, args []string) error {
 			}
 		}
 	}
-
-	// Heartbeat
-	fmt.Println("### heartbeat")
-	printPaneCapture(rc.TmuxSession, "heartbeat")
-	fmt.Println()
 
 	return nil
 }

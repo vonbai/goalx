@@ -64,9 +64,11 @@ func Add(projectRoot string, args []string) error {
 		return fmt.Errorf("run '%s' is not active (no tmux session)", rc.Name)
 	}
 
-	// Determine next session number
-	existingSessions := sessionCount(rc.Config)
-	newNum := existingSessions + 1
+	// Determine next session number from the run's existing session artifacts.
+	newNum, err := nextSessionIndex(rc.RunDir)
+	if err != nil {
+		return err
+	}
 	sName := SessionName(newNum)
 	wtPath := WorktreePath(rc.RunDir, rc.Config.Name, newNum)
 	journalPath := JournalPath(rc.RunDir, sName)

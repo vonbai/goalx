@@ -40,11 +40,6 @@ func Start(projectRoot string, args []string) (err error) {
 	runDir := goalx.RunDir(projectRoot, cfg.Name)
 	tmuxSess := goalx.TmuxSessionName(projectRoot, cfg.Name)
 	absProjectRoot, _ := filepath.Abs(projectRoot)
-	type cleanupWorktree struct {
-		path   string
-		branch string
-	}
-	var createdWorktrees []cleanupWorktree
 	tmuxCreated := false
 	defer func() {
 		if err == nil {
@@ -53,15 +48,6 @@ func Start(projectRoot string, args []string) (err error) {
 		if tmuxCreated {
 			if killErr := KillSession(tmuxSess); killErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: cleanup tmux session %s: %v\n", tmuxSess, killErr)
-			}
-		}
-		for i := len(createdWorktrees) - 1; i >= 0; i-- {
-			wt := createdWorktrees[i]
-			if rmErr := RemoveWorktree(absProjectRoot, wt.path); rmErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: cleanup worktree %s: %v\n", wt.path, rmErr)
-			}
-			if delErr := DeleteBranch(absProjectRoot, wt.branch); delErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: cleanup branch %s: %v\n", wt.branch, delErr)
 			}
 		}
 		if rmErr := os.RemoveAll(runDir); rmErr != nil && !os.IsNotExist(rmErr) {
@@ -77,16 +63,33 @@ func Start(projectRoot string, args []string) (err error) {
 		return fmt.Errorf("tmux session already exists: %s (goalx stop first)", tmuxSess)
 	}
 
-	// 5b. Warn if working tree has uncommitted changes (worktrees are created from HEAD)
+	// 5b. Warn if working tree has uncommitted changes (future session worktrees are created from HEAD)
 	if dirty, err := hasDirtyWorktree(projectRoot); err == nil && dirty {
-		fmt.Fprintln(os.Stderr, "⚠ Working tree has uncommitted changes that won't be visible to subagents.")
-		fmt.Fprintln(os.Stderr, "  Subagents work on worktrees created from the latest commit (HEAD).")
-		fmt.Fprintln(os.Stderr, "  Consider: git add -A && git commit -m 'wip' before starting.")
+		fmt.Fprintln(os.Stderr, "⚠ Working tree has uncommitted changes that won't be visible to future sessions.")
+		fmt.Fprintln(os.Stderr, "  goalx add creates worktrees from the latest commit (HEAD).")
+		fmt.Fprintln(os.Stderr, "  Consider: git add -A && git commit -m 'wip' before letting the master spawn workers.")
 		fmt.Fprintln(os.Stderr, "")
 	}
 
-	// 6. Expand sessions
+	// 6. Capture the configured session plan for the master protocol.
 	sessions := goalx.ExpandSessions(cfg)
+	plannedSessions := make([]PlannedSessionData, 0, len(sessions))
+	for i, sess := range sessions {
+		engine := sess.Engine
+		if engine == "" {
+			engine = cfg.Engine
+		}
+		model := sess.Model
+		if model == "" {
+			model = cfg.Model
+		}
+		plannedSessions = append(plannedSessions, PlannedSessionData{
+			Name:   SessionName(i + 1),
+			Engine: engine,
+			Model:  model,
+			Hint:   sess.Hint,
+		})
+	}
 
 	// 7. Create run directory structure
 	dirs := []string{
@@ -114,88 +117,7 @@ func Start(projectRoot string, args []string) (err error) {
 		return fmt.Errorf("write run snapshot: %w", err)
 	}
 
-	// 9. Build session data
-	var sessionDataList []SessionData
-
-	for i, sess := range sessions {
-		num := i + 1
-		sName := SessionName(num)
-		wtPath := WorktreePath(runDir, cfg.Name, num)
-		journalPath := JournalPath(runDir, sName)
-		guidancePath := GuidancePath(runDir, sName)
-		branch := fmt.Sprintf("goalx/%s/%d", cfg.Name, num)
-
-		// Resolve session engine/model (inherit from config if not set)
-		sEngine := sess.Engine
-		if sEngine == "" {
-			sEngine = cfg.Engine
-		}
-		sModel := sess.Model
-		if sModel == "" {
-			sModel = cfg.Model
-		}
-		engineCmd, err := goalx.ResolveEngineCommand(engines, sEngine, sModel)
-		if err != nil {
-			return fmt.Errorf("session-%d engine: %w", num, err)
-		}
-		// Subagents don't need skills — disable slash commands. The Skill
-		// tool is denied via project-level .claude/settings.json (written by
-		// ensureSubagentRestrictions) to avoid --disallowedTools eating the
-		// next positional argument.
-		if sEngine == "claude-code" {
-			engineCmd += " --disable-slash-commands"
-		}
-
-		protocolPath := filepath.Join(runDir, fmt.Sprintf("program-%d.md", num))
-		prompt := goalx.ResolvePrompt(engines, sEngine, protocolPath)
-
-		sessionDataList = append(sessionDataList, SessionData{
-			Name:          sName,
-			WindowName:    sessionWindowName(cfg.Name, num),
-			WorktreePath:  wtPath,
-			JournalPath:   journalPath,
-			GuidancePath:  guidancePath,
-			Engine:        sEngine,
-			Model:         sModel,
-			Hint:          sess.Hint,
-			EngineCommand: engineCmd,
-			Prompt:        prompt,
-		})
-
-		// Create worktree
-		if err := CreateWorktree(absProjectRoot, wtPath, branch); err != nil {
-			return fmt.Errorf("create worktree %s: %w", sName, err)
-		}
-		createdWorktrees = append(createdWorktrees, cleanupWorktree{path: wtPath, branch: branch})
-
-		// Initialize empty journal
-		if err := os.WriteFile(journalPath, nil, 0644); err != nil {
-			return fmt.Errorf("init journal %s: %w", sName, err)
-		}
-
-		// Initialize empty guidance file
-		if err := os.WriteFile(guidancePath, nil, 0644); err != nil {
-			return fmt.Errorf("init guidance %s: %w", sName, err)
-		}
-
-		// Generate adapter
-		if err := GenerateAdapter(sEngine, wtPath, guidancePath); err != nil {
-			return fmt.Errorf("generate adapter %s: %w", sName, err)
-		}
-
-		if err := EnsureEngineTrusted(sEngine, wtPath); err != nil {
-			return fmt.Errorf("trust bootstrap %s: %w", sName, err)
-		}
-
-		// Deny Skill tool via project-level settings.json
-		if sEngine == "claude-code" {
-			if err := ensureSubagentRestrictions(wtPath); err != nil {
-				return fmt.Errorf("subagent restrictions %s: %w", sName, err)
-			}
-		}
-	}
-
-	// 10. Resolve master engine command
+	// 9. Resolve master engine command
 	masterCmd, err := goalx.ResolveEngineCommand(engines, cfg.Master.Engine, cfg.Master.Model)
 	if err != nil {
 		return fmt.Errorf("master engine: %w", err)
@@ -214,12 +136,13 @@ func Start(projectRoot string, args []string) (err error) {
 
 	// 11. Render protocols
 	masterData := ProtocolData{
+		RunName:           cfg.Name,
 		Objective:         cfg.Objective,
 		Description:       cfg.Description,
 		Mode:              cfg.Mode,
 		Preset:            cfg.Preset,
 		Engines:           engines,
-		Sessions:          sessionDataList,
+		PlannedSessions:   plannedSessions,
 		Master:            cfg.Master,
 		Harness:           cfg.Harness,
 		Budget:            cfg.Budget,
@@ -235,32 +158,6 @@ func Start(projectRoot string, args []string) (err error) {
 	}
 	if err := RenderMasterProtocol(masterData, runDir); err != nil {
 		return fmt.Errorf("render master protocol: %w", err)
-	}
-
-	for i, sd := range sessionDataList {
-		subData := ProtocolData{
-			Objective:      cfg.Objective,
-			Description:    cfg.Description,
-			Mode:           cfg.Mode,
-			Engine:         sd.Engine,
-			Sessions:       sessionDataList,
-			Target:         cfg.Target,
-			Harness:        cfg.Harness,
-			Context:        cfg.Context,
-			Budget:         cfg.Budget,
-			SessionName:    sd.Name,
-			SessionIndex:   i,
-			JournalPath:    sd.JournalPath,
-			GuidancePath:   sd.GuidancePath,
-			WorktreePath:   sd.WorktreePath,
-			AcceptancePath: acceptancePath,
-		}
-		if i < len(sessions) && sessions[i].Hint != "" {
-			subData.DiversityHint = sessions[i].Hint
-		}
-		if err := RenderSubagentProtocol(subData, runDir, i); err != nil {
-			return fmt.Errorf("render protocol session-%d: %w", i+1, err)
-		}
 	}
 
 	// 12. Initialize master journal
@@ -288,52 +185,19 @@ func Start(projectRoot string, args []string) (err error) {
 		return fmt.Errorf("launch master: %w", err)
 	}
 
-	// Launch subagents
-	for _, sd := range sessionDataList {
-		windowName := sd.WindowName
-		if err := NewWindow(tmuxSess, windowName, sd.WorktreePath); err != nil {
-			return fmt.Errorf("tmux new-window %s: %w", windowName, err)
-		}
-		subLaunch := fmt.Sprintf("%s %q", sd.EngineCommand, sd.Prompt)
-		if err := SendKeys(tmuxSess+":"+windowName, subLaunch); err != nil {
-			return fmt.Errorf("launch %s: %w", windowName, err)
-		}
-	}
-
-	// Launch heartbeat window
-	checkSec, warning := normalizeHeartbeatInterval(cfg.Master.CheckInterval)
-	if warning != "" {
-		fmt.Fprint(os.Stderr, warning)
-	}
-	hbCmd := HeartbeatCommand(tmuxSess, checkSec)
-	if err := NewWindow(tmuxSess, "heartbeat", "/tmp"); err != nil {
-		return fmt.Errorf("tmux heartbeat window: %w", err)
-	}
-	if err := SendKeys(tmuxSess+":heartbeat", hbCmd); err != nil {
-		return fmt.Errorf("launch heartbeat: %w", err)
-	}
-
 	// 14. Print status
 	fmt.Printf("✓ Run '%s' started\n", cfg.Name)
 	fmt.Printf("  tmux session: %s\n", tmuxSess)
 	fmt.Printf("  master: %s/%s\n", cfg.Master.Engine, cfg.Master.Model)
-	fmt.Printf("  sessions: %d\n", len(sessions))
-	for i, sd := range sessionDataList {
-		engine := cfg.Engine
-		model := cfg.Model
-		if i < len(sessions) && sessions[i].Engine != "" {
-			engine = sessions[i].Engine
-		}
-		if i < len(sessions) && sessions[i].Model != "" {
-			model = sessions[i].Model
-		}
+	fmt.Printf("  planned sessions: %d\n", len(plannedSessions))
+	for _, planned := range plannedSessions {
 		hint := ""
-		if i < len(sessions) && sessions[i].Hint != "" {
-			hint = " (" + sessions[i].Hint + ")"
+		if planned.Hint != "" {
+			hint = " (" + planned.Hint + ")"
 		}
-		fmt.Printf("    %s: %s/%s%s → %s\n", sd.Name, engine, model, hint, sd.WorktreePath)
+		fmt.Printf("    %s: %s/%s%s\n", planned.Name, planned.Engine, planned.Model, hint)
 	}
 	fmt.Printf("  run dir: %s\n", runDir)
-	fmt.Printf("  attach: goalx attach [--run %s] [session-N]\n", cfg.Name)
+	fmt.Printf("  attach: goalx attach [--run %s] [master|session-N]\n", cfg.Name)
 	return nil
 }

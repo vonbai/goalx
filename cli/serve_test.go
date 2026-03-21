@@ -307,8 +307,16 @@ func TestServeHandlerTellWritesGuidanceAndNudgesSession(t *testing.T) {
 	writeRunSnapshot(t, workspace, "auth-audit", goalx.ModeResearch, "audit auth flow")
 	runDir := goalx.RunDir(workspace, "auth-audit")
 	guidanceDir := filepath.Join(runDir, "guidance")
-	if err := os.MkdirAll(guidanceDir, 0o755); err != nil {
-		t.Fatalf("mkdir guidance dir: %v", err)
+	for _, dir := range []string{
+		filepath.Join(runDir, "journals"),
+		guidanceDir,
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session journal: %v", err)
 	}
 
 	var gotTarget, gotKeys string

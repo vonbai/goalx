@@ -1,8 +1,8 @@
 # GoalX
 
-Autonomous research and development framework. Master/Subagent architecture powered by AI coding agents (Claude Code, Codex). One command to launch unattended research, debate, and implementation.
+Autonomous research and development framework. Master/Subagent architecture powered by AI coding agents (Claude Code, Codex). GoalX starts the master, and the master orchestrates the rest through GoalX tools.
 
-**Framework orchestrates. Agents judge.**
+**GoalX provides tools. The master orchestrates.**
 
 ## How It Works
 
@@ -10,20 +10,18 @@ Autonomous research and development framework. Master/Subagent architecture powe
 goalx auto "investigate authentication system vulnerabilities" --research --parallel 3
 ```
 
-GoalX creates isolated git worktrees, launches parallel AI agents in tmux, and a master agent supervises — challenging findings, pushing for depth, rescuing failed sessions, and synthesizing results.
+GoalX creates a run directory and launches a master agent in tmux. The master decides when to call `goalx add`, assigns work, challenges findings, rescues failed sessions, and synthesizes results.
 
 ```
 ┌─────────────────────────────────────────────────┐
 │  goalx auto "objective"                         │
 │                                                 │
-│  research → debate (optional) → implement → keep│
+│  master-led run                                 │
 │                                                 │
 │  tmux session:                                  │
-│    master:    opus — supervises, challenges      │
-│    session-1: sonnet — depth-first exploration   │
-│    session-2: sonnet — adversarial bug hunting   │
-│    session-3: sonnet — quantitative analysis     │
-│    heartbeat: triggers master check every 2m     │
+│    master: starts first and reads goalx config   │
+│    master: calls goalx add to launch workers     │
+│    session-1+: created on demand by the master   │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -66,11 +64,11 @@ goalx auto "refactor the config system" --research --parallel 2
 | Command | Description |
 |---------|-------------|
 | `goalx init` | Generate config from objective |
-| `goalx start` | Launch tmux session with master + subagents |
-| `goalx auto` | Full pipeline: research → debate → implement |
+| `goalx start` | Launch tmux session with the master only |
+| `goalx auto` | Start one master-led run and wait for completion |
 | `goalx observe` | Live tmux capture from all agents |
 | `goalx status` | Journal-based progress summary |
-| `goalx add` | Add subagent to running session |
+| `goalx add` | Add a session to a running run |
 | `goalx save` | Save artifacts to `.goalx/runs/` |
 | `goalx debate` | Generate debate config from prior research |
 | `goalx implement` | Generate develop config from consensus |
@@ -83,17 +81,16 @@ goalx auto "refactor the config system" --research --parallel 2
 | `goalx stop` | Graceful shutdown |
 | `goalx drop` | Cleanup worktrees and branches |
 
-## Pipeline
+## Single-Run Flow
 
 ```
-goalx init → start → [observe...] → save
-                                       ↓
-goalx debate → start → [observe...] → save    (optional)
-                                       ↓
-goalx implement → start → [observe...] → keep
+goalx init → start → master reads config
+                    → master uses goalx add / keep / save as needed
+                    → observe / status while it runs
+                    → save / keep when the master finishes
 ```
 
-Each stage: CLI generates config, master supervises agents, framework handles git.
+`goalx debate` and `goalx implement` still exist as explicit commands, but `goalx auto` no longer routes between phases on the framework side.
 
 ## Goal Dimensions
 
@@ -149,7 +146,7 @@ goalx/
 
 ### Protocol Design
 
-GoalX is a **protocol scaffolding tool**. The Go code handles orchestration (worktrees, tmux, git), but all intelligence lives in two protocol templates:
+GoalX is a **protocol scaffolding tool**. The Go code launches the master, exposes worker-management tools, and handles git/worktree mechanics; the orchestration logic lives in the protocol templates:
 
 **Master** (`master.md.tmpl`): Final responsible party. Writes acceptance checklist, challenges subagent findings, rescues dead sessions, synthesizes results, recommends next steps.
 

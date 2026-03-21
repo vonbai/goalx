@@ -15,7 +15,7 @@ const usage = `goalx — autonomous research CLI
 
 Usage:
   goalx init    "objective" [flags]   Generate goalx.yaml from objective
-  goalx start                         Create run + worktree + tmux + launch agents from goalx.yaml
+  goalx start                         Create run + tmux + launch the master from goalx.yaml
   goalx start   "objective" [flags]   Init + start in one step (zero-config)
   goalx list                          List all runs (active / completed / archived)
   goalx status  [--run NAME] [session] Show current run progress from journal
@@ -31,9 +31,9 @@ Usage:
   goalx drop    [--run NAME]           Cleanup branch + worktree
   goalx report  [--run NAME]           Generate markdown report from journal
   goalx result  [NAME]                 Show saved summary or merged result details
-  goalx add     "direction" [--run NAME] Add new subagent to running run
+  goalx add     "direction" [--run NAME] Add a session to a running run
   goalx observe [NAME]                 Capture live output from all tmux windows
-  goalx auto    "objective" [flags]   Full pipeline: research → debate → implement
+  goalx auto    "objective" [flags]   Start one master-led run and wait for completion
   goalx serve                         Start the GoalX HTTP control server
   goalx next                           Show next pipeline step
 

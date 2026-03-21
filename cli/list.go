@@ -42,7 +42,10 @@ func List(projectRoot string, _ []string) error {
 			status = "active"
 		}
 
-		sessions := sessionCount(&cfg)
+		sessions := 0
+		if indexes, err := existingSessionIndexes(filepath.Join(runsDir, name)); err == nil {
+			sessions = len(indexes)
+		}
 
 		info, _ := e.Info()
 		created := ""

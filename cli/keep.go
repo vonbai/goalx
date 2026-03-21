@@ -31,7 +31,11 @@ func Keep(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if idx > sessionCount(rc.Config) {
+	ok, err := hasSessionIndex(rc.RunDir, idx)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return fmt.Errorf("session %q out of range for run %q", sessionName, rc.Name)
 	}
 

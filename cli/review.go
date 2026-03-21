@@ -32,9 +32,11 @@ func Review(projectRoot string, args []string) error {
 	fmt.Printf("=== Review: %s (%s) ===\n", rc.Name, rc.Config.Mode)
 	fmt.Printf("Objective: %s\n\n", rc.Config.Objective)
 
-	sessions := goalx.ExpandSessions(rc.Config)
-	for i := range sessions {
-		num := i + 1
+	sessionIndexes, err := existingSessionIndexes(rc.RunDir)
+	if err != nil {
+		return err
+	}
+	for _, num := range sessionIndexes {
 		sName := SessionName(num)
 		wtPath := WorktreePath(rc.RunDir, rc.Config.Name, num)
 

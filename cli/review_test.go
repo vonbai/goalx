@@ -19,8 +19,13 @@ func TestReviewUsesConfiguredResearchTargetFile(t *testing.T) {
 	runName := "demo"
 	runDir := goalx.RunDir(projectRoot, runName)
 	wtPath := WorktreePath(runDir, runName, 1)
-	if err := os.MkdirAll(wtPath, 0o755); err != nil {
-		t.Fatalf("mkdir worktree: %v", err)
+	for _, dir := range []string{
+		filepath.Join(runDir, "journals"),
+		wtPath,
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
 	}
 
 	cfg := goalx.Config{
@@ -38,6 +43,9 @@ func TestReviewUsesConfiguredResearchTargetFile(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(runDir, "goalx.yaml"), data, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session journal: %v", err)
 	}
 
 	want := "custom report body"

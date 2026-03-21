@@ -154,18 +154,19 @@ func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testin
 	runDir := t.TempDir()
 	data := ProtocolData{
 		Objective:      "ship it",
+		RunName:        "demo",
 		Mode:           goalx.ModeDevelop,
 		TmuxSession:    "ar-demo",
 		SummaryPath:    "/tmp/summary.md",
 		AcceptancePath: "/tmp/acceptance.md",
+		StatusPath:     "/tmp/status.json",
 		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
-		Sessions: []SessionData{
+		PlannedSessions: []PlannedSessionData{
 			{
-				Name:         "session-1",
-				WindowName:   "demo-1",
-				WorktreePath: "/tmp/worktree",
-				JournalPath:  "/tmp/journal.jsonl",
-				GuidancePath: "/tmp/guidance.md",
+				Name:   "session-1",
+				Engine: "codex",
+				Model:  "codex",
+				Hint:   "P0 fixes",
 			},
 		},
 	}
@@ -180,10 +181,11 @@ func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testin
 	}
 	text := string(out)
 	for _, want := range []string{
-		"## Before First Heartbeat",
+		"## Startup",
 		"Write an acceptance checklist",
 		"/tmp/acceptance.md",
-		"Then wait for Heartbeat prompts. Do NOT loop on your own.",
+		"goalx add --run demo",
+		"Do NOT wait for external heartbeat prompts.",
 		"## Guidance Writing Principles",
 	} {
 		if !strings.Contains(text, want) {
@@ -196,25 +198,24 @@ func TestRenderMasterProtocolIncludesResearchPreflightDimensionSelection(t *test
 	runDir := t.TempDir()
 	data := ProtocolData{
 		Objective:      "audit auth",
+		RunName:        "demo",
 		Mode:           goalx.ModeResearch,
 		TmuxSession:    "ar-demo",
 		SummaryPath:    "/tmp/summary.md",
 		AcceptancePath: "/tmp/acceptance.md",
 		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
-		Sessions: []SessionData{
+		PlannedSessions: []PlannedSessionData{
 			{
-				Name:         "session-1",
-				WindowName:   "demo-1",
-				WorktreePath: "/tmp/worktree-1",
-				JournalPath:  "/tmp/journal-1.jsonl",
-				GuidancePath: "/tmp/guidance-1.md",
+				Name:   "session-1",
+				Engine: "codex",
+				Model:  "codex",
+				Hint:   "depth",
 			},
 			{
-				Name:         "session-2",
-				WindowName:   "demo-2",
-				WorktreePath: "/tmp/worktree-2",
-				JournalPath:  "/tmp/journal-2.jsonl",
-				GuidancePath: "/tmp/guidance-2.md",
+				Name:   "session-2",
+				Engine: "codex",
+				Model:  "codex",
+				Hint:   "adversarial",
 			},
 		},
 	}
@@ -230,8 +231,9 @@ func TestRenderMasterProtocolIncludesResearchPreflightDimensionSelection(t *test
 	text := string(out)
 	for _, want := range []string{
 		"Assess the objective's scope (quick fix vs deep research)",
-		"Decide which research dimensions matter most. If sessions are insufficient, use `goalx add`",
-		"Write a distinct dimension assignment to each session's guidance file",
+		"Review the configured session plan and decide which sessions to launch immediately versus later.",
+		"Launch each chosen session yourself with `goalx add --run demo ...`.",
+		"Write a distinct dimension assignment to each launched session's guidance file.",
 		"Write an acceptance checklist (3-7 testable bullets)",
 	} {
 		if !strings.Contains(text, want) {
@@ -244,6 +246,7 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 	runDir := t.TempDir()
 	data := ProtocolData{
 		Objective:      "ship it",
+		RunName:        "demo",
 		Mode:           goalx.ModeDevelop,
 		Preset:         "claude",
 		Engines:        goalx.BuiltinEngines,
@@ -253,16 +256,12 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 		AcceptancePath: "/tmp/acceptance.md",
 		StatusPath:     "/tmp/status.json",
 		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
-		Sessions: []SessionData{
+		PlannedSessions: []PlannedSessionData{
 			{
-				Name:         "session-1",
-				WindowName:   "demo-1",
-				WorktreePath: "/tmp/worktree",
-				JournalPath:  "/tmp/journal.jsonl",
-				GuidancePath: "/tmp/guidance.md",
-				Engine:       "codex",
-				Model:        "codex",
-				Hint:         "P0 fixes",
+				Name:   "session-1",
+				Engine: "codex",
+				Model:  "codex",
+				Hint:   "P0 fixes",
 			},
 		},
 	}
@@ -279,6 +278,7 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 	for _, want := range []string{
 		"## Available Engines",
 		"## Current Configuration",
+		"- Run: demo",
 		"- Preset: claude",
 		"- session-1: codex/codex (P0 fixes)",
 		"Write summary to `/tmp/summary.md`",
@@ -291,7 +291,7 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 		"| `implement` | Acceptance criteria are met for this phase and the next step is code changes. | true |",
 		"Functional verification: for each acceptance checklist item, record concrete PASS/FAIL evidence beyond the gate.",
 		"Set `keep_session` when a develop-mode session should be merged after the run.",
-		"Default action for the first 3+ heartbeats is **push deeper**.",
+		"Default action for the first 3+ check cycles is **push deeper**.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)

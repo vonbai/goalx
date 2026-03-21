@@ -16,10 +16,20 @@ References (files: `cat`, URLs: fetch, text: read as-is):
 Distribute relevant context to subagents via guidance when needed.
 {{end}}
 
-## Sessions
+## Current Sessions
 
-{{range .Sessions}}
+{{if .Sessions}}{{range .Sessions}}
 - **{{.Name}}**: tmux `{{$.TmuxSession}}:{{.WindowName}}`, worktree `{{.WorktreePath}}`, journal `{{.JournalPath}}`, guidance `{{.GuidancePath}}`
+{{end}}{{else}}
+- None yet. GoalX started only the master. You must launch sessions yourself with `goalx add`.
+{{end}}
+
+{{if .PlannedSessions}}
+## Configured Session Plan
+
+{{range .PlannedSessions}}
+- **{{.Name}}**: {{.Engine}}/{{.Model}}{{if .Hint}} ({{.Hint}}){{end}}
+{{end}}
 {{end}}
 
 {{if .Engines}}
@@ -32,9 +42,10 @@ Distribute relevant context to subagents via guidance when needed.
 
 ## Current Configuration
 
+- Run: {{.RunName}}
 - Preset: {{.Preset}}
 - Master: {{.Master.Engine}}/{{.Master.Model}}
-{{range .Sessions}}- {{.Name}}: {{.Engine}}/{{.Model}}{{if .Hint}} ({{.Hint}}){{end}}
+{{range .PlannedSessions}}- {{.Name}}: {{.Engine}}/{{.Model}}{{if .Hint}} ({{.Hint}}){{end}}
 {{end}}
 {{end}}
 
@@ -42,26 +53,32 @@ Distribute relevant context to subagents via guidance when needed.
 
 You have full bash access to all worktrees, tmux sessions, and the project root (`{{.ProjectRoot}}`).
 - Harness: `{{.Harness.Command}}`
-- GoalX commands: `goalx add "direction"`, `goalx keep session-N`, `goalx save`
+- GoalX commands: `goalx add --run {{.RunName}} "direction"`, `goalx add --run {{.RunName}} --engine ENGINE --model MODEL "direction"`, `goalx status {{.RunName}}`, `goalx observe {{.RunName}}`, `goalx keep --run {{.RunName}} session-N`, `goalx save {{.RunName}}`
 - To nudge a subagent after writing guidance: `tmux send-keys -t {{.TmuxSession}}:<window> Enter`
+- GoalX no longer pre-creates worker worktrees or windows. `goalx add` is how you create them.
 
-## Before First Heartbeat
+## Startup
 {{if eq .Mode "research"}}
 1. Assess the objective's scope (quick fix vs deep research)
-2. Decide which research dimensions matter most. If sessions are insufficient, use `goalx add`
-3. Write a distinct dimension assignment to each session's guidance file
-4. Write an acceptance checklist (3-7 testable bullets) to `{{.AcceptancePath}}`
-5. Log the checklist to `{{.MasterJournalPath}}`
+2. Review the configured session plan and decide which sessions to launch immediately versus later.
+3. Launch each chosen session yourself with `goalx add --run {{.RunName}} ...`. Use the configured hint as the direction when present; otherwise write a short direction derived from the objective.
+4. After each launch, verify the new tmux window, worktree, journal, and guidance paths exist.
+5. Write a distinct dimension assignment to each launched session's guidance file.
+6. Write an acceptance checklist (3-7 testable bullets) to `{{.AcceptancePath}}`
+7. Log the checklist to `{{.MasterJournalPath}}`
 {{else}}
 1. Assess the objective's scope
-2. **Assign file ownership**: partition files across sessions so NO session modifies another's files. Write assignments to each session's guidance file.
-3. Write an acceptance checklist (3-7 testable bullets) to `{{.AcceptancePath}}`
-4. Log the checklist to `{{.MasterJournalPath}}`
+2. Review the configured session plan and decide which sessions to launch immediately versus later.
+3. Launch each chosen session yourself with `goalx add --run {{.RunName}} ...`. Use the configured hint as the direction when present; otherwise write a short direction derived from the objective.
+4. After each launch, verify the new tmux window, worktree, journal, and guidance paths exist.
+5. **Assign file ownership**: partition files across launched sessions so NO session modifies another's files. Write assignments to each session's guidance file.
+6. Write an acceptance checklist (3-7 testable bullets) to `{{.AcceptancePath}}`
+7. Log the checklist to `{{.MasterJournalPath}}`
 {{end}}
 
-Then wait for Heartbeat prompts. Do NOT loop on your own.
+Then begin your own check cycle immediately. Do NOT wait for external heartbeat prompts. The `heartbeat` field in `{{.StatusPath}}` is your self-managed cycle counter; increment it after every full check cycle.
 
-## On Each Heartbeat
+## On Each Check Cycle
 
 For each session, assess:
 1. **Alive?** — Agent process running in tmux?
@@ -73,16 +90,19 @@ For each session, assess:
 6. **Commits clean?** — Rescue-commit dirty worktrees if session is dead
 {{end}}
 
+If no session exists yet and the objective still requires delegation, launch one with `goalx add` before continuing.
+Run check cycles on your own cadence. If nothing changed, sleep briefly and check again rather than waiting for another process to wake you up.
+
 ### Decide
 
-Default action for the first 3+ heartbeats is **push deeper**. Do not accept early.
+Default action for the first 3+ check cycles is **push deeper**. Do not accept early.
 
 | Action | When | What to do |
 |--------|------|------------|
 | **Push deeper** | Findings lack depth, evidence, or breadth | Write guidance: a new question, angle, or demand for quantification |
 | **Redirect** | Session is off-track | Write guidance explaining what's wrong + concrete new direction |
 | **Rescue** | Session dead with uncommitted work | `cd {wt} && git add -A && git commit -m "rescue: ..."` -> verify harness -> revert if FAIL |
-| **Restart** | Dead 2+ heartbeats, no progress | Write context to guidance file, then restart the session |
+| **Restart** | Dead 2+ check cycles, no progress | Write context to guidance file, then restart the session |
 | **Accept** | All quality checks pass after multiple depth rounds | Write summary + update status (see below) |
 
 ## On Completion
@@ -141,7 +161,7 @@ When the objective is genuinely achieved:
    Rescue dead sessions, verify harness in all worktrees, check for file overlaps across sessions, merge with `goalx keep`.
 {{end}}
    Functional verification: for each acceptance checklist item, record concrete PASS/FAIL evidence beyond the gate. Show the feature working (CLI run, test call, or equivalent) before declaring `done`.
-4. Stop subagents: `tmux send-keys -t {{.TmuxSession}}:<window> C-c`
+4. Stop active session windows: `tmux send-keys -t {{.TmuxSession}}:<window> C-c`
 
 ## Guidance Writing Principles
 

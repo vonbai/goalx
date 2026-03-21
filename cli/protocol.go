@@ -12,6 +12,7 @@ import (
 
 // ProtocolData is passed to master.md.tmpl and program.md.tmpl.
 type ProtocolData struct {
+	RunName           string
 	Objective         string
 	Description       string
 	Mode              goalx.Mode
@@ -19,6 +20,7 @@ type ProtocolData struct {
 	Preset            string
 	Engines           map[string]goalx.EngineConfig
 	Sessions          []SessionData
+	PlannedSessions   []PlannedSessionData
 	Master            goalx.MasterConfig
 	Harness           goalx.HarnessConfig
 	Budget            goalx.BudgetConfig
@@ -53,6 +55,14 @@ type SessionData struct {
 	Hint          string
 	EngineCommand string
 	Prompt        string
+}
+
+// PlannedSessionData describes a session the master may choose to launch.
+type PlannedSessionData struct {
+	Name   string
+	Engine string
+	Model  string
+	Hint   string
 }
 
 // RenderMasterProtocol renders master.md.tmpl to the run directory.

@@ -32,9 +32,12 @@ func Drop(projectRoot string, args []string) error {
 		fmt.Printf("Stopped tmux session %s\n", rc.TmuxSession)
 	}
 
-	// Remove all worktrees
-	count := sessionCount(rc.Config)
-	for num := 1; num <= count; num++ {
+	// Remove all session worktrees discovered in the run directory.
+	sessionIndexes, err := existingSessionIndexes(rc.RunDir)
+	if err != nil {
+		return err
+	}
+	for _, num := range sessionIndexes {
 		wtPath := WorktreePath(rc.RunDir, rc.Config.Name, num)
 		branch := fmt.Sprintf("goalx/%s/%d", rc.Config.Name, num)
 		if err := RemoveWorktree(rc.ProjectRoot, wtPath); err != nil {

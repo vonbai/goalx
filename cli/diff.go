@@ -25,7 +25,11 @@ func Diff(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if idxA > sessionCount(rc.Config) {
+	ok, err := hasSessionIndex(rc.RunDir, idxA)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return fmt.Errorf("session %q out of range for run %q", rest[0], rc.Name)
 	}
 	branchA := fmt.Sprintf("goalx/%s/%d", rc.Config.Name, idxA)
@@ -36,7 +40,11 @@ func Diff(projectRoot string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if idxB > sessionCount(rc.Config) {
+		ok, err := hasSessionIndex(rc.RunDir, idxB)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			return fmt.Errorf("session %q out of range for run %q", rest[1], rc.Name)
 		}
 		branchB := fmt.Sprintf("goalx/%s/%d", rc.Config.Name, idxB)

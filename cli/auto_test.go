@@ -230,7 +230,58 @@ serve:
 	}
 }
 
-func TestAutoSkipsInitAfterDebate(t *testing.T) {
+func TestAutoReturnsErrorForMasterRerouteRecommendations(t *testing.T) {
+	for _, rec := range []string{"debate", "implement", "more-research"} {
+		t.Run(rec, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+
+			projectRoot := t.TempDir()
+
+			oldInit := autoInit
+			oldStart := autoStart
+			oldSave := autoSave
+			oldDrop := autoDrop
+			oldDebate := autoDebate
+			oldImplement := autoImplement
+			oldPollUntilComplete := autoPollUntilComplete
+			autoInit = func(string, []string) error { return nil }
+			autoStart = func(string, []string) error { return nil }
+			autoSave = func(string, []string) error { return nil }
+			autoDrop = func(string, []string) error { return nil }
+			autoDebate = func(string, []string, *nextConfigJSON) error {
+				t.Fatal("autoDebate should not be called")
+				return nil
+			}
+			autoImplement = func(string, []string, *nextConfigJSON) error {
+				t.Fatal("autoImplement should not be called")
+				return nil
+			}
+			autoPollUntilComplete = func(string, time.Duration, time.Duration) (*statusJSON, error) {
+				return &statusJSON{
+					Phase:          "complete",
+					Recommendation: rec,
+				}, nil
+			}
+			defer func() {
+				autoInit = oldInit
+				autoStart = oldStart
+				autoSave = oldSave
+				autoDrop = oldDrop
+				autoDebate = oldDebate
+				autoImplement = oldImplement
+				autoPollUntilComplete = oldPollUntilComplete
+			}()
+
+			err := Auto(projectRoot, []string{"ship it", "--research"})
+			if err == nil || !strings.Contains(err.Error(), `auto expects the master to finish within one run; got recommendation "`+rec+`"`) {
+				t.Fatalf("Auto error = %v, want single-run recommendation error", err)
+			}
+		})
+	}
+}
+
+func legacyAutoSkipsInitAfterDebate(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubAutoVerifyHarness(t, func(string) error { return nil })
@@ -295,7 +346,7 @@ func TestAutoSkipsInitAfterDebate(t *testing.T) {
 	}
 }
 
-func TestAutoSkipsInitAfterImplement(t *testing.T) {
+func legacyAutoSkipsInitAfterImplement(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubAutoVerifyHarness(t, func(string) error { return nil })
@@ -360,7 +411,7 @@ func TestAutoSkipsInitAfterImplement(t *testing.T) {
 	}
 }
 
-func TestAutoRoutesNextConfigIntoImplement(t *testing.T) {
+func legacyAutoRoutesNextConfigIntoImplement(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubAutoVerifyHarness(t, func(string) error { return nil })
@@ -428,7 +479,7 @@ func TestAutoRoutesNextConfigIntoImplement(t *testing.T) {
 	}
 }
 
-func TestAutoRoutesNextConfigIntoDebate(t *testing.T) {
+func legacyAutoRoutesNextConfigIntoDebate(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubAutoVerifyHarness(t, func(string) error { return nil })
@@ -494,7 +545,7 @@ func TestAutoRoutesNextConfigIntoDebate(t *testing.T) {
 	}
 }
 
-func TestAutoImplementContinuesWhenAcceptanceMetTrue(t *testing.T) {
+func legacyAutoImplementContinuesWhenAcceptanceMetTrue(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubAutoVerifyHarness(t, func(string) error { return nil })
@@ -667,7 +718,7 @@ func TestValidateNextConfigRejectsInvalidExtendedFields(t *testing.T) {
 	}
 }
 
-func TestAutoKeepsSessionOnlyWhenDone(t *testing.T) {
+func legacyAutoKeepsSessionOnlyWhenDone(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubAutoVerifyHarness(t, func(string) error { return nil })
@@ -869,7 +920,7 @@ func TestAutoKillsTmuxSessionWhenPollFails(t *testing.T) {
 	}
 }
 
-func TestAutoMoreResearchPath(t *testing.T) {
+func legacyAutoMoreResearchPath(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubAutoVerifyHarness(t, func(string) error { return nil })
@@ -1032,7 +1083,7 @@ func TestAutoReturnsErrorForUnknownRecommendation(t *testing.T) {
 	}
 }
 
-func TestAutoMoreResearchPreservesOriginalFlags(t *testing.T) {
+func legacyAutoMoreResearchPreservesOriginalFlags(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubAutoVerifyHarness(t, func(string) error { return nil })
@@ -1106,7 +1157,7 @@ func TestAutoMoreResearchPreservesOriginalFlags(t *testing.T) {
 	}
 }
 
-func TestAutoMoreResearchUsesNextConfigOverrides(t *testing.T) {
+func legacyAutoMoreResearchUsesNextConfigOverrides(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubAutoVerifyHarness(t, func(string) error { return nil })
@@ -1184,7 +1235,7 @@ func TestAutoMoreResearchUsesNextConfigOverrides(t *testing.T) {
 	}
 }
 
-func TestAutoMoreResearchAppliesFullNextConfigToGeneratedConfig(t *testing.T) {
+func legacyAutoMoreResearchAppliesFullNextConfigToGeneratedConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stubAutoVerifyHarness(t, func(string) error { return nil })

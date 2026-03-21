@@ -348,7 +348,12 @@ func (a *serveApp) handleTellAction(w http.ResponseWriter, projectRoot string, r
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
 	}
-	if idx > sessionCount(rc.Config) {
+	ok, err := hasSessionIndex(rc.RunDir, idx)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !ok {
 		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("session %q out of range for run %q", session, rc.Name))
 		return
 	}

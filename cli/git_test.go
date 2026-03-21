@@ -188,12 +188,20 @@ func TestDropRemovesRunDirectoryAndBranch(t *testing.T) {
 
 	runName := "drop-run"
 	runDir := goalx.RunDir(repo, runName)
-	if err := os.MkdirAll(filepath.Join(runDir, "worktrees"), 0o755); err != nil {
-		t.Fatalf("mkdir worktrees: %v", err)
+	for _, dir := range []string{
+		filepath.Join(runDir, "journals"),
+		filepath.Join(runDir, "worktrees"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
 	}
 	snapshot := []byte("name: drop-run\nmode: research\nobjective: demo\ntarget:\n  files: [\"report.md\"]\nharness:\n  command: \"test -f base.txt\"\n")
 	if err := os.WriteFile(filepath.Join(runDir, "goalx.yaml"), snapshot, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session journal: %v", err)
 	}
 
 	branch := "goalx/drop-run/1"

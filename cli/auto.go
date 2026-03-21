@@ -90,21 +90,18 @@ type autoCompletionPayload struct {
 	CompletedAt    string `json:"completed_at"`
 }
 
-// Auto runs the full goalx pipeline as a goal-driven loop (max 5 iterations).
-// Each iteration: init+start → poll → save → read recommendation → route.
+// Auto starts a single master-led run and waits for it to complete.
+// The master is responsible for any internal debate/implement transitions.
 func Auto(projectRoot string, args []string) (err error) {
 	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
-	originalArgs := append([]string(nil), args...)
-	initArgs := append([]string(nil), args...) // first iteration uses the user's original args
+	initArgs := append([]string(nil), args...)
 	if len(initArgs) > 0 && !hasMode(initArgs) {
 		initArgs = append(initArgs[:1:1], append([]string{"--research"}, initArgs[1:]...)...)
 	}
-	needsInit := true
 	var finalStatus *statusJSON
-	var lastPhaseStartedAt time.Time
+	startedAt := time.Now()
 	notified := false
 	activeTmuxSession := ""
-	var pendingInitConfig *nextConfigJSON
 	prevHeartbeatInterval := autoPollHeartbeatInterval
 	autoPollHeartbeatInterval = defaultHeartbeatCheckInterval
 
@@ -128,129 +125,71 @@ func Auto(projectRoot string, args []string) (err error) {
 		notifyCompletion()
 	}()
 
-	for i := 0; i < maxAutoIterations; i++ {
-		fmt.Printf("\n=== auto iteration %d/%d ===\n", i+1, maxAutoIterations)
-		lastPhaseStartedAt = time.Now()
+	if err := autoInit(projectRoot, initArgs); err != nil {
+		return fmt.Errorf("init: %w", err)
+	}
+	if err := autoStart(projectRoot, nil); err != nil {
+		return fmt.Errorf("start: %w", err)
+	}
 
-		// Init + Start
-		if needsInit {
-			if err := autoInit(projectRoot, initArgs); err != nil {
-				return fmt.Errorf("init (iter %d): %w", i, err)
-			}
-			if err := applyGeneratedConfigNextConfig(projectRoot, pendingInitConfig); err != nil {
-				return fmt.Errorf("apply next_config (iter %d): %w", i, err)
-			}
-			pendingInitConfig = nil
+	pollTimeout := 4 * time.Hour
+	if rc, resolveErr := autoResolveRun(projectRoot, ""); resolveErr == nil && rc != nil {
+		activeTmuxSession = rc.TmuxSession
+		autoPollHeartbeatInterval = rc.Config.Master.CheckInterval
+		if autoPollHeartbeatInterval <= 0 {
+			autoPollHeartbeatInterval = defaultHeartbeatCheckInterval
 		}
-		if err := autoStart(projectRoot, nil); err != nil {
-			return fmt.Errorf("start (iter %d): %w", i, err)
+		if rc.Config.Budget.MaxDuration > 0 {
+			pollTimeout = rc.Config.Budget.MaxDuration
 		}
-		activeTmuxSession = ""
-		autoPollHeartbeatInterval = defaultHeartbeatCheckInterval
-		pollTimeout := 4 * time.Hour
-		if rc, resolveErr := autoResolveRun(projectRoot, ""); resolveErr == nil && rc != nil {
-			activeTmuxSession = rc.TmuxSession
-			autoPollHeartbeatInterval = rc.Config.Master.CheckInterval
-			if autoPollHeartbeatInterval <= 0 {
-				autoPollHeartbeatInterval = defaultHeartbeatCheckInterval
-			}
-			if rc.Config.Budget.MaxDuration > 0 {
-				pollTimeout = rc.Config.Budget.MaxDuration
-			}
-		}
+	}
 
-		// Poll until complete
-		fmt.Println("Waiting for run to complete...")
-		status, err := autoPollUntilComplete(statusPath, 30*time.Second, pollTimeout)
-		if err != nil {
-			return fmt.Errorf("poll (iter %d): %w", i, err)
-		}
-		status.NextConfig = validateNextConfig(projectRoot, status.NextConfig)
-		finalStatus = status
+	fmt.Println("Waiting for run to complete...")
+	status, err := autoPollUntilComplete(statusPath, 30*time.Second, pollTimeout)
+	if err != nil {
+		return fmt.Errorf("poll: %w", err)
+	}
+	finalStatus = status
 
-		if status.Recommendation == "done" {
-			if err := autoVerifyHarness(projectRoot); err != nil {
-				return fmt.Errorf("verify harness (iter %d): %w", i, err)
+	if status.Recommendation == "done" {
+		if err := autoVerifyHarness(projectRoot); err != nil {
+			return fmt.Errorf("verify harness: %w", err)
+		}
+	}
+
+	if err := autoSave(projectRoot, nil); err != nil {
+		return fmt.Errorf("save: %w", err)
+	}
+
+	rec := status.Recommendation
+	fmt.Printf("Master recommendation: %s (acceptance_met=%v)\n", rec, status.AcceptanceMet)
+	if rec == "done" {
+		if status.KeepSession != "" {
+			fmt.Printf("Keeping session %s...\n", status.KeepSession)
+			if err := autoKeep(projectRoot, []string{status.KeepSession}); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: keep failed: %v\n", err)
 			}
 		}
-
-		// Save
-		if err := autoSave(projectRoot, nil); err != nil {
-			return fmt.Errorf("save (iter %d): %w", i, err)
-		}
-
-		rec := status.Recommendation
-		fmt.Printf("Master recommendation: %s (acceptance_met=%v)\n", rec, status.AcceptanceMet)
-
-		if rec == "done" {
-			if status.KeepSession != "" {
-				fmt.Printf("Keeping session %s...\n", status.KeepSession)
-				if err := autoKeep(projectRoot, []string{status.KeepSession}); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: keep failed: %v\n", err)
-				}
-			}
-			if err := autoDrop(projectRoot, nil); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: drop failed: %v\n", err)
-			}
-			activeTmuxSession = ""
-			fmt.Println("Objective achieved. Results saved.")
-			printAutoResults(projectRoot, status, lastPhaseStartedAt)
-			notifyCompletion()
-			return nil
-		}
-
 		if err := autoDrop(projectRoot, nil); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: drop failed: %v\n", err)
 		}
 		activeTmuxSession = ""
-
-		// Route to next iteration
-		switch rec {
-		case "debate":
-			fmt.Println("Starting debate round...")
-			if err := autoDebate(projectRoot, nil, status.NextConfig); err != nil {
-				return fmt.Errorf("debate (iter %d): %w", i, err)
-			}
-			needsInit = false
-
-		case "implement":
-			fmt.Println("Starting implementation...")
-			if err := autoImplement(projectRoot, nil, status.NextConfig); err != nil {
-				return fmt.Errorf("implement (iter %d): %w", i, err)
-			}
-			needsInit = false
-
-		case "more-research":
-			obj := status.NextObjective
-			if obj == "" {
-				fmt.Println("more-research recommended but no next_objective provided. Stopping.")
-				return nil
-			}
-			fmt.Printf("Re-initializing with new objective: %s\n", obj)
-			initArgs = []string{obj}
-			if len(originalArgs) > 1 {
-				initArgs = append(initArgs, originalArgs[1:]...)
-			}
-			if status.NextConfig != nil && status.NextConfig.Parallel > 0 {
-				initArgs = append(initArgs, "--parallel", fmt.Sprint(status.NextConfig.Parallel))
-			}
-			if status.NextConfig != nil && status.NextConfig.Preset != "" {
-				initArgs = append(initArgs, "--preset", status.NextConfig.Preset)
-			}
-			if !hasMode(initArgs) {
-				initArgs = append(initArgs, "--research")
-			}
-			needsInit = true
-			pendingInitConfig = status.NextConfig
-
-		default:
-			return fmt.Errorf("unknown recommendation %q", rec)
-		}
+		fmt.Println("Objective achieved. Results saved.")
+		printAutoResults(projectRoot, status, startedAt)
+		notifyCompletion()
+		return nil
 	}
 
-	printAutoResults(projectRoot, finalStatus, lastPhaseStartedAt)
-	fmt.Printf("Reached max iterations (%d). Stopping.\n", maxAutoIterations)
-	return nil
+	if err := autoDrop(projectRoot, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: drop failed: %v\n", err)
+	}
+	activeTmuxSession = ""
+	switch rec {
+	case "debate", "implement", "more-research":
+		return fmt.Errorf("auto expects the master to finish within one run; got recommendation %q", rec)
+	default:
+		return fmt.Errorf("unknown recommendation %q", rec)
+	}
 }
 
 func verifyHarness(projectRoot string) error {
@@ -264,7 +203,11 @@ func verifyHarness(projectRoot string) error {
 		return nil
 	}
 
-	for num := 1; num <= sessionCount(rc.Config); num++ {
+	sessionIndexes, err := existingSessionIndexes(rc.RunDir)
+	if err != nil {
+		return err
+	}
+	for _, num := range sessionIndexes {
 		worktreePath := WorktreePath(rc.RunDir, rc.Config.Name, num)
 		if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
 			continue

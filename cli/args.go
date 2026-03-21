@@ -150,7 +150,7 @@ func sessionWindowName(runName string, idx int) string {
 }
 
 func resolveWindowName(runName, name string) (string, error) {
-	if name == "" || name == "master" || name == "heartbeat" {
+	if name == "" || name == "master" {
 		if name == "" {
 			return "master", nil
 		}
@@ -159,8 +159,7 @@ func resolveWindowName(runName, name string) (string, error) {
 
 	idx, err := parseSessionIndex(name)
 	if err != nil {
-		return "", fmt.Errorf("invalid window %q (expected master, heartbeat, or session-N)", name)
+		return "", fmt.Errorf("invalid window %q (expected master or session-N)", name)
 	}
 	return sessionWindowName(runName, idx), nil
 }
-
