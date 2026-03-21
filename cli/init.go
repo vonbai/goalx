@@ -74,9 +74,13 @@ func Init(projectRoot string, args []string) error {
 		}
 	} else {
 		if len(cfg.Target.Files) == 0 {
-			cfg.Target = goalx.TargetConfig{
-				Files: []string{"TODO: specify directories to modify"},
-			}
+			cfg.Target.Files = InferTarget(projectRoot)
+		}
+		if len(cfg.Target.Files) == 0 {
+			cfg.Target = goalx.TargetConfig{Files: []string{"TODO: specify directories to modify"}}
+		}
+		if cfg.Harness.Command == "" {
+			cfg.Harness.Command = InferHarness(projectRoot)
 		}
 		if cfg.Harness.Command == "" {
 			cfg.Harness = goalx.HarnessConfig{Command: "TODO: build + test command"}

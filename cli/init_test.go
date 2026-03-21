@@ -38,6 +38,31 @@ func TestInitDevelopUsesProjectConfigWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestInitDevelopInfersHarnessAndTargetWithoutProjectConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module example.com/demo\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	if err := Init(projectRoot, []string{"ship it", "--develop", "--name", "demo"}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	cfg, err := goalx.LoadYAML[goalx.Config](filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load goalx.yaml: %v", err)
+	}
+	if len(cfg.Target.Files) != 1 || cfg.Target.Files[0] != "." {
+		t.Fatalf("target.files = %#v, want [.]", cfg.Target.Files)
+	}
+	if cfg.Harness.Command != "go build ./... && go test ./... -count=1 && go vet ./..." {
+		t.Fatalf("harness.command = %q", cfg.Harness.Command)
+	}
+}
+
 func TestInitResearchUsesResearchPresetDefaults(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
