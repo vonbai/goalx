@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestSlugify(t *testing.T) {
@@ -297,6 +299,67 @@ serve:
 	}
 	if cfg.Serve.NotificationURL != "http://run.example/hook" {
 		t.Fatalf("serve.notification_url = %q, want http://run.example/hook", cfg.Serve.NotificationURL)
+	}
+}
+
+func TestLoadConfigFiltersContextFilesToExternalRefs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+
+	repoFile := filepath.Join(projectRoot, "README.md")
+	if err := os.WriteFile(repoFile, []byte("repo\n"), 0o644); err != nil {
+		t.Fatalf("write repo file: %v", err)
+	}
+
+	runRef := filepath.Join(projectRoot, ".goalx", "runs", "demo", "summary.md")
+	if err := os.MkdirAll(filepath.Dir(runRef), 0o755); err != nil {
+		t.Fatalf("mkdir run ref dir: %v", err)
+	}
+	if err := os.WriteFile(runRef, []byte("summary\n"), 0o644); err != nil {
+		t.Fatalf("write run ref: %v", err)
+	}
+
+	externalRoot := t.TempDir()
+	externalRef := filepath.Join(externalRoot, "spec.md")
+	if err := os.WriteFile(externalRef, []byte("spec\n"), 0o644); err != nil {
+		t.Fatalf("write external ref: %v", err)
+	}
+
+	cfg := Config{
+		Name:      "demo",
+		Mode:      ModeResearch,
+		Objective: "investigate",
+		Target: TargetConfig{
+			Files: []string{"report.md"},
+		},
+		Harness: HarnessConfig{Command: "test -s report.md"},
+		Context: ContextConfig{
+			Files: []string{repoFile, runRef, externalRef},
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "goalx.yaml"), data, 0o644); err != nil {
+		t.Fatalf("write goalx.yaml: %v", err)
+	}
+
+	loaded, _, err := LoadConfig(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if len(loaded.Context.Files) != 2 {
+		t.Fatalf("context.files = %#v, want 2 external refs", loaded.Context.Files)
+	}
+	if loaded.Context.Files[0] != runRef || loaded.Context.Files[1] != externalRef {
+		t.Fatalf("context.files = %#v, want [%q %q]", loaded.Context.Files, runRef, externalRef)
 	}
 }
 

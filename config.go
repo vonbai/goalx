@@ -50,7 +50,7 @@ type HarnessConfig struct {
 }
 
 type ContextConfig struct {
-	Files []string `yaml:"files,omitempty"` // backward compat
+	Files []string `yaml:"files,omitempty"` // external file refs only
 	Refs  []string `yaml:"refs,omitempty"`  // any: paths, URLs, notes
 }
 
@@ -216,6 +216,7 @@ func loadBaseConfigRaw(projectRoot string) (Config, map[string]EngineConfig, err
 		return Config{}, nil, fmt.Errorf("project config: %w", err)
 	}
 	mergeConfig(&cfg, &projCfg)
+	cfg.Context.Files = filterExternalContextFiles(projectRoot, cfg.Context.Files)
 
 	return cfg, engines, nil
 }
@@ -243,6 +244,7 @@ func LoadConfig(projectRoot string) (*Config, map[string]EngineConfig, error) {
 		return nil, nil, fmt.Errorf("goalx.yaml: %w", err)
 	}
 	mergeConfig(&cfg, &runCfg)
+	cfg.Context.Files = filterExternalContextFiles(projectRoot, cfg.Context.Files)
 
 	// Apply preset to fill in engine/model gaps
 	applyPreset(&cfg)
@@ -532,4 +534,54 @@ func copyEngines(src map[string]EngineConfig) map[string]EngineConfig {
 		dst[k] = v
 	}
 	return dst
+}
+
+func filterExternalContextFiles(projectRoot string, files []string) []string {
+	if len(files) == 0 {
+		return nil
+	}
+
+	absRoot, err := filepath.Abs(projectRoot)
+	if err != nil {
+		absRoot = filepath.Clean(projectRoot)
+	}
+	runRoot := filepath.Join(absRoot, ".goalx", "runs")
+
+	var filtered []string
+	seen := make(map[string]bool, len(files))
+	for _, file := range files {
+		if strings.TrimSpace(file) == "" {
+			continue
+		}
+
+		normalized := file
+		if filepath.IsAbs(file) {
+			normalized = filepath.Clean(file)
+		} else {
+			normalized = filepath.Join(absRoot, file)
+		}
+
+		if pathWithin(normalized, absRoot) && !pathWithin(normalized, runRoot) {
+			continue
+		}
+		if seen[normalized] {
+			continue
+		}
+		filtered = append(filtered, normalized)
+		seen[normalized] = true
+	}
+	return filtered
+}
+
+func pathWithin(path, root string) bool {
+	path = filepath.Clean(path)
+	root = filepath.Clean(root)
+	if path == root {
+		return true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
