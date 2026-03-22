@@ -54,6 +54,9 @@ goalx auto "audit code quality and find bugs"
 # Watch progress
 goalx observe
 
+# For develop closeout, verify before treating the run as done
+goalx verify
+
 # View results
 goalx result
 ```
@@ -64,6 +67,7 @@ Default to `goalx auto`. Only use `goalx init` / `goalx start` when you explicit
 
 | Command | Description |
 |---------|-------------|
+| `goalx list` | List all runs (active, completed, archived) |
 | `goalx init` | Advanced/manual path: generate config from objective without starting |
 | `goalx start` | Advanced/manual path: launch tmux session from existing config |
 | `goalx auto` | Init and start one master-led run, then exit |
@@ -72,18 +76,21 @@ Default to `goalx auto`. Only use `goalx init` / `goalx start` when you explicit
 | `goalx add` | Add a session to a running run (`--mode research` launches a temporary research session) |
 | `goalx park` | Park an idle/blocked session for later reuse without deleting its worktree |
 | `goalx resume` | Resume a parked session in its existing worktree |
-| `goalx save` | Save durable artifacts and `artifacts.json` to `.goalx/runs/` |
-| `goalx verify` | Run the active run's acceptance command and record the result |
+| `goalx diff` | Diff session code or report outputs |
+| `goalx review` | Compare all session outputs |
+| `goalx keep` | Merge session branch into main |
+| `goalx archive` | Tag and preserve a session branch |
+| `goalx save` | Save durable artifacts, contract state, provenance, and `artifacts.json` to `.goalx/runs/` |
+| `goalx verify` | Run the effective acceptance gate, then validate goal contract completion and completion provenance |
 | `goalx debate` | Generate debate config from prior research |
 | `goalx implement` | Generate develop config from consensus |
-| `goalx keep` | Merge session branch into main |
-| `goalx next` | Suggest next pipeline step |
+| `goalx report` | Generate a markdown report from the run journal |
 | `goalx result` | Show saved run results (`--full` prints the full research summary) |
-| `goalx review` | Compare all session outputs |
 | `goalx attach` | Attach to tmux session or window |
 | `goalx serve` | Start HTTP API server |
 | `goalx stop` | Graceful shutdown |
 | `goalx drop` | Cleanup worktrees and branches; refuses runs with unsaved artifacts |
+| `goalx next` | Suggest next pipeline step |
 
 ## Single-Run Flow
 
@@ -91,6 +98,7 @@ Default to `goalx auto`. Only use `goalx init` / `goalx start` when you explicit
 goalx auto → master-led run
            → observe / status while it runs
            → redirect only when needed
+           → verify before done / implement closeout
            → save / result when the run finishes
 ```
 
@@ -193,14 +201,20 @@ GoalX includes a lightweight HTTP server for remote management:
 goalx serve    # starts on configured bind address
 ```
 
-API endpoints:
+Common endpoints:
 - `GET /projects` — list all configured workspaces
-- `POST /projects/:name/goalx/start` — start a run
-- `POST /projects/:name/goalx/observe` — check agent progress
-- `POST /projects/:name/goalx/tell` — send instructions to master
-- `POST /projects/:name/goalx/config` — read or modify project/run configuration
+- `GET /runs` — list active runs across all configured workspaces
 - `POST /workspaces` — add project directory (auto git-init if needed)
-- `GET /runs` — all active runs across all projects
+- `POST /projects/:name/goalx/auto` — start one master-led run from an objective
+- `POST /projects/:name/goalx/start` — start from existing config, or init+start when an objective is provided
+- `POST /projects/:name/goalx/observe` — capture live progress
+- `POST /projects/:name/goalx/status` — summarize progress
+- `POST /projects/:name/goalx/add` — add a session to a running run
+- `POST /projects/:name/goalx/keep|park|resume|save|stop|drop` — control a specific run or session
+- `POST /projects/:name/goalx/tell` — send instructions to the master
+- `POST /projects/:name/goalx/config` — read or modify project-level or run-scoped config
+
+The HTTP server accepts the same action names as the local CLI for the supported routes above; see [cli/serve.go](cli/serve.go) if you need the exact request mapping.
 
 Bearer token auth + IP binding. See [deploy/](deploy/) for config example and systemd unit.
 
