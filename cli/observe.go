@@ -9,6 +9,10 @@ import (
 
 // Observe captures live tmux pane output for all windows in a run.
 func Observe(projectRoot string, args []string) error {
+	if len(args) == 1 && isHelpToken(args[0]) {
+		fmt.Println("usage: goalx observe [NAME]")
+		return nil
+	}
 	runName, rest, err := extractRunFlag(args)
 	if err != nil {
 		return err

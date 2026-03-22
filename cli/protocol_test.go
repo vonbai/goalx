@@ -291,7 +291,7 @@ func TestRenderSubagentProtocolIncludesQualityJournalAndSelfCheck(t *testing.T) 
 		`"quality":"A|B|C"`,
 		`"owner_scope":"..."`,
 		`"blocked_by":"..."`,
-		`"depends_on":["session-2"]`,
+		`"depends_on":["master-rebuild"]`,
 		`"can_split":true`,
 		`"suggested_next":"..."`,
 		"A=strong evidence+tested counter-evidence+actionable",
@@ -302,6 +302,7 @@ func TestRenderSubagentProtocolIncludesQualityJournalAndSelfCheck(t *testing.T) 
 		"Did I cover the full assigned scope and nothing extra?",
 		"Did I verify counter-evidence or alternative explanations where applicable?",
 		"If any answer is no, fix it before declaring yourself idle.",
+		"Never list your own session name in `depends_on`.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered protocol missing %q", want)
@@ -495,7 +496,8 @@ func TestRenderMasterProtocolIncludesOptimizerDoctrine(t *testing.T) {
 		"architecture-level redesign path",
 		"Prefer the highest expected-value path",
 		"Do not over-engineer for elegance alone",
-		"record root cause, local path, compatibility-preserving path, architecture path, chosen path",
+		"Treat narrowed causes as hypotheses until a failing regression test or decisive counter-evidence confirms them.",
+		"keep it short: current problem, chosen path, and one-line reason",
 		"Do not ask the user to choose between implementation paths unless the choice materially changes scope, risk, acceptance, or irreversible cost.",
 		"Otherwise decide yourself, record why, and execute.",
 	} {
@@ -749,9 +751,50 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		"short-lived information gathering",
 		"if you are running on Claude Code, you may use Claude's native subagents inside the master session",
 		"`goalx add` remains the durable path",
+		"Treat narrowed causes as hypotheses until a failing regression test or decisive counter-evidence confirms them.",
+		"If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated heartbeats.",
+		"Keep detailed hypotheses, traces, and path comparisons in journals, not the coordination digest.",
+		"Avoid sync-only heartbeat narration.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
+		}
+	}
+}
+
+func TestRenderMasterProtocolOmitsOldSyncOnlyHeartbeatGuidance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:           "ship it",
+		RunName:             "demo",
+		Mode:                goalx.ModeDevelop,
+		Master:              goalx.MasterConfig{Engine: "codex", Model: "best"},
+		TmuxSession:         "ar-demo",
+		SummaryPath:         "/tmp/summary.md",
+		AcceptancePath:      "/tmp/acceptance.md",
+		AcceptanceStatePath: "/tmp/acceptance.json",
+		GoalContractPath:    "/tmp/goal-contract.json",
+		CoordinationPath:    "/tmp/coordination.json",
+		StatusPath:          "/tmp/status.json",
+		MasterJournalPath:   "/tmp/master.jsonl",
+		EngineCommand:       "codex exec",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, unwanted := range []string{
+		"Update `/tmp/status.json` and log to `/tmp/master.jsonl`.",
+		"record root cause, local path, compatibility-preserving path, architecture path, chosen path, and why it was chosen in the coordination digest",
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("rendered master protocol unexpectedly contains %q:\n%s", unwanted, text)
 		}
 	}
 }
@@ -791,7 +834,8 @@ func TestRenderMasterProtocolIncludesOptimizationDoctrine(t *testing.T) {
 		"architecture-level redesign path",
 		"Prefer the highest expected-value path feasible within budget and risk.",
 		"Do not over-engineer for elegance alone.",
-		"record root cause, local path, compatibility-preserving path, architecture path, chosen path",
+		"Treat narrowed causes as hypotheses until a failing regression test or decisive counter-evidence confirms them.",
+		"keep it short: current problem, chosen path, and one-line reason",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)

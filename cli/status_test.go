@@ -59,7 +59,7 @@ func TestStatusShowsUnreadInboxAndLegacyProtocolDrift(t *testing.T) {
 			t.Fatalf("AppendMasterInboxMessage: %v", err)
 		}
 	}
-	if err := SaveMasterState(MasterStatePath(runDir), &MasterState{LastSeenID: 1, LastHeartbeatSeq: 5, HeartbeatLag: 2, WakePending: true}); err != nil {
+	if err := SaveMasterState(MasterStatePath(runDir), &MasterState{LastSeenID: 1, LastHeartbeatSeq: 5, HeartbeatLag: 2, WakePending: true, StaleSince: "2026-03-23T00:00:00Z"}); err != nil {
 		t.Fatalf("SaveMasterState: %v", err)
 	}
 	if err := SaveHeartbeatState(HeartbeatStatePath(runDir), &HeartbeatState{Seq: 7}); err != nil {
@@ -78,6 +78,7 @@ func TestStatusShowsUnreadInboxAndLegacyProtocolDrift(t *testing.T) {
 		"unread_inbox=2",
 		"heartbeat_lag=2",
 		"wake_pending=true",
+		"stale=true",
 		"legacy protocol",
 	} {
 		if !strings.Contains(out, want) {

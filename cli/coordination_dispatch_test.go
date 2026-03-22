@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	goalx "github.com/vonbai/goalx"
@@ -97,6 +98,64 @@ func TestCoordinationStatePreservesDecisionRecord(t *testing.T) {
 	}
 	if loaded.Decision.ChosenPathReason != "it reduces idle waiting without sacrificing correctness" {
 		t.Fatalf("Decision.ChosenPathReason = %q", loaded.Decision.ChosenPathReason)
+	}
+}
+
+func TestSaveCoordinationStateSanitizesDigestFields(t *testing.T) {
+	runDir := filepath.Join(t.TempDir(), "demo")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+
+	state := &CoordinationState{
+		Version:   1,
+		Objective: "optimize discovery",
+		Sessions: map[string]CoordinationSession{
+			"session-1": {
+				State:          "active",
+				ExecutionState: "active",
+				Scope:          "  " + strings.Repeat("root-cause narration ", 30) + "  ",
+				BlockedBy:      strings.Repeat("blocked because the remote deploy is still pending and we keep repeating the same analysis. ", 8),
+			},
+		},
+		Blocked: []string{
+			"  " + strings.Repeat("same blocker ", 20) + "  ",
+			"  " + strings.Repeat("same blocker ", 20) + "  ",
+		},
+		Decision: &CoordinationDecision{
+			RootCause:        strings.Repeat("analysis ", 25),
+			LocalPath:        strings.Repeat("local ", 25),
+			CompatiblePath:   strings.Repeat("compatible ", 25),
+			ArchitecturePath: strings.Repeat("architecture ", 25),
+			ChosenPath:       "architecture_path",
+			ChosenPathReason: strings.Repeat("because better ", 25),
+		},
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), state); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+
+	loaded, err := LoadCoordinationState(CoordinationPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadCoordinationState: %v", err)
+	}
+	if got := loaded.Sessions["session-1"].Scope; len(got) > 240 {
+		t.Fatalf("Scope len = %d, want <= 240", len(got))
+	}
+	if got := loaded.Sessions["session-1"].BlockedBy; len(got) > 240 {
+		t.Fatalf("BlockedBy len = %d, want <= 240", len(got))
+	}
+	if len(loaded.Blocked) != 1 {
+		t.Fatalf("Blocked len = %d, want 1 after dedupe", len(loaded.Blocked))
+	}
+	if loaded.Decision == nil {
+		t.Fatal("Decision = nil")
+	}
+	if got := loaded.Decision.RootCause; len(got) > 160 {
+		t.Fatalf("Decision.RootCause len = %d, want <= 160", len(got))
+	}
+	if got := loaded.Decision.ChosenPathReason; len(got) > 160 {
+		t.Fatalf("Decision.ChosenPathReason len = %d, want <= 160", len(got))
 	}
 }
 

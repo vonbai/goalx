@@ -150,9 +150,11 @@ func printStatusControlSummary(rc *RunContext) {
 	unread := unreadMasterInboxCount(rc.RunDir, masterState)
 	heartbeatLag := int64(0)
 	wakePending := false
+	stale := false
 	if masterState != nil {
 		heartbeatLag = masterState.HeartbeatLag
 		wakePending = masterState.WakePending
+		stale = masterState.StaleSince != ""
 	}
 	if heartbeatLag == 0 && masterState != nil && heartbeatState != nil && heartbeatState.Seq >= masterState.LastHeartbeatSeq {
 		heartbeatLag = heartbeatState.Seq - masterState.LastHeartbeatSeq
@@ -160,7 +162,7 @@ func printStatusControlSummary(rc *RunContext) {
 			wakePending = true
 		}
 	}
-	fmt.Printf("Control: unread_inbox=%d heartbeat_lag=%d wake_pending=%t\n", unread, heartbeatLag, wakePending)
+	fmt.Printf("Control: unread_inbox=%d heartbeat_lag=%d wake_pending=%t stale=%t\n", unread, heartbeatLag, wakePending, stale)
 
 	meta, _ := LoadRunMetadata(RunMetadataPath(rc.RunDir))
 	if meta == nil || meta.ProtocolVersion < currentProtocolVersion {

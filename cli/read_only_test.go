@@ -34,6 +34,17 @@ func TestObserveLeavesRunAndStatusStateUntouched(t *testing.T) {
 	assertTmuxTouched(t, logPath)
 }
 
+func TestObserveHelpDoesNotResolveRun(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := Observe(t.TempDir(), []string{"--help"}); err != nil {
+			t.Fatalf("Observe --help: %v", err)
+		}
+	})
+	if !strings.Contains(out, "usage: goalx observe [NAME]") {
+		t.Fatalf("observe help output = %q", out)
+	}
+}
+
 func TestStatusLeavesRunAndStatusStateUntouched(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

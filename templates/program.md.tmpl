@@ -55,6 +55,7 @@ Master's acceptance checklist: `{{.AcceptancePath}}` (read-only — master evalu
 - If a deeper path materially improves the goal, report it clearly instead of silently following the old boundary.
 - When a better architecture path is justified, emit dispatchable slices or report it clearly in the journal/report so the master can adopt or dispatch it.
 - Do not wait for user approval when you can recommend a clearly superior path to the master. Recommend it, justify it, and keep the output actionable.
+- Treat narrowed root causes as hypotheses until a failing regression test or decisive counter-evidence confirms them.
 
 {{if eq .Mode "research"}}
 ## Mode: Research — Evidence-Driven Exploration
@@ -76,6 +77,7 @@ Good research here looks like:
 - Every major finding MUST have a Counter-evidence section. Challenge your own conclusions and actively look for counter-evidence.
 - **Each round should produce NEW insight.**
 - If the research reveals actionable follow-up work, emit `dispatchable_slices` entries that are small enough for the master to dispatch or directly adopt.
+- If you narrow a likely root cause, label it as a hypothesis until regression tests or decisive runtime evidence confirm it.
 - **Do not declare yourself done.** The master decides when to stop.
 
 Your report MUST include these section titles exactly:
@@ -107,6 +109,7 @@ Good development here looks like:
 - Follow the stated priority order and skip work that is already fixed.
 - Keep changes minimal and correct. Do not add unrelated improvements, but do not cut corners on the change you are making.
 - Respect file ownership from master guidance. If ownership is unclear, stay within your assigned scope and note cross-session needs in the journal.
+- If guidance or current evidence suggests a likely root cause, verify it with a failing regression test or decisive counter-evidence before treating it as confirmed.
 {{end}}
 
 {{if or .Context.Files .Context.Refs}}
@@ -145,7 +148,7 @@ Rely on the current filesystem and durable run state. When you believe the curre
 Append entries to `{{.JournalPath}}`:
 
 ```json
-{"round":1,"commit":"abc1234","desc":"what you investigated","confidence":"HIGH|MEDIUM|LOW","status":"progress","quality":"A|B|C","owner_scope":"...","blocked_by":"...","depends_on":["session-2"],"can_split":true,"suggested_next":"...","dispatchable_slices":[{"title":"...","why":"...","mode":"develop|research","suggested_owner":"session-2","suggested_action":"dispatch|adopt","evidence":["/abs/path"]}]}
+{"round":1,"commit":"abc1234","desc":"what you investigated","confidence":"HIGH|MEDIUM|LOW","status":"progress","quality":"A|B|C","owner_scope":"...","blocked_by":"...","depends_on":["master-rebuild"],"can_split":true,"suggested_next":"...","dispatchable_slices":[{"title":"...","why":"...","mode":"develop|research","suggested_owner":"session-2","suggested_action":"dispatch|adopt","evidence":["/abs/path"]}]}
 ```
 
 Quality rubric:
@@ -153,7 +156,7 @@ Quality rubric:
 - B=reasonable but gaps remain
 - C=preliminary flag for deepening
 
-The extra blocker fields are optional unless you are stuck. If you are blocked, append a `status:"stuck"` entry with the blocker, dependency, ownership scope, and the next smallest useful split the master could dispatch. If you have actionable next steps, prefer `dispatchable_slices` over prose so the master can either dispatch them or directly adopt them.
+The extra blocker fields are optional unless you are stuck. If you are blocked, append a `status:"stuck"` entry with the blocker, dependency, ownership scope, and the next smallest useful split the master could dispatch. Never list your own session name in `depends_on`. If you have actionable next steps, prefer `dispatchable_slices` over prose so the master can either dispatch them or directly adopt them.
 
 ## Budget
 
