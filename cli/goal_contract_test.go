@@ -156,6 +156,7 @@ acceptance:
       "kind": "user_required",
       "requirement": "ship the feature end to end",
       "status": "done",
+      "satisfaction_basis": "preexisting",
       "evidence": ["/tmp/e2e.txt"]
     },
     {
@@ -195,5 +196,122 @@ acceptance:
 		if !strings.Contains(statusText, want) {
 			t.Fatalf("status.json missing %q:\n%s", want, statusText)
 		}
+	}
+}
+
+func TestVerifyFailsWhenRequiredGoalContractItemLacksSatisfactionBasis(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	runName := "verify-contract-basis"
+	runDir := goalx.RunDir(repo, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir project .goalx: %v", err)
+	}
+
+	snapshot := []byte(`name: verify-contract-basis
+mode: develop
+objective: ship feature
+acceptance:
+  command: "printf 'e2e ok\n'"
+`)
+	if err := os.WriteFile(filepath.Join(runDir, "goalx.yaml"), snapshot, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	contract := []byte(`{
+  "version": 1,
+  "objective": "ship feature",
+  "items": [
+    {
+      "id": "req-1",
+      "kind": "user_required",
+      "requirement": "ship the feature end to end",
+      "status": "done",
+      "evidence": ["/tmp/e2e.txt"]
+    }
+  ]
+}`)
+	if err := os.WriteFile(GoalContractPath(runDir), contract, 0o644); err != nil {
+		t.Fatalf("write goal contract: %v", err)
+	}
+	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
+		Version:      1,
+		Objective:    "ship feature",
+		BaseRevision: strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD")),
+	}); err != nil {
+		t.Fatalf("write run metadata: %v", err)
+	}
+
+	err := Verify(repo, []string{"--run", runName})
+	if err == nil {
+		t.Fatal("expected Verify to fail")
+	}
+	if !strings.Contains(err.Error(), "satisfaction_basis") {
+		t.Fatalf("Verify error = %v, want satisfaction_basis failure", err)
+	}
+}
+
+func TestVerifyFailsWhenRunChangeClaimHasNoChangesSinceRunStart(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	runName := "verify-contract-run-change"
+	runDir := goalx.RunDir(repo, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir project .goalx: %v", err)
+	}
+
+	snapshot := []byte(`name: verify-contract-run-change
+mode: develop
+objective: ship feature
+acceptance:
+  command: "printf 'e2e ok\n'"
+`)
+	if err := os.WriteFile(filepath.Join(runDir, "goalx.yaml"), snapshot, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	contract := []byte(`{
+  "version": 1,
+  "objective": "ship feature",
+  "items": [
+    {
+      "id": "req-1",
+      "kind": "user_required",
+      "requirement": "ship the feature end to end",
+      "status": "done",
+      "satisfaction_basis": "run_change",
+      "evidence": ["/tmp/e2e.txt"]
+    }
+  ]
+}`)
+	if err := os.WriteFile(GoalContractPath(runDir), contract, 0o644); err != nil {
+		t.Fatalf("write goal contract: %v", err)
+	}
+	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
+		Version:      1,
+		Objective:    "ship feature",
+		BaseRevision: strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD")),
+	}); err != nil {
+		t.Fatalf("write run metadata: %v", err)
+	}
+
+	err := Verify(repo, []string{"--run", runName})
+	if err == nil {
+		t.Fatal("expected Verify to fail")
+	}
+	if !strings.Contains(err.Error(), "run_change") {
+		t.Fatalf("Verify error = %v, want run_change consistency failure", err)
 	}
 }

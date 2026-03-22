@@ -320,3 +320,14 @@ func runGit(t *testing.T, repo string, args ...string) {
 		t.Fatalf("git %v: %v\n%s", args, err, string(out))
 	}
 }
+
+func gitOutput(t *testing.T, repo string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, string(out))
+	}
+	return string(out)
+}

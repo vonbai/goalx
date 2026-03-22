@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	goalx "github.com/vonbai/goalx"
@@ -14,17 +15,28 @@ const (
 	acceptanceStatusPending = "pending"
 	acceptanceStatusPassed  = "passed"
 	acceptanceStatusFailed  = "failed"
+
+	acceptanceScopeBaseline     = "baseline"
+	acceptanceScopeGoalSpecific = "goal_specific"
+	acceptanceScopeNarrowed     = "narrowed"
+	acceptanceScopeExpanded     = "expanded"
+	acceptanceScopeRewritten    = "rewritten"
 )
 
 type AcceptanceState struct {
-	Version       int    `json:"version"`
-	Command       string `json:"command,omitempty"`
-	CommandSource string `json:"command_source,omitempty"`
-	Status        string `json:"status"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
-	CheckedAt     string `json:"checked_at,omitempty"`
-	LastExitCode  *int   `json:"last_exit_code,omitempty"`
-	EvidencePath  string `json:"evidence_path,omitempty"`
+	Version         int    `json:"version"`
+	BaselineCommand string `json:"baseline_command,omitempty"`
+	BaselineSource  string `json:"baseline_source,omitempty"`
+	Command         string `json:"command,omitempty"`
+	CommandSource   string `json:"command_source,omitempty"`
+	ScopeType       string `json:"scope_type,omitempty"`
+	ScopeReason     string `json:"scope_reason,omitempty"`
+	ContractVersion int    `json:"contract_version,omitempty"`
+	Status          string `json:"status"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
+	CheckedAt       string `json:"checked_at,omitempty"`
+	LastExitCode    *int   `json:"last_exit_code,omitempty"`
+	EvidencePath    string `json:"evidence_path,omitempty"`
 }
 
 func AcceptanceChecklistPath(runDir string) string {
@@ -42,11 +54,14 @@ func AcceptanceEvidencePath(runDir string) string {
 func NewAcceptanceState(cfg *goalx.Config) *AcceptanceState {
 	cmd, source := goalx.ResolveAcceptanceCommandSource(cfg)
 	return &AcceptanceState{
-		Version:       1,
-		Command:       cmd,
-		CommandSource: source,
-		Status:        acceptanceStatusPending,
-		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+		Version:         1,
+		BaselineCommand: cmd,
+		BaselineSource:  source,
+		Command:         cmd,
+		CommandSource:   source,
+		ScopeType:       acceptanceScopeBaseline,
+		Status:          acceptanceStatusPending,
+		UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
 	}
 }
 
@@ -69,6 +84,13 @@ func SaveAcceptanceState(path string, state *AcceptanceState) error {
 	if state == nil {
 		return fmt.Errorf("acceptance state is nil")
 	}
+	if state.Version <= 0 {
+		state.Version = 1
+	}
+	if strings.TrimSpace(state.ScopeType) == "" {
+		state.ScopeType = acceptanceScopeBaseline
+	}
+	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -99,8 +121,23 @@ func EnsureAcceptanceState(runDir string, cfg *goalx.Config) (*AcceptanceState, 
 	if state.Status == "" {
 		state.Status = acceptanceStatusPending
 	}
+	if state.BaselineCommand == "" {
+		state.BaselineCommand, state.BaselineSource = goalx.ResolveAcceptanceCommandSource(cfg)
+		if state.BaselineCommand == "" {
+			state.BaselineCommand = state.Command
+			state.BaselineSource = state.CommandSource
+		}
+	}
 	if state.Command == "" {
 		state.Command, state.CommandSource = goalx.ResolveAcceptanceCommandSource(cfg)
+	}
+	if state.CommandSource == "" {
+		state.CommandSource = state.BaselineSource
+	}
+	if state.ScopeType == "" {
+		if strings.TrimSpace(state.Command) == strings.TrimSpace(state.BaselineCommand) {
+			state.ScopeType = acceptanceScopeBaseline
+		}
 	}
 	if state.UpdatedAt == "" {
 		state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -111,7 +148,40 @@ func EnsureAcceptanceState(runDir string, cfg *goalx.Config) (*AcceptanceState, 
 	return state, nil
 }
 
-func updateStatusWithAcceptance(statusPath string, state *AcceptanceState, contractSummary GoalContractSummary) error {
+func ValidateAcceptanceStateForVerification(state *AcceptanceState, contract *GoalContractState) error {
+	if state == nil {
+		return fmt.Errorf("acceptance state is nil")
+	}
+	command := strings.TrimSpace(state.Command)
+	if command == "" {
+		return fmt.Errorf("no acceptance command configured")
+	}
+	baseline := strings.TrimSpace(state.BaselineCommand)
+	if baseline == "" {
+		baseline = command
+	}
+	if command == baseline {
+		return nil
+	}
+	scopeType := strings.TrimSpace(state.ScopeType)
+	switch scopeType {
+	case acceptanceScopeGoalSpecific, acceptanceScopeNarrowed, acceptanceScopeExpanded, acceptanceScopeRewritten:
+	default:
+		return fmt.Errorf("acceptance command differs from baseline but scope_type is missing or invalid")
+	}
+	if strings.TrimSpace(state.ScopeReason) == "" {
+		return fmt.Errorf("acceptance command differs from baseline but scope_reason is empty")
+	}
+	if contract != nil && contract.Version > 0 && state.ContractVersion > 0 && state.ContractVersion != contract.Version {
+		return fmt.Errorf("acceptance scope targets contract version %d but current goal contract is version %d", state.ContractVersion, contract.Version)
+	}
+	if contract != nil && contract.Version > 0 && state.ContractVersion == 0 {
+		return fmt.Errorf("acceptance command differs from baseline but contract_version is missing")
+	}
+	return nil
+}
+
+func updateStatusWithAcceptance(statusPath string, state *AcceptanceState, contractSummary GoalContractSummary, completion *CompletionState) error {
 	if state == nil {
 		return fmt.Errorf("acceptance state is nil")
 	}
@@ -126,8 +196,13 @@ func updateStatusWithAcceptance(statusPath string, state *AcceptanceState, contr
 	}
 
 	payload["acceptance_status"] = state.Status
+	payload["acceptance_baseline_command"] = state.BaselineCommand
+	payload["acceptance_baseline_source"] = state.BaselineSource
 	payload["acceptance_command"] = state.Command
 	payload["acceptance_command_source"] = state.CommandSource
+	payload["acceptance_scope_type"] = state.ScopeType
+	payload["acceptance_scope_reason"] = state.ScopeReason
+	payload["acceptance_contract_version"] = state.ContractVersion
 	payload["acceptance_checked_at"] = state.CheckedAt
 	if state.LastExitCode != nil {
 		payload["acceptance_exit_code"] = *state.LastExitCode
@@ -140,6 +215,19 @@ func updateStatusWithAcceptance(statusPath string, state *AcceptanceState, contr
 	payload["goal_required_done"] = contractSummary.RequiredDone
 	payload["goal_required_remaining"] = contractSummary.RequiredRemaining
 	payload["goal_enhancement_open"] = contractSummary.EnhancementOpen
+	if completion != nil {
+		payload["completion_mode"] = completion.CompletionMode
+		payload["code_changed"] = completion.CodeChanged
+		payload["base_revision"] = completion.BaseRevision
+		payload["head_revision"] = completion.HeadRevision
+		payload["changed_files_count"] = len(completion.ChangedFiles)
+		if completion.KeptSession != "" {
+			payload["kept_session"] = completion.KeptSession
+		}
+		if completion.KeptBranch != "" {
+			payload["kept_branch"] = completion.KeptBranch
+		}
+	}
 
 	data, err := json.Marshal(payload)
 	if err != nil {

@@ -57,6 +57,14 @@ func Save(projectRoot string, args []string) error {
 	if err := copyFileIfExists(goalContractPath, filepath.Join(saveDir, "goal-contract.json")); err != nil {
 		return fmt.Errorf("copy goal contract: %w", err)
 	}
+	runMetadataPath := RunMetadataPath(rc.RunDir)
+	if err := copyFileIfExists(runMetadataPath, filepath.Join(saveDir, "run-metadata.json")); err != nil {
+		return fmt.Errorf("copy run metadata: %w", err)
+	}
+	completionStatePath := CompletionStatePath(rc.RunDir)
+	if err := copyFileIfExists(completionStatePath, filepath.Join(saveDir, "completion.json")); err != nil {
+		return fmt.Errorf("copy completion state: %w", err)
+	}
 	acceptPath := filepath.Join(rc.RunDir, "acceptance.md")
 	if err := copyFileIfExists(acceptPath, filepath.Join(saveDir, "acceptance.md")); err != nil {
 		return fmt.Errorf("copy acceptance: %w", err)

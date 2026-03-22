@@ -23,6 +23,10 @@ const (
 
 	goalContractSummaryPending   = "pending"
 	goalContractSummarySatisfied = "satisfied"
+
+	goalSatisfactionPreexisting = "preexisting"
+	goalSatisfactionRunChange   = "run_change"
+	goalSatisfactionMixed       = "mixed"
 )
 
 type GoalContractState struct {
@@ -38,6 +42,7 @@ type GoalContractItem struct {
 	Source       string   `json:"source,omitempty"`
 	Requirement  string   `json:"requirement"`
 	Status       string   `json:"status"`
+	SatisfactionBasis string `json:"satisfaction_basis,omitempty"`
 	Owner        string   `json:"owner,omitempty"`
 	Notes        string   `json:"notes,omitempty"`
 	Evidence     []string `json:"evidence,omitempty"`
@@ -187,7 +192,42 @@ func ValidateGoalContractForCompletion(state *GoalContractState) (GoalContractSu
 	if summary.RequiredRemaining > 0 {
 		return summary, fmt.Errorf("goal contract still has %d unfinished required item(s)", summary.RequiredRemaining)
 	}
+	for _, item := range state.Items {
+		if !isRequiredGoalContractKind(strings.TrimSpace(item.Kind)) {
+			continue
+		}
+		if strings.TrimSpace(item.Status) != goalContractStatusDone {
+			continue
+		}
+		switch strings.TrimSpace(item.SatisfactionBasis) {
+		case goalSatisfactionPreexisting, goalSatisfactionRunChange, goalSatisfactionMixed:
+		default:
+			return summary, fmt.Errorf("goal contract item %s is done but missing valid satisfaction_basis", item.ID)
+		}
+		if (strings.TrimSpace(item.SatisfactionBasis) == goalSatisfactionRunChange || strings.TrimSpace(item.SatisfactionBasis) == goalSatisfactionMixed) && len(item.Evidence) == 0 {
+			return summary, fmt.Errorf("goal contract item %s claims %s but has no evidence", item.ID, item.SatisfactionBasis)
+		}
+	}
 	return summary, nil
+}
+
+func ValidateGoalContractAgainstCompletion(state *GoalContractState, completion *CompletionState) error {
+	if state == nil || completion == nil {
+		return nil
+	}
+	for _, item := range state.Items {
+		if !isRequiredGoalContractKind(strings.TrimSpace(item.Kind)) {
+			continue
+		}
+		if strings.TrimSpace(item.Status) != goalContractStatusDone {
+			continue
+		}
+		basis := strings.TrimSpace(item.SatisfactionBasis)
+		if !completion.CodeChanged && (basis == goalSatisfactionRunChange || basis == goalSatisfactionMixed) {
+			return fmt.Errorf("goal contract item %s claims %s but current HEAD is unchanged since run start", item.ID, basis)
+		}
+	}
+	return nil
 }
 
 func isRequiredGoalContractKind(kind string) bool {

@@ -31,6 +31,7 @@ Treat GoalX as a master-led autonomous run: start it, observe it, redirect only 
 5. Route direction changes through the master, not directly to subagent panes.
 6. Keep history recap short. GoalX resumes from durable run state and current files.
 7. Interpret `goalx observe` output. Report the signal, not raw tmux noise.
+8. GoalX completion is stricter than "tests passed": `goalx verify` also checks required-item completion provenance and whether the effective acceptance gate was silently narrowed.
 
 ## Scenario Guide
 
@@ -71,6 +72,7 @@ Treat GoalX as a master-led autonomous run: start it, observe it, redirect only 
 - Stuck 2+ heartbeats: redirect the master. It should rebalance or resume/park sessions instead of just waiting.
 - Wrong direction: steer the master, not subagents.
 - Need an explicit acceptance check: run `goalx verify` before treating the run as done.
+- If a run says "verification only", make sure it did not also merge or keep code changes in the same closeout.
 - Complete: `goalx save` then `goalx result` to review. Saved reports are indexed through `artifacts.json`.
 
 ## Advanced Control

@@ -139,6 +139,14 @@ func TestGenerateMasterAdapterRequiresVerifiedCompletionForDone(t *testing.T) {
 	}
 
 	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete","recommendation":"done","acceptance_status":"passed","goal_contract_status":"satisfied","goal_required_remaining":0}`), 0o644); err != nil {
+		t.Fatalf("write incomplete provenance status: %v", err)
+	}
+	out, err = runHook()
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("done without completion provenance should block stop, err=%v out=%q", err, out)
+	}
+
+	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete","recommendation":"done","acceptance_status":"passed","goal_contract_status":"satisfied","goal_required_remaining":0,"completion_mode":"verification_only","code_changed":false}`), 0o644); err != nil {
 		t.Fatalf("write verified done status: %v", err)
 	}
 	if out, err = runHook(); err != nil {

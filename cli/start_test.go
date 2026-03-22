@@ -215,17 +215,18 @@ esac
 	}
 
 	runDir := goalx.RunDir(repo, cfg.Name)
-	for _, path := range []string{
-		filepath.Join(runDir, "master.md"),
-		filepath.Join(runDir, "master.jsonl"),
-		filepath.Join(runDir, "acceptance.md"),
-		filepath.Join(runDir, "acceptance.json"),
-		filepath.Join(runDir, "goal-contract.json"),
-		filepath.Join(runDir, "artifacts.json"),
-		filepath.Join(runDir, "coordination.json"),
-		MasterInboxPath(runDir),
-		MasterStatePath(runDir),
-		HeartbeatStatePath(runDir),
+		for _, path := range []string{
+			filepath.Join(runDir, "master.md"),
+			filepath.Join(runDir, "master.jsonl"),
+			filepath.Join(runDir, "acceptance.md"),
+			filepath.Join(runDir, "acceptance.json"),
+			filepath.Join(runDir, "goal-contract.json"),
+			RunMetadataPath(runDir),
+			filepath.Join(runDir, "artifacts.json"),
+			filepath.Join(runDir, "coordination.json"),
+			MasterInboxPath(runDir),
+			MasterStatePath(runDir),
+			HeartbeatStatePath(runDir),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)

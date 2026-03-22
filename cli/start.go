@@ -138,6 +138,8 @@ func Start(projectRoot string, args []string) (err error) {
 		GoalContractPath:    goalContractPath,
 		AcceptancePath:      acceptancePath,
 		AcceptanceStatePath: acceptanceStatePath,
+		RunMetadataPath:     RunMetadataPath(runDir),
+		CompletionStatePath: CompletionStatePath(runDir),
 		CoordinationPath:    CoordinationPath(runDir),
 		MasterInboxPath:     MasterInboxPath(runDir),
 		MasterStatePath:     MasterStatePath(runDir),
@@ -162,6 +164,9 @@ func Start(projectRoot string, args []string) (err error) {
 	}
 	if _, err := EnsureAcceptanceState(runDir, cfg); err != nil {
 		return fmt.Errorf("init acceptance state: %w", err)
+	}
+	if _, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective); err != nil {
+		return fmt.Errorf("init run metadata: %w", err)
 	}
 	if _, err := EnsureArtifactsManifest(runDir); err != nil {
 		return fmt.Errorf("init artifacts manifest: %w", err)
