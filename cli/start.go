@@ -137,6 +137,9 @@ func Start(projectRoot string, args []string) (err error) {
 		AcceptancePath:      acceptancePath,
 		AcceptanceStatePath: acceptanceStatePath,
 		CoordinationPath:    CoordinationPath(runDir),
+		MasterInboxPath:     MasterInboxPath(runDir),
+		MasterStatePath:     MasterStatePath(runDir),
+		HeartbeatStatePath:  HeartbeatStatePath(runDir),
 		MasterJournalPath:   filepath.Join(runDir, "master.jsonl"),
 		StatusPath:          statusPath,
 		EngineCommand:       masterCmd,
@@ -161,6 +164,9 @@ func Start(projectRoot string, args []string) (err error) {
 	if _, err := EnsureCoordinationState(runDir, cfg.Objective); err != nil {
 		return fmt.Errorf("init coordination state: %w", err)
 	}
+	if err := EnsureMasterControl(runDir); err != nil {
+		return fmt.Errorf("init master control: %w", err)
+	}
 
 	// 13. Create tmux session (first window = "master")
 	if err := NewSession(tmuxSess, "master"); err != nil {
@@ -184,8 +190,12 @@ func Start(projectRoot string, args []string) (err error) {
 	if warning != "" {
 		fmt.Fprint(os.Stderr, warning)
 	}
-	hbCmd := HeartbeatCommand(tmuxSess, checkSec)
-	if err := NewWindow(tmuxSess, "heartbeat", "/tmp"); err != nil {
+	goalxBin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve goalx executable: %w", err)
+	}
+	hbCmd := HeartbeatCommand(goalxBin, cfg.Name, checkSec)
+	if err := NewWindow(tmuxSess, "heartbeat", absProjectRoot); err != nil {
 		return fmt.Errorf("tmux heartbeat window: %w", err)
 	}
 	if err := SendKeys(tmuxSess+":heartbeat", hbCmd); err != nil {

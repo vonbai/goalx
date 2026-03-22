@@ -112,6 +112,8 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.Save(cwd, args)
 	case "verify":
 		return cli.Verify(cwd, args)
+	case "pulse":
+		return cli.Pulse(cwd, args)
 	case "drop":
 		return cli.Drop(cwd, args)
 	case "report":

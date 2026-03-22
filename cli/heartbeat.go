@@ -6,12 +6,12 @@ import (
 )
 
 // HeartbeatCommand returns the shell command for the heartbeat tmux window.
-// Pure timer: unconditionally sends a wake-up to master every N seconds.
-// All orchestration logic lives in the master protocol, not here.
-func HeartbeatCommand(tmuxSession string, checkIntervalSeconds int) string {
+// It routes ticks through the goalx pulse command so the durable heartbeat
+// state and the tmux nudge stay in sync.
+func HeartbeatCommand(goalxBin, runName string, checkIntervalSeconds int) string {
 	return fmt.Sprintf(`while sleep %d; do
-  tmux send-keys -t %s:master 'Heartbeat: execute check cycle now.' Enter
-done`, checkIntervalSeconds, tmuxSession)
+  %s pulse --run %s
+done`, checkIntervalSeconds, shellQuote(goalxBin), shellQuote(runName))
 }
 
 func normalizeHeartbeatInterval(checkInterval time.Duration) (int, string) {

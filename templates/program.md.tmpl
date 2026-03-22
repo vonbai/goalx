@@ -4,21 +4,21 @@
 
 {{.Description}}
 {{end}}
-## Critical References (do not forget)
+## Run State
 
-- Journal: `{{.JournalPath}}` — format: `{"round":N,"commit":"...","desc":"...","confidence":"HIGH|MEDIUM|LOW","status":"progress|fix|stuck|ack-guidance","quality":"A|B|C"}`
-- Guidance: `{{.GuidancePath}}` — check after every commit
+- Journal: `{{.JournalPath}}` — append concise status; when resuming, start with the recent tail, not the whole file
+- Guidance: `{{.GuidancePath}}` — latest assignment and direction changes
 - Objective: {{.Objective}}
 {{if .Harness.Command}}- Gate: `{{.Harness.Command}}`{{end}}
 
-## Resume First
+## Resume From Durable State
 
-Before doing new work, first reconstruct context:
+Do not rebuild the full chat history unless the current state is ambiguous.
 
-1. Read your existing journal: `cat {{.JournalPath}}`
-2. Read the latest master guidance: `cat {{.GuidancePath}}`
+1. Read the latest master guidance: `cat {{.GuidancePath}}`
+2. Read the recent journal tail: `tail -n 20 {{.JournalPath}}`
 3. Inspect the current worktree state: `git status --short && git log --oneline -5`
-4. Then continue from the latest recorded state instead of restarting from scratch
+4. Resume from the current files and latest durable state. Only dig deeper into older history if something is unclear.
 
 {{if .Sessions}}
 ## Team Context
@@ -116,9 +116,7 @@ You are running in Claude Code with access to:
 ## Your Tools
 
 You are running in Codex CLI with file system access and shell execution.
-Note: When you complete all tasks, check guidance file for new instructions before stopping.
-
-When you have completed all current tasks, do not stop. Check your guidance file (`{{.GuidancePath}}`) for new instructions from the master agent. Re-check every few minutes.
+Rely on the current filesystem and durable run state. When you believe the current assignment is done, re-check `{{.GuidancePath}}` before idling.
 {{end}}
 
 ## Journal
@@ -141,14 +139,14 @@ Quality rubric:
 
 ## Master Guidance
 
-After every commit and after every harness run, check:
+Guidance is the latest assignment state, not a long conversation log. Check it when resuming, after a meaningful step, after harness runs, and before declaring idle:
 
 ```bash
 cat {{.GuidancePath}}
 ```
 
 If the file has content:
-1. Read it carefully and adjust your direction.
+1. Read it carefully and adjust to the latest direction.
 2. Acknowledge in journal with status `ack-guidance`.
 3. Clear the file after you have acted on it:
    ```bash
@@ -172,7 +170,7 @@ If any answer is no, fix it before declaring yourself idle.
 
 After finishing all items in your assignment:
 
-1. Check guidance one final time: `cat {{.GuidancePath}}`
+1. Check the latest guidance one final time: `cat {{.GuidancePath}}`
 2. If guidance has content -> follow it
 3. If guidance is empty -> append to journal:
    ```json

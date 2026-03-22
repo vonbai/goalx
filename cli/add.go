@@ -208,13 +208,6 @@ func Add(projectRoot string, args []string) error {
 		return fmt.Errorf("launch subagent: %w", err)
 	}
 
-	// Notify master
-	masterMsg := fmt.Sprintf(
-		"New %s added to your run. Window: %s, Worktree: %s, Journal: %s, Guidance: %s. Direction: %s. Add it to your check cycle.",
-		sName, windowName, wtPath, journalPath, guidancePath, hint,
-	)
-	SendKeys(rc.TmuxSession+":master", masterMsg)
-
 	// Update config snapshot with new session count
 	if len(rc.Config.Sessions) > 0 {
 		rc.Config.Sessions = append(rc.Config.Sessions, newSess)
@@ -227,6 +220,18 @@ func Add(projectRoot string, args []string) error {
 	}
 	if err := os.WriteFile(filepath.Join(rc.RunDir, "goalx.yaml"), cfgYAML, 0644); err != nil {
 		return fmt.Errorf("write config snapshot: %w", err)
+	}
+
+	// Notify master through durable inbox, then best-effort tmux nudge.
+	masterMsg := fmt.Sprintf(
+		"New %s added to your run. Window: %s, Worktree: %s, Journal: %s, Guidance: %s. Direction: %s. Add it to your check cycle.",
+		sName, windowName, wtPath, journalPath, guidancePath, hint,
+	)
+	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_added", "goalx add", masterMsg); err != nil {
+		return fmt.Errorf("notify master inbox: %w", err)
+	}
+	if err := sendAgentNudge(rc.TmuxSession+":master", rc.Config.Master.Engine); err != nil {
+		return fmt.Errorf("nudge master: %w", err)
 	}
 
 	fmt.Printf("Added %s to run '%s'\n", sName, rc.Name)

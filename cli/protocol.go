@@ -32,6 +32,9 @@ type ProtocolData struct {
 	AcceptancePath      string
 	AcceptanceStatePath string
 	CoordinationPath    string
+	MasterInboxPath     string
+	MasterStatePath     string
+	HeartbeatStatePath  string
 	MasterJournalPath   string
 	StatusPath          string // .goalx/status.json for external progress reporting
 	EngineCommand       string // resolved master engine command

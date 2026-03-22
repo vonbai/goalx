@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	goalx "github.com/vonbai/goalx"
@@ -366,13 +367,13 @@ func TestServeHandlerTellWritesGuidanceAndNudgesSession(t *testing.T) {
 		t.Fatalf("seed session journal: %v", err)
 	}
 
-	var gotTarget, gotKeys string
+	var gotTarget, gotEngine string
 	app := newServeApp(goalx.ServeConfig{
 		Token:      "secret-token",
 		Workspaces: map[string]string{"goalx": workspace},
 	})
-	app.sendKeys = func(target, keys string) error {
-		gotTarget, gotKeys = target, keys
+	app.sendNudge = func(target, engine string) error {
+		gotTarget, gotEngine = target, engine
 		return nil
 	}
 
@@ -395,8 +396,55 @@ func TestServeHandlerTellWritesGuidanceAndNudgesSession(t *testing.T) {
 	}
 
 	wantTarget := goalx.TmuxSessionName(workspace, "auth-audit") + ":" + sessionWindowName("auth-audit", 1)
-	if gotTarget != wantTarget || gotKeys != "" {
-		t.Fatalf("sendKeys target=%q keys=%q, want target=%q keys=\"\"", gotTarget, gotKeys, wantTarget)
+	if gotTarget != wantTarget || gotEngine != "" {
+		t.Fatalf("sendNudge target=%q engine=%q, want target=%q engine=\"\"", gotTarget, gotEngine, wantTarget)
+	}
+}
+
+func TestServeHandlerTellWritesMasterInboxAndUsesControlNudge(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	workspace := t.TempDir()
+	writeRunSnapshot(t, workspace, "auth-audit", goalx.ModeDevelop, "implement auth flow")
+	runDir := goalx.RunDir(workspace, "auth-audit")
+	if err := EnsureMasterControl(runDir); err != nil {
+		t.Fatalf("EnsureMasterControl: %v", err)
+	}
+
+	var gotTarget, gotEngine string
+	app := newServeApp(goalx.ServeConfig{
+		Token:      "secret-token",
+		Workspaces: map[string]string{"goalx": workspace},
+	})
+	app.sendNudge = func(target, engine string) error {
+		gotTarget, gotEngine = target, engine
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/projects/goalx/goalx/tell", bytes.NewBufferString(`{"run":"auth-audit","message":"focus on the final acceptance gap"}`))
+	req.Header.Set("Authorization", "Bearer secret-token")
+	rec := httptest.NewRecorder()
+	app.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	inbox, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	text := string(inbox)
+	for _, want := range []string{`"type":"tell"`, `"source":"user"`, `"body":"focus on the final acceptance gap"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("master inbox missing %q:\n%s", want, text)
+		}
+	}
+
+	wantTarget := goalx.TmuxSessionName(workspace, "auth-audit") + ":master"
+	if gotTarget != wantTarget || gotEngine != "" {
+		t.Fatalf("sendNudge target=%q engine=%q, want target=%q with default engine", gotTarget, gotEngine, wantTarget)
 	}
 }
 

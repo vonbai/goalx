@@ -19,9 +19,10 @@ The master is a **strategist + referee**: it decomposes the goal, selects engine
 
 ## Operating Rules
 1. Write the objective as a simple goal, not a task checklist. The master figures out the details.
-2. Route direction changes through the master via `tmux send-keys`, not directly to subagent panes.
-3. Interpret `goalx observe` output — report what matters, don't dump raw tmux noise.
-4. Keep git hygiene invisible. Handle dirty worktrees silently before `start` or `keep`.
+2. State the current direction, not a long history recap. GoalX persists durable run state; the master and subagents resume from current files plus run metadata.
+3. Route direction changes through the master via `tmux send-keys`, not directly to subagent panes.
+4. Interpret `goalx observe` output — report what matters, don't dump raw tmux noise.
+5. Keep git hygiene invisible. Handle dirty worktrees silently before `start` or `keep`.
 
 ## Quick Start
 
@@ -30,6 +31,7 @@ goalx auto "goal"
 ```
 
 That's it. The master starts in tmux, creates subagents as needed, and runs until done. Use `goalx observe` to check progress, `goalx result` to see the outcome.
+You usually do not need to restate long background context after compaction; give the current goal or redirect and let GoalX resume from durable state.
 
 Options only when the user wants control:
 - `--develop` — hint that code changes are the primary goal

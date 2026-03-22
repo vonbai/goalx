@@ -23,7 +23,7 @@ type serveApp struct {
 	cfg           goalx.ServeConfig
 	sessionExists func(string) bool
 	runCLI        func(projectRoot, action string, args []string) (string, error)
-	sendKeys      func(target, keys string) error
+	sendNudge     func(target, engine string) error
 }
 
 type serveProject struct {
@@ -81,7 +81,7 @@ func newServeApp(cfg goalx.ServeConfig) *serveApp {
 	app := &serveApp{
 		cfg:           cfg,
 		sessionExists: SessionExists,
-		sendKeys:      SendKeys,
+		sendNudge:     SendAgentNudge,
 	}
 	app.runCLI = app.runCLIAction
 	return app
@@ -333,8 +333,12 @@ func (a *serveApp) handleTellAction(w http.ResponseWriter, projectRoot string, r
 	}
 
 	if session == "master" {
+		if _, err := AppendMasterInboxMessage(rc.RunDir, "tell", "user", message); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err)
+			return
+		}
 		target := rc.TmuxSession + ":master"
-		if err := a.sendKeys(target, message); err != nil {
+		if err := a.sendNudge(target, rc.Config.Master.Engine); err != nil {
 			writeJSONError(w, http.StatusBadRequest, err)
 			return
 		}
@@ -377,7 +381,8 @@ func (a *serveApp) handleTellAction(w http.ResponseWriter, projectRoot string, r
 		return
 	}
 	target := rc.TmuxSession + ":" + windowName
-	if err := a.sendKeys(target, ""); err != nil {
+	effective := goalx.EffectiveSessionConfig(rc.Config, idx-1)
+	if err := a.sendNudge(target, effective.Engine); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
 	}

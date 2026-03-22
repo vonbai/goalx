@@ -280,6 +280,72 @@ acceptance:
 	}
 }
 
+func TestAddNotifiesMasterViaInbox(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	runName := "add-run"
+	runDir := goalx.RunDir(repo, runName)
+	for _, dir := range []string{
+		runDir,
+		filepath.Join(runDir, "journals"),
+		filepath.Join(runDir, "guidance"),
+		filepath.Join(runDir, "worktrees"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+engine: codex
+model: codex
+parallel: 1
+master:
+  engine: codex
+  model: gpt-5.4
+sessions:
+  - hint: first
+target:
+  files: ["."]
+harness:
+  command: "go test ./..."
+`)
+	if err := os.WriteFile(filepath.Join(runDir, "goalx.yaml"), snapshot, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
+	}
+
+	if err := Add(repo, []string{"second direction", "--run", runName}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	inbox, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	text := string(inbox)
+	for _, want := range []string{`"type":"session_added"`, `"source":"goalx add"`, `session-2`, `second direction`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("master inbox missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestAddStartsNumberingFromExistingRunArtifacts(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

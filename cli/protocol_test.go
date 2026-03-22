@@ -33,19 +33,24 @@ func TestRenderSubagentProtocolIncludesResumeInstructions(t *testing.T) {
 	}
 	text := string(out)
 	for _, want := range []string{
-		"## Critical References (do not forget)",
+		"## Run State",
 		"Journal: `/tmp/journal.jsonl`",
 		"Guidance: `/tmp/guidance.md`",
 		"Objective: ship it",
 		"Gate: `go test ./...`",
-		"Before doing new work, first reconstruct context",
-		"Read your existing journal",
+		"## Resume From Durable State",
+		"Do not rebuild the full chat history",
+		"Read the recent journal tail",
 		"Read the latest master guidance",
 		"Inspect the current worktree state",
+		"Resume from the current files and latest durable state",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered protocol missing %q", want)
 		}
+	}
+	if strings.Contains(text, "reconstruct context") {
+		t.Fatalf("rendered protocol should not emphasize reconstructing full context:\n%s", text)
 	}
 }
 
@@ -103,7 +108,8 @@ func TestRenderSubagentProtocolIncludesCodexGuidance(t *testing.T) {
 	text := string(out)
 	for _, want := range []string{
 		"You are running in Codex CLI with file system access and shell execution.",
-		"Check your guidance file (`/tmp/guidance.md`) for new instructions from the master agent.",
+		"Rely on the current filesystem and durable run state.",
+		"re-check `/tmp/guidance.md` before idling",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered protocol missing %q", want)
@@ -446,6 +452,9 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		MasterJournalPath:   "/tmp/master.jsonl",
 		StatusPath:          "/tmp/status.json",
 		CoordinationPath:    "/tmp/coordination.json",
+		MasterInboxPath:     "/tmp/control/master-inbox.jsonl",
+		MasterStatePath:     "/tmp/control/master-state.json",
+		HeartbeatStatePath:  "/tmp/control/heartbeat.json",
 		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
 	}
 
@@ -460,10 +469,15 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 	text := string(out)
 	for _, want := range []string{
 		"coordination.json",
+		"master-inbox.jsonl",
+		"master-state.json",
+		"heartbeat.json",
 		"goalx add --run demo --mode research",
 		"temporary research session",
 		"Research-mode sessions produce evidence and reports, not mergeable code changes.",
 		"Check the coordination digest version each heartbeat.",
+		"Default to current repo state, control files, and latest session outputs.",
+		"Only reread older journal history when the current state is ambiguous",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
