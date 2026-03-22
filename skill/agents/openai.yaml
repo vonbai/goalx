@@ -1,0 +1,4 @@
+interface:
+  display_name: "GoalX"
+  short_description: "Autonomous GoalX runs and redirects"
+  default_prompt: "Use $goalx to run, observe, or redirect an autonomous GoalX goal in this project."
