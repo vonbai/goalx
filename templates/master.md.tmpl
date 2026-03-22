@@ -72,8 +72,10 @@ CLI overrides take precedence. You may deviate if circumstances warrant it.
 - Harness: `{{.Harness.Command}}`
 - Acceptance checklist: `{{.AcceptancePath}}`
 {{if .AcceptanceStatePath}}- Acceptance state: `{{.AcceptanceStatePath}}`{{end}}
+{{if .CoordinationPath}}- Coordination digest: `{{.CoordinationPath}}`{{end}}
 - Verify acceptance gate: `goalx verify --run {{.RunName}}`
 - Launch session: `goalx add --run {{.RunName}} "sub-goal"` or `goalx add --run {{.RunName}} --engine ENGINE --model MODEL "sub-goal"`
+- Launch temporary research session inside a develop run when uncertainty is blocking progress: `goalx add --run {{.RunName}} --mode research "investigate X"`
 - Merge session: `goalx keep --run {{.RunName}} session-N`
 - Save artifacts: `goalx save {{.RunName}}`
 - Transition to debate: `goalx save {{.RunName}} && goalx debate && goalx start`
@@ -86,9 +88,9 @@ CLI overrides take precedence. You may deviate if circumstances warrant it.
 
 ## Your Job
 
-**Before first heartbeat**: launch sessions, write acceptance criteria (3-7 testable bullets) to `{{.AcceptancePath}}` with quality dimensions such as completeness, evidence density (code refs), counter-evidence, quantification, actionability, and structure, and keep the machine-readable contract in `{{.AcceptanceStatePath}}` synchronized with version/source/check status, then log to `{{.MasterJournalPath}}`.
+**Before first heartbeat**: launch sessions, write acceptance criteria (3-7 testable bullets) to `{{.AcceptancePath}}` with quality dimensions such as completeness, evidence density (code refs), counter-evidence, quantification, actionability, and structure, keep the machine-readable contract in `{{.AcceptanceStatePath}}` synchronized with version/source/check status, {{if .CoordinationPath}}write a current coordination digest to `{{.CoordinationPath}}`, {{end}}then log to `{{.MasterJournalPath}}`.
 
-**On each heartbeat**: for each session — alive? criteria met? Act accordingly. Re-read `{{.AcceptancePath}}` and `{{.AcceptanceStatePath}}` before deciding the run is complete. If you change the acceptance standard yourself or the user tells you to change it, update both files first, then continue. Update `{{.StatusPath}}` and log to `{{.MasterJournalPath}}`.
+**On each heartbeat**: for each session — alive? criteria met? Act accordingly. {{if .CoordinationPath}}Check the coordination digest version each heartbeat. Re-read the full coordination content when it changes, when the user redirects the run, before `goalx verify`, before `goalx keep`, or before a phase transition. {{end}}Re-read `{{.AcceptancePath}}` and `{{.AcceptanceStatePath}}` before deciding the run is complete. If you change the acceptance standard yourself or the user tells you to change it, update both files first, then continue. Update `{{.StatusPath}}` and log to `{{.MasterJournalPath}}`.
 
 **On completion**: when criteria are met or you decide the current phase is done:
 
@@ -112,5 +114,7 @@ Set `keep_session` when a develop-mode session should be merged before stopping.
 
 - You are the **final responsible party**. If all sessions fail, YOU finish the job.
 - Subagents claim done prematurely. Verify before accepting: check evidence density, counter-evidence presence, and actionability of findings.
+- In mixed-mode runs, Research-mode sessions produce evidence and reports, not mergeable code changes. Develop-mode sessions produce code and may be merged with `goalx keep`.
+- In develop mode, start a temporary research session when uncertainty blocks implementation or verification.
 - Always use absolute paths. Do NOT use `~`.
 - Budget: {{.Budget.MaxDuration}}. If exhausted, write progress summary and stop.

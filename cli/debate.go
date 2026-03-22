@@ -28,18 +28,9 @@ func Debate(projectRoot string, args []string, nc *nextConfigJSON) error {
 	savedCfg, _ := goalx.LoadYAML[goalx.Config](filepath.Join(runDir, "goalx.yaml"))
 
 	// Collect report files (absolute paths for worktree access)
-	var contextFiles []string
-	var sessionNames []string
-	absRunDir, _ := filepath.Abs(runDir)
-	entries, _ := os.ReadDir(runDir)
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasSuffix(name, "-report.md") || name == "summary.md" {
-			contextFiles = append(contextFiles, filepath.Join(absRunDir, name))
-		}
-		if strings.HasSuffix(name, "-report.md") {
-			sessionNames = append(sessionNames, strings.TrimSuffix(name, "-report.md"))
-		}
+	contextFiles, sessionNames, err := CollectSavedResearchContext(runDir)
+	if err != nil {
+		return fmt.Errorf("collect saved research context: %w", err)
 	}
 	if len(contextFiles) == 0 {
 		return fmt.Errorf("no reports found in %s", runDir)

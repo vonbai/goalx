@@ -1,0 +1,285 @@
+package cli
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	goalx "github.com/vonbai/goalx"
+)
+
+type ArtifactMeta struct {
+	Kind        string `json:"kind"`
+	Path        string `json:"path"`
+	RelPath     string `json:"rel_path,omitempty"`
+	DurableName string `json:"durable_name,omitempty"`
+}
+
+type SessionArtifacts struct {
+	Name      string         `json:"name"`
+	Mode      string         `json:"mode,omitempty"`
+	Artifacts []ArtifactMeta `json:"artifacts,omitempty"`
+}
+
+type ArtifactsManifest struct {
+	Run      string             `json:"run"`
+	Version  int                `json:"version"`
+	Sessions []SessionArtifacts `json:"sessions,omitempty"`
+}
+
+func ArtifactsPath(runDir string) string {
+	return filepath.Join(runDir, "artifacts.json")
+}
+
+func LoadArtifacts(path string) (*ArtifactsManifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var manifest ArtifactsManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return &manifest, nil
+}
+
+func SaveArtifacts(path string, manifest *ArtifactsManifest) error {
+	if manifest == nil {
+		return fmt.Errorf("artifacts manifest is nil")
+	}
+	if manifest.Version <= 0 {
+		manifest.Version = 1
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func EnsureArtifactsManifest(runDir string) (*ArtifactsManifest, error) {
+	path := ArtifactsPath(runDir)
+	manifest, err := LoadArtifacts(path)
+	if err != nil {
+		return nil, err
+	}
+	if manifest == nil {
+		manifest = &ArtifactsManifest{
+			Run:     filepath.Base(runDir),
+			Version: 1,
+		}
+		if err := SaveArtifacts(path, manifest); err != nil {
+			return nil, err
+		}
+		return manifest, nil
+	}
+	if manifest.Run == "" {
+		manifest.Run = filepath.Base(runDir)
+	}
+	if manifest.Version <= 0 {
+		manifest.Version = 1
+	}
+	if err := SaveArtifacts(path, manifest); err != nil {
+		return nil, err
+	}
+	return manifest, nil
+}
+
+func RegisterSessionArtifact(runDir, session string, meta ArtifactMeta) error {
+	if strings.TrimSpace(session) == "" {
+		return fmt.Errorf("session name is required")
+	}
+	manifest, err := EnsureArtifactsManifest(runDir)
+	if err != nil {
+		return err
+	}
+	sessionState := ensureSessionArtifactsEntry(manifest, session, "")
+	upsertArtifact(sessionState, meta)
+	return SaveArtifacts(ArtifactsPath(runDir), manifest)
+}
+
+func CopyArtifactsManifest(runDir, saveDir string) error {
+	manifest, err := EnsureArtifactsManifest(runDir)
+	if err != nil {
+		return err
+	}
+	return SaveArtifacts(filepath.Join(saveDir, "artifacts.json"), manifest)
+}
+
+func artifactKey(meta ArtifactMeta) string {
+	if meta.DurableName != "" {
+		return "durable:" + meta.DurableName
+	}
+	if meta.RelPath != "" {
+		return "rel:" + meta.RelPath
+	}
+	return "path:" + meta.Path
+}
+
+func EnsureRunArtifacts(runDir string, cfg *goalx.Config) (*ArtifactsManifest, error) {
+	manifest, err := EnsureArtifactsManifest(runDir)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return manifest, nil
+	}
+
+	changed := false
+	sessions := goalx.ExpandSessions(cfg)
+	for i := range sessions {
+		sessionName := SessionName(i + 1)
+		effective := goalx.EffectiveSessionConfig(cfg, i)
+		sessionState := ensureSessionArtifactsEntry(manifest, sessionName, string(effective.Mode))
+		if effective.Mode != goalx.ModeResearch || effective.Target == nil {
+			continue
+		}
+
+		wtPath := WorktreePath(runDir, cfg.Name, i+1)
+		reportPath := findSessionReport(wtPath, effective.Target.Files)
+		if reportPath == "" {
+			continue
+		}
+		relPath, err := filepath.Rel(wtPath, reportPath)
+		if err != nil {
+			relPath = filepath.Base(reportPath)
+		}
+		if upsertArtifact(sessionState, ArtifactMeta{
+			Kind:        "report",
+			Path:        reportPath,
+			RelPath:     relPath,
+			DurableName: fmt.Sprintf("%s-report.md", sessionName),
+		}) {
+			changed = true
+		}
+	}
+	if changed {
+		if err := SaveArtifacts(ArtifactsPath(runDir), manifest); err != nil {
+			return nil, err
+		}
+	}
+	return manifest, nil
+}
+
+func FindSessionArtifact(manifest *ArtifactsManifest, sessionName, kind string) *ArtifactMeta {
+	if manifest == nil {
+		return nil
+	}
+	for _, session := range manifest.Sessions {
+		if session.Name != sessionName {
+			continue
+		}
+		for _, artifact := range session.Artifacts {
+			if artifact.Kind == kind {
+				copy := artifact
+				return &copy
+			}
+		}
+	}
+	return nil
+}
+
+func CollectSavedResearchContext(runDir string) ([]string, []string, error) {
+	manifest, err := LoadArtifacts(filepath.Join(runDir, "artifacts.json"))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var contextFiles []string
+	var sessionNames []string
+	seen := map[string]bool{}
+	addPath := func(path string) {
+		if path == "" || seen[path] {
+			return
+		}
+		contextFiles = append(contextFiles, path)
+		seen[path] = true
+	}
+
+	summaryPath := filepath.Join(runDir, "summary.md")
+	if info, err := os.Stat(summaryPath); err == nil && !info.IsDir() && info.Size() > 0 {
+		addPath(summaryPath)
+	}
+	if manifest != nil {
+		for _, session := range manifest.Sessions {
+			for _, artifact := range session.Artifacts {
+				if artifact.Kind != "report" {
+					continue
+				}
+				addPath(artifact.Path)
+				if session.Name != "" {
+					sessionNames = append(sessionNames, session.Name)
+				}
+			}
+		}
+	}
+	if len(contextFiles) == 0 {
+		absRunDir, _ := filepath.Abs(runDir)
+		entries, _ := os.ReadDir(runDir)
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasSuffix(name, "-report.md") || name == "summary.md" {
+				addPath(filepath.Join(absRunDir, name))
+			}
+			if strings.HasSuffix(name, "-report.md") {
+				sessionNames = append(sessionNames, strings.TrimSuffix(name, "-report.md"))
+			}
+		}
+	}
+
+	sort.Strings(sessionNames)
+	return contextFiles, compactSorted(sessionNames), nil
+}
+
+func ensureSessionArtifactsEntry(manifest *ArtifactsManifest, session, mode string) *SessionArtifacts {
+	for i := range manifest.Sessions {
+		if manifest.Sessions[i].Name == session {
+			if manifest.Sessions[i].Mode == "" && mode != "" {
+				manifest.Sessions[i].Mode = mode
+			}
+			return &manifest.Sessions[i]
+		}
+	}
+	manifest.Sessions = append(manifest.Sessions, SessionArtifacts{Name: session, Mode: mode})
+	return &manifest.Sessions[len(manifest.Sessions)-1]
+}
+
+func upsertArtifact(session *SessionArtifacts, meta ArtifactMeta) bool {
+	artifacts := session.Artifacts
+	key := artifactKey(meta)
+	for i := range artifacts {
+		if artifactKey(artifacts[i]) == key {
+			if artifacts[i] == meta {
+				return false
+			}
+			artifacts[i] = meta
+			session.Artifacts = artifacts
+			return true
+		}
+	}
+	session.Artifacts = append(artifacts, meta)
+	return true
+}
+
+func compactSorted(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	sort.Strings(values)
+	out := values[:0]
+	for _, value := range values {
+		if len(out) == 0 || out[len(out)-1] != value {
+			out = append(out, value)
+		}
+	}
+	return out
+}

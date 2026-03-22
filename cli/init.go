@@ -139,6 +139,9 @@ func Init(projectRoot string, args []string) error {
 
 	goalxDir := filepath.Join(projectRoot, ".goalx")
 	os.MkdirAll(goalxDir, 0755)
+	if err := EnsureProjectGoalxIgnored(projectRoot); err != nil {
+		return fmt.Errorf("bootstrap .goalx ignore: %w", err)
+	}
 	outPath := filepath.Join(goalxDir, "goalx.yaml")
 	data, err := yaml.Marshal(&cfg)
 	if err != nil {

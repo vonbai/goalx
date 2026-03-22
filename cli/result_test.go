@@ -197,6 +197,47 @@ hidden details
 	}
 }
 
+func TestResultFallsBackToSavedManifestReportWhenSummaryMissing(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	runDir := writeSavedResultRun(t, projectRoot, "report-only-run", goalx.Config{
+		Name: "report-only-run",
+		Mode: goalx.ModeResearch,
+		Target: goalx.TargetConfig{
+			Files: []string{"report.md"},
+		},
+	}, nil)
+	reportPath := filepath.Join(runDir, "custom-findings.txt")
+	if err := os.WriteFile(reportPath, []byte("# report only\n\nuse this\n"), 0o644); err != nil {
+		t.Fatalf("write custom report: %v", err)
+	}
+	if err := SaveArtifacts(filepath.Join(runDir, "artifacts.json"), &ArtifactsManifest{
+		Run:     "report-only-run",
+		Version: 1,
+		Sessions: []SessionArtifacts{
+			{
+				Name: "session-1",
+				Mode: string(goalx.ModeResearch),
+				Artifacts: []ArtifactMeta{
+					{Kind: "report", Path: reportPath, RelPath: "custom-findings.txt", DurableName: "session-1-report.md"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveArtifacts: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Result(projectRoot, []string{"report-only-run"}); err != nil {
+			t.Fatalf("Result: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "# report only") {
+		t.Fatalf("result output missing manifest-backed report:\n%s", out)
+	}
+}
+
 func writeSavedResultRun(t *testing.T, projectRoot, runName string, cfg goalx.Config, files map[string]string) string {
 	t.Helper()
 

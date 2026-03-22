@@ -663,3 +663,52 @@ func TestLoadYAMLValid(t *testing.T) {
 		t.Errorf("cfg = %+v", cfg)
 	}
 }
+
+func TestEffectiveSessionConfigOverridesRunDefaults(t *testing.T) {
+	cfg := &Config{
+		Mode:    ModeDevelop,
+		Target:  TargetConfig{Files: []string{"src/"}, Readonly: []string{"vendor/"}},
+		Harness: HarnessConfig{Command: "go test ./..."},
+		Sessions: []SessionConfig{
+			{
+				Hint:    "investigate root cause",
+				Mode:    ModeResearch,
+				Target:  &TargetConfig{Files: []string{"report.md"}, Readonly: []string{"."}},
+				Harness: &HarnessConfig{Command: "test -s report.md"},
+			},
+		},
+	}
+
+	got := EffectiveSessionConfig(cfg, 0)
+	if got.Mode != ModeResearch {
+		t.Fatalf("Mode = %q, want %q", got.Mode, ModeResearch)
+	}
+	if !reflect.DeepEqual(got.Target.Files, []string{"report.md"}) {
+		t.Fatalf("Target.Files = %#v, want report target", got.Target.Files)
+	}
+	if got.Harness.Command != "test -s report.md" {
+		t.Fatalf("Harness.Command = %q, want research harness", got.Harness.Command)
+	}
+}
+
+func TestEffectiveSessionConfigInheritsRunDefaults(t *testing.T) {
+	cfg := &Config{
+		Mode:    ModeDevelop,
+		Target:  TargetConfig{Files: []string{"src/"}, Readonly: []string{"vendor/"}},
+		Harness: HarnessConfig{Command: "go test ./..."},
+		Sessions: []SessionConfig{
+			{Hint: "implement fix"},
+		},
+	}
+
+	got := EffectiveSessionConfig(cfg, 0)
+	if got.Mode != ModeDevelop {
+		t.Fatalf("Mode = %q, want %q", got.Mode, ModeDevelop)
+	}
+	if !reflect.DeepEqual(got.Target.Files, []string{"src/"}) {
+		t.Fatalf("Target.Files = %#v, want inherited run target", got.Target.Files)
+	}
+	if got.Harness.Command != "go test ./..." {
+		t.Fatalf("Harness.Command = %q, want inherited run harness", got.Harness.Command)
+	}
+}

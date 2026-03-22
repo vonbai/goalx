@@ -10,7 +10,7 @@ Autonomous research and development framework. Master/Subagent architecture powe
 goalx auto "investigate authentication system vulnerabilities"
 ```
 
-GoalX creates a run directory and launches a master agent in tmux. The master decides when to call `goalx add`, assigns work, challenges findings, rescues failed sessions, and synthesizes results.
+GoalX creates a run directory and launches a master agent in tmux. The master decides when to call `goalx add`, assigns work, spins up temporary research sessions when needed, challenges findings, rescues failed sessions, and synthesizes results.
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -67,8 +67,8 @@ goalx result
 | `goalx auto` | Init and start one master-led run, then exit |
 | `goalx observe` | Live tmux capture from all agents |
 | `goalx status` | Journal-based progress summary |
-| `goalx add` | Add a session to a running run |
-| `goalx save` | Save artifacts to `.goalx/runs/` |
+| `goalx add` | Add a session to a running run (`--mode research` launches a temporary research session) |
+| `goalx save` | Save durable artifacts and `artifacts.json` to `.goalx/runs/` |
 | `goalx verify` | Run the active run's acceptance command and record the result |
 | `goalx debate` | Generate debate config from prior research |
 | `goalx implement` | Generate develop config from consensus |
@@ -79,7 +79,7 @@ goalx result
 | `goalx attach` | Attach to tmux session or window |
 | `goalx serve` | Start HTTP API server |
 | `goalx stop` | Graceful shutdown |
-| `goalx drop` | Cleanup worktrees and branches |
+| `goalx drop` | Cleanup worktrees and branches; refuses runs with unsaved artifacts |
 
 ## Single-Run Flow
 
@@ -91,6 +91,13 @@ goalx init → start → master reads config
 ```
 
 `goalx debate` and `goalx implement` still exist as explicit commands, but `goalx auto` no longer routes between phases on the framework side.
+
+## Runtime vs Saved State
+
+- Active runtime state lives under `~/.goalx/runs/{projectID}/{run}`.
+- Durable project artifacts live under `<project>/.goalx/runs/{run}` after `goalx save`.
+- `artifacts.json` is the durable index for saved reports and other research outputs consumed by `result`, `debate`, and `implement`.
+- GoalX bootstraps `.goalx/` into `.git/info/exclude` for local repos so project-scoped run state stays out of git by default.
 
 ## Goal Dimensions
 

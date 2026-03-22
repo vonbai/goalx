@@ -27,6 +27,10 @@ func Review(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
+	manifest, err := EnsureRunArtifacts(rc.RunDir, rc.Config)
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("=== Review: %s (%s) ===\n", rc.Name, rc.Config.Mode)
 	fmt.Printf("Objective: %s\n\n", rc.Config.Objective)
@@ -53,8 +57,12 @@ func Review(projectRoot string, args []string) error {
 		fmt.Printf("Journal: %s\n", goalx.Summary(entries))
 
 		// Mode-specific output
-		if rc.Config.Mode == goalx.ModeResearch {
-			reportPath := findSessionReport(wtPath, rc.Config.Target.Files)
+		effective := goalx.EffectiveSessionConfig(rc.Config, num-1)
+		if effective.Mode == goalx.ModeResearch {
+			reportPath := ""
+			if artifact := FindSessionArtifact(manifest, sName, "report"); artifact != nil {
+				reportPath = artifact.Path
+			}
 			if reportPath != "" {
 				printFirstLines(reportPath, 20)
 			}

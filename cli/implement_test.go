@@ -171,3 +171,56 @@ func TestImplementAppliesNextConfigPreset(t *testing.T) {
 		t.Fatalf("engine/model = %s/%s, want claude-code/opus", cfg.Engine, cfg.Model)
 	}
 }
+
+func TestImplementUsesSavedManifestReportArtifacts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	writeSavedRunFixture(t, projectRoot, "debate", goalx.Config{
+		Name:      "debate",
+		Mode:      goalx.ModeResearch,
+		Objective: "consensus fixes",
+		Preset:    "claude",
+		Parallel:  1,
+	}, nil)
+	runDir := filepath.Join(projectRoot, ".goalx", "runs", "debate")
+	reportPath := filepath.Join(runDir, "custom-findings.txt")
+	if err := os.WriteFile(reportPath, []byte("report\n"), 0o644); err != nil {
+		t.Fatalf("write custom report: %v", err)
+	}
+	if err := SaveArtifacts(filepath.Join(runDir, "artifacts.json"), &ArtifactsManifest{
+		Run:     "debate",
+		Version: 1,
+		Sessions: []SessionArtifacts{
+			{
+				Name: "session-1",
+				Mode: string(goalx.ModeResearch),
+				Artifacts: []ArtifactMeta{
+					{Kind: "report", Path: reportPath, RelPath: "custom-findings.txt", DurableName: "session-1-report.md"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveArtifacts: %v", err)
+	}
+
+	if err := Implement(projectRoot, nil, nil); err != nil {
+		t.Fatalf("Implement: %v", err)
+	}
+
+	cfg, err := goalx.LoadYAML[goalx.Config](filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load goalx.yaml: %v", err)
+	}
+	found := false
+	for _, path := range cfg.Context.Files {
+		if path == reportPath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("context.files = %#v, want %q from artifacts manifest", cfg.Context.Files, reportPath)
+	}
+}

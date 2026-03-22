@@ -97,6 +97,58 @@ func TestReviewFallsBackToUntrackedMarkdownReport(t *testing.T) {
 	}
 }
 
+func TestReviewUsesManifestDeclaredReportInMixedModeRun(t *testing.T) {
+	projectRoot, wtPath := seedReviewResearchRun(t, []string{"missing.md"})
+	runDir := goalx.RunDir(projectRoot, "demo")
+
+	cfg, err := goalx.LoadYAML[goalx.Config](filepath.Join(runDir, "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load run config: %v", err)
+	}
+	cfg.Mode = goalx.ModeDevelop
+	cfg.Target = goalx.TargetConfig{Files: []string{"src/"}}
+	cfg.Harness = goalx.HarnessConfig{Command: "go test ./..."}
+	cfg.Sessions = []goalx.SessionConfig{
+		{
+			Hint:    "investigate",
+			Mode:    goalx.ModeResearch,
+			Target:  &goalx.TargetConfig{Files: []string{"missing.md"}, Readonly: []string{"."}},
+			Harness: &goalx.HarnessConfig{Command: "test -s missing.md"},
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "goalx.yaml"), data, 0o644); err != nil {
+		t.Fatalf("write run config: %v", err)
+	}
+
+	want := "manifest-only report body"
+	reportPath := filepath.Join(wtPath, "analysis.txt")
+	if err := os.WriteFile(reportPath, []byte(want+"\n"), 0o644); err != nil {
+		t.Fatalf("write analysis.txt: %v", err)
+	}
+	if err := RegisterSessionArtifact(runDir, "session-1", ArtifactMeta{
+		Kind:        "report",
+		Path:        reportPath,
+		RelPath:     "analysis.txt",
+		DurableName: "session-1-report.md",
+	}); err != nil {
+		t.Fatalf("RegisterSessionArtifact: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Review(projectRoot, []string{"--run", "demo"}); err != nil {
+			t.Fatalf("Review: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, want) {
+		t.Fatalf("review output missing manifest report contents:\n%s", out)
+	}
+}
+
 func seedReviewResearchRun(t *testing.T, targetFiles []string) (string, string) {
 	t.Helper()
 

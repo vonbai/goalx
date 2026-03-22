@@ -80,9 +80,12 @@ type ServeConfig struct {
 }
 
 type SessionConfig struct {
-	Hint   string `yaml:"hint,omitempty"`
-	Engine string `yaml:"engine,omitempty"`
-	Model  string `yaml:"model,omitempty"`
+	Hint    string         `yaml:"hint,omitempty"`
+	Engine  string         `yaml:"engine,omitempty"`
+	Model   string         `yaml:"model,omitempty"`
+	Mode    Mode           `yaml:"mode,omitempty"`
+	Target  *TargetConfig  `yaml:"target,omitempty"`
+	Harness *HarnessConfig `yaml:"harness,omitempty"`
 }
 
 type PreferencesConfig struct {
@@ -360,6 +363,9 @@ func ValidateConfig(cfg *Config, engines map[string]EngineConfig) error {
 		sessions = []SessionConfig{{}}
 	}
 	for i, sess := range sessions {
+		if sess.Mode != "" && sess.Mode != ModeResearch && sess.Mode != ModeDevelop {
+			return fmt.Errorf("session-%d mode must be 'research' or 'develop', got %q", i+1, sess.Mode)
+		}
 		engine := sess.Engine
 		if engine == "" {
 			engine = cfg.Engine
@@ -488,6 +494,52 @@ func ExpandSessions(cfg *Config) []SessionConfig {
 		}
 	}
 	return sessions
+}
+
+// EffectiveSessionConfig resolves a session against run-level defaults.
+func EffectiveSessionConfig(cfg *Config, idx int) SessionConfig {
+	var out SessionConfig
+	if cfg == nil {
+		return out
+	}
+
+	sessions := ExpandSessions(cfg)
+	if idx >= 0 && idx < len(sessions) {
+		out = sessions[idx]
+	}
+	if out.Mode == "" {
+		out.Mode = cfg.Mode
+	}
+	if out.Engine == "" {
+		out.Engine = cfg.Engine
+	}
+	if out.Model == "" {
+		out.Model = cfg.Model
+	}
+
+	target := cfg.Target
+	if out.Target != nil {
+		if len(out.Target.Files) > 0 {
+			target.Files = append([]string(nil), out.Target.Files...)
+		}
+		if len(out.Target.Readonly) > 0 {
+			target.Readonly = append([]string(nil), out.Target.Readonly...)
+		}
+	}
+	out.Target = &target
+
+	harness := cfg.Harness
+	if out.Harness != nil {
+		if out.Harness.Command != "" {
+			harness.Command = out.Harness.Command
+		}
+		if out.Harness.Timeout > 0 {
+			harness.Timeout = out.Harness.Timeout
+		}
+	}
+	out.Harness = &harness
+
+	return out
 }
 
 // ResolveAcceptanceCommand returns the acceptance command, falling back to the

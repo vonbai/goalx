@@ -222,6 +222,74 @@ func TestDropRemovesRunDirectoryAndBranch(t *testing.T) {
 	}
 }
 
+func TestDropRefusesUnsavedRunWithArtifacts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	runName := "drop-run"
+	runDir := goalx.RunDir(repo, runName)
+	for _, dir := range []string{
+		runDir,
+		filepath.Join(runDir, "journals"),
+		filepath.Join(runDir, "worktrees"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	snapshot := []byte("name: drop-run\nmode: research\nobjective: demo\ntarget:\n  files: [\"report.md\"]\nharness:\n  command: \"test -f base.txt\"\n")
+	if err := os.WriteFile(filepath.Join(runDir, "goalx.yaml"), snapshot, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	if _, err := EnsureArtifactsManifest(runDir); err != nil {
+		t.Fatalf("EnsureArtifactsManifest: %v", err)
+	}
+	reportPath := filepath.Join(runDir, "worktrees", "drop-run-1", "report.md")
+	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
+		t.Fatalf("mkdir report dir: %v", err)
+	}
+	if err := os.WriteFile(reportPath, []byte("report\n"), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	if err := RegisterSessionArtifact(runDir, "session-1", ArtifactMeta{
+		Kind:        "report",
+		Path:        reportPath,
+		RelPath:     "report.md",
+		DurableName: "session-1-report.md",
+	}); err != nil {
+		t.Fatalf("RegisterSessionArtifact: %v", err)
+	}
+
+	err := Drop(repo, []string{"--run", runName})
+	if err == nil || !strings.Contains(err.Error(), "save") {
+		t.Fatalf("Drop error = %v, want save guidance", err)
+	}
+	if _, err := os.Stat(runDir); err != nil {
+		t.Fatalf("run dir should remain after refused drop: %v", err)
+	}
+}
+
+func TestInitBootstrapsGoalxExcludeRule(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	if err := Init(repo, []string{"audit auth flow", "--research"}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(repo, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatalf("read .git/info/exclude: %v", err)
+	}
+	if !strings.Contains(string(data), ".goalx/") {
+		t.Fatalf("exclude missing .goalx/ rule:\n%s", string(data))
+	}
+}
+
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 

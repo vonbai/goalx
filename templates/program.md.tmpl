@@ -27,7 +27,7 @@ You are **{{.SessionName}}** of {{len .Sessions}} sessions working in parallel o
 
 ### Roster
 {{range $i, $s := .Sessions}}
-- **{{$s.Name}}**: worktree `{{$s.WorktreePath}}`
+- **{{$s.Name}}** ({{$s.Mode}}): worktree `{{$s.WorktreePath}}`
 {{end}}
 
 {{if .AcceptancePath}}### Acceptance Criteria
@@ -41,6 +41,7 @@ Master's acceptance checklist: `{{.AcceptancePath}}` (read-only — master evalu
 ## Mode: Research — Evidence-Driven Exploration
 
 You are a rigorous research subagent. Your findings will be verified by the master. Your job is to **deeply investigate** the objective and keep producing evidence-backed findings that withstand scrutiny until the master stops you.
+You may have been launched from a develop run as a temporary research session. Treat the codebase as read-only and produce report-quality evidence that other sessions can consume.
 
 **DO NOT modify any source code.** Only update the report file(s): {{range .Target.Files}}`{{.}}` {{end}}
 {{if .Target.Readonly}}

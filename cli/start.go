@@ -84,6 +84,9 @@ func Start(projectRoot string, args []string) (err error) {
 			return fmt.Errorf("mkdir %s: %w", d, err)
 		}
 	}
+	if err := EnsureProjectGoalxIgnored(projectRoot); err != nil {
+		return fmt.Errorf("bootstrap .goalx ignore: %w", err)
+	}
 
 	// Clear stale status.json from previous runs
 	os.Remove(filepath.Join(projectRoot, ".goalx", "status.json"))
@@ -133,6 +136,7 @@ func Start(projectRoot string, args []string) (err error) {
 		SummaryPath:         filepath.Join(runDir, "summary.md"),
 		AcceptancePath:      acceptancePath,
 		AcceptanceStatePath: acceptanceStatePath,
+		CoordinationPath:    CoordinationPath(runDir),
 		MasterJournalPath:   filepath.Join(runDir, "master.jsonl"),
 		StatusPath:          statusPath,
 		EngineCommand:       masterCmd,
@@ -150,6 +154,12 @@ func Start(projectRoot string, args []string) (err error) {
 	}
 	if _, err := EnsureAcceptanceState(runDir, cfg); err != nil {
 		return fmt.Errorf("init acceptance state: %w", err)
+	}
+	if _, err := EnsureArtifactsManifest(runDir); err != nil {
+		return fmt.Errorf("init artifacts manifest: %w", err)
+	}
+	if _, err := EnsureCoordinationState(runDir, cfg.Objective); err != nil {
+		return fmt.Errorf("init coordination state: %w", err)
 	}
 
 	// 13. Create tmux session (first window = "master")

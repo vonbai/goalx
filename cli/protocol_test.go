@@ -431,6 +431,46 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 	}
 }
 
+func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:           "ship it",
+		RunName:             "demo",
+		Mode:                goalx.ModeDevelop,
+		Engines:             goalx.BuiltinEngines,
+		Master:              goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		TmuxSession:         "ar-demo",
+		SummaryPath:         "/tmp/summary.md",
+		AcceptancePath:      "/tmp/acceptance.md",
+		AcceptanceStatePath: "/tmp/acceptance.json",
+		MasterJournalPath:   "/tmp/master.jsonl",
+		StatusPath:          "/tmp/status.json",
+		CoordinationPath:    "/tmp/coordination.json",
+		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"coordination.json",
+		"goalx add --run demo --mode research",
+		"temporary research session",
+		"Research-mode sessions produce evidence and reports, not mergeable code changes.",
+		"Check the coordination digest version each heartbeat.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q", want)
+		}
+	}
+}
+
 func sectionBetween(text, start, end string) string {
 	startIdx := strings.Index(text, start)
 	if startIdx < 0 {

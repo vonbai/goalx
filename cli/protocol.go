@@ -31,6 +31,7 @@ type ProtocolData struct {
 	SummaryPath         string
 	AcceptancePath      string
 	AcceptanceStatePath string
+	CoordinationPath    string
 	MasterJournalPath   string
 	StatusPath          string // .goalx/status.json for external progress reporting
 	EngineCommand       string // resolved master engine command
@@ -53,6 +54,7 @@ type SessionData struct {
 	GuidancePath  string
 	Engine        string
 	Model         string
+	Mode          goalx.Mode
 	Hint          string
 	EngineCommand string
 	Prompt        string

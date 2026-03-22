@@ -15,7 +15,7 @@ GoalX launches a master agent that orchestrates everything. The framework provid
 goalx auto "goal"  →  master starts  →  master creates subagents  →  master evaluates  →  done
 ```
 
-The master is a **strategist + referee**: it decomposes the goal, selects engines, launches subagents via `goalx add`, checks progress on each heartbeat, restarts dead sessions, and stops when criteria are met. Subagents are fully autonomous workers.
+The master is a **strategist + referee**: it decomposes the goal, selects engines, launches subagents via `goalx add`, can spin up temporary `--mode research` sessions inside a develop run, checks progress on each heartbeat, restarts dead sessions, and stops when criteria are met. Subagents are fully autonomous workers.
 
 ## Operating Rules
 1. Write the objective as a simple goal, not a task checklist. The master figures out the details.
@@ -38,11 +38,14 @@ Options only when the user wants control:
 - `--name NAME` — custom run name
 For explicit control over config: `goalx init "goal" → edit .goalx/goalx.yaml → goalx start`
 
+Runtime state lives under `~/.goalx/runs/...`; durable saved artifacts live under `<project>/.goalx/runs/...` after `goalx save`. GoalX also adds `.goalx/` to `.git/info/exclude` for local repos so saved run state does not get staged by default.
+
 ## Scenario Guide
 - Research, investigate, audit: `goalx auto "goal"`
 - Fix, implement, refactor: `goalx auto "goal" --develop`
 - Reference another repo: `goalx auto "goal" --context /path/to/other-project`
 - Check progress: `goalx observe`, `goalx status`, `goalx attach`
+- Launch a temporary investigation inside a develop run: `goalx add --run NAME --mode research "investigate X"`
 - Run the acceptance gate explicitly: `goalx verify --run NAME`
 - Redirect mid-run: `tmux send-keys -t <session>:master "new direction" Enter`
 - View results: `goalx result` or `goalx result --full`
@@ -57,12 +60,12 @@ For explicit control over config: `goalx init "goal" → edit .goalx/goalx.yaml 
 | `goalx observe [NAME]` | Live capture from all tmux windows |
 | `goalx status [NAME]` | Journal-based progress |
 | `goalx result [NAME]` | Show summary (`--full` for raw report) |
-| `goalx add "direction"` | Add a subagent session (master does this itself) |
+| `goalx add "direction"` | Add a subagent session; use `--mode research` for temporary investigation |
 | `goalx keep [NAME] <session>` | Merge session branch into main |
-| `goalx save [NAME]` | Save artifacts to `.goalx/runs/` |
+| `goalx save [NAME]` | Save durable artifacts and `artifacts.json` to `.goalx/runs/` |
 | `goalx verify [NAME]` | Run the active run's acceptance command and record the result |
 | `goalx stop [NAME]` | Graceful shutdown |
-| `goalx drop [NAME]` | Cleanup worktrees and branches |
+| `goalx drop [NAME]` | Cleanup worktrees and branches; refuses unsaved runs until `goalx save` |
 | `goalx attach [NAME]` | Attach to tmux session |
 | `goalx list` | List all runs |
 | `goalx debate` | Generate debate config from prior research |
@@ -73,4 +76,4 @@ For explicit control over config: `goalx init "goal" → edit .goalx/goalx.yaml 
 - Stuck 2+ heartbeats: redirect the master.
 - Wrong direction: steer the master, not subagents.
 - Need an explicit acceptance check: run `goalx verify` before treating the run as done.
-- Complete: `goalx save` then `goalx result` to review.
+- Complete: `goalx save` then `goalx result` to review. Saved reports are indexed through `artifacts.json`.

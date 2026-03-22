@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	goalx "github.com/vonbai/goalx"
@@ -79,14 +78,9 @@ func Implement(projectRoot string, args []string, nc *nextConfigJSON) error {
 	}
 
 	// Collect context files (summary + reports, absolute paths)
-	var contextFiles []string
-	absRunDir, _ := filepath.Abs(runDir)
-	entries, _ := os.ReadDir(runDir)
-	for _, e := range entries {
-		name := e.Name()
-		if name == "summary.md" || strings.HasSuffix(name, "-report.md") {
-			contextFiles = append(contextFiles, filepath.Join(absRunDir, name))
-		}
+	contextFiles, _, err := CollectSavedResearchContext(runDir)
+	if err != nil {
+		return fmt.Errorf("collect saved research context: %w", err)
 	}
 	if len(contextFiles) == 0 {
 		return fmt.Errorf("no reports/summary found in %s", runDir)

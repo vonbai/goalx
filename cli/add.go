@@ -12,7 +12,7 @@ import (
 
 // Add creates a new subagent session in a running run.
 func Add(projectRoot string, args []string) error {
-	// Parse: goalx add "hint/direction" [--run NAME] [--engine ENGINE] [--model MODEL] [--strategy NAME]
+	// Parse: goalx add "hint/direction" [--run NAME] [--engine ENGINE] [--model MODEL] [--mode MODE] [--strategy NAME]
 	runName, rest, err := extractRunFlag(args)
 	if err != nil {
 		return err
@@ -20,6 +20,7 @@ func Add(projectRoot string, args []string) error {
 
 	// Extract flags from rest args
 	var flagEngine, flagModel string
+	var flagMode goalx.Mode
 	var hintParts []string
 	for i := 0; i < len(rest); i++ {
 		switch rest[i] {
@@ -35,6 +36,17 @@ func Add(projectRoot string, args []string) error {
 			}
 			i++
 			flagModel = rest[i]
+		case "--mode":
+			if i+1 >= len(rest) {
+				return fmt.Errorf("missing value for --mode")
+			}
+			i++
+			switch goalx.Mode(rest[i]) {
+			case goalx.ModeResearch, goalx.ModeDevelop:
+				flagMode = goalx.Mode(rest[i])
+			default:
+				return fmt.Errorf("invalid --mode %q (expected research or develop)", rest[i])
+			}
 		case "--strategy":
 			if i+1 >= len(rest) {
 				return fmt.Errorf("missing value for --strategy")
@@ -50,7 +62,7 @@ func Add(projectRoot string, args []string) error {
 		}
 	}
 	if len(hintParts) == 0 {
-		return fmt.Errorf("usage: goalx add \"research direction\" [--run NAME] [--engine ENGINE] [--model MODEL] [--strategy NAME]")
+		return fmt.Errorf("usage: goalx add \"research direction\" [--run NAME] [--engine ENGINE] [--model MODEL] [--mode MODE] [--strategy NAME]")
 	}
 	hint := strings.Join(hintParts, " ")
 
@@ -138,6 +150,15 @@ func Add(projectRoot string, args []string) error {
 	if flagModel != "" {
 		newSess.Model = flagModel
 	}
+	if flagMode != "" {
+		newSess.Mode = flagMode
+		target, harness, err := defaultSessionExecution(projectRoot, rc.Config, flagMode)
+		if err != nil {
+			return err
+		}
+		newSess.Target = &target
+		newSess.Harness = &harness
+	}
 
 	renderCfg := *rc.Config
 	renderCfg.Sessions = append([]goalx.SessionConfig(nil), rc.Config.Sessions...)
@@ -153,14 +174,15 @@ func Add(projectRoot string, args []string) error {
 
 	// Render protocol
 	protocolPath := filepath.Join(rc.RunDir, fmt.Sprintf("program-%d.md", newNum))
+	effectiveSession := goalx.EffectiveSessionConfig(&renderCfg, newNum-1)
 	subData := ProtocolData{
 		RunName:             rc.Config.Name,
 		Objective:           rc.Config.Objective,
-		Mode:                rc.Config.Mode,
-		Engine:              engine,
+		Mode:                effectiveSession.Mode,
+		Engine:              effectiveSession.Engine,
 		Sessions:            sessionDataList,
-		Target:              rc.Config.Target,
-		Harness:             rc.Config.Harness,
+		Target:              *effectiveSession.Target,
+		Harness:             *effectiveSession.Harness,
 		Context:             rc.Config.Context,
 		Budget:              rc.Config.Budget,
 		SessionName:         sName,
@@ -220,20 +242,12 @@ func buildSessionDataList(runDir string, cfg *goalx.Config, engines map[string]g
 		return nil, err
 	}
 
-	sessions := goalx.ExpandSessions(cfg)
 	list := make([]SessionData, 0, len(indexes))
 	for _, num := range indexes {
 		sName := SessionName(num)
-		engine := cfg.Engine
-		model := cfg.Model
-		if idx := num - 1; idx >= 0 && idx < len(sessions) {
-			if sessions[idx].Engine != "" {
-				engine = sessions[idx].Engine
-			}
-			if sessions[idx].Model != "" {
-				model = sessions[idx].Model
-			}
-		}
+		effective := goalx.EffectiveSessionConfig(cfg, num-1)
+		engine := effective.Engine
+		model := effective.Model
 		engineCmd, err := goalx.ResolveEngineCommand(engines, engine, model)
 		if err != nil {
 			return nil, fmt.Errorf("resolve session-%d engine: %w", num, err)
@@ -246,8 +260,43 @@ func buildSessionDataList(runDir string, cfg *goalx.Config, engines map[string]g
 			GuidancePath:  GuidancePath(runDir, sName),
 			Engine:        engine,
 			Model:         model,
+			Mode:          effective.Mode,
 			EngineCommand: engineCmd,
 		})
 	}
 	return list, nil
+}
+
+func defaultSessionExecution(projectRoot string, cfg *goalx.Config, mode goalx.Mode) (goalx.TargetConfig, goalx.HarnessConfig, error) {
+	switch mode {
+	case goalx.ModeResearch:
+		return goalx.TargetConfig{
+				Files:    []string{"report.md"},
+				Readonly: []string{"."},
+			},
+			goalx.HarnessConfig{Command: "test -s report.md && echo 'ok'"},
+			nil
+	case goalx.ModeDevelop:
+		target := cfg.Target
+		harness := cfg.Harness
+		if cfg.Mode == goalx.ModeResearch {
+			baseCfg, _, err := goalx.LoadRawBaseConfig(projectRoot)
+			if err != nil {
+				return goalx.TargetConfig{}, goalx.HarnessConfig{}, fmt.Errorf("load base config for develop session: %w", err)
+			}
+			if len(baseCfg.Target.Files) > 0 {
+				target = baseCfg.Target
+			} else if inferred := InferTarget(projectRoot); len(inferred) > 0 {
+				target = goalx.TargetConfig{Files: inferred}
+			}
+			if baseCfg.Harness.Command != "" {
+				harness = baseCfg.Harness
+			} else if inferred := InferHarness(projectRoot); inferred != "" {
+				harness = goalx.HarnessConfig{Command: inferred}
+			}
+		}
+		return target, harness, nil
+	default:
+		return goalx.TargetConfig{}, goalx.HarnessConfig{}, fmt.Errorf("unsupported session mode %q", mode)
+	}
 }

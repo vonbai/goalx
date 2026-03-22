@@ -53,7 +53,11 @@ func Result(projectRoot string, args []string) error {
 	if cfg.Mode == goalx.ModeResearch {
 		data, err := os.ReadFile(filepath.Join(runDir, "summary.md"))
 		if err != nil {
-			return fmt.Errorf("read summary: %w", err)
+			reportData, reportErr := loadSavedResearchFallback(runDir)
+			if reportErr != nil {
+				return fmt.Errorf("read summary: %w", err)
+			}
+			data = reportData
 		}
 		if full {
 			fmt.Print(string(data))
@@ -81,6 +85,23 @@ func Result(projectRoot string, args []string) error {
 	}
 	fmt.Print(string(diffOut))
 	return nil
+}
+
+func loadSavedResearchFallback(runDir string) ([]byte, error) {
+	contextFiles, _, err := CollectSavedResearchContext(runDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range contextFiles {
+		if filepath.Base(path) == "summary.md" {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err == nil && len(data) > 0 {
+			return data, nil
+		}
+	}
+	return nil, fmt.Errorf("no saved research report found in %s", runDir)
 }
 
 func parseSections(data []byte) map[string]string {

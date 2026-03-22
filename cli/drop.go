@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // Drop cleans up a run so the same name can be reused safely.
@@ -22,6 +23,11 @@ func Drop(projectRoot string, args []string) error {
 	rc, err := ResolveRun(projectRoot, runName)
 	if err != nil {
 		return err
+	}
+	if unsaved, err := hasUnsavedRunArtifacts(projectRoot, rc); err != nil {
+		return err
+	} else if unsaved {
+		return fmt.Errorf("run '%s' has unsaved artifacts; run `goalx save %s` before drop", rc.Name, rc.Name)
 	}
 
 	// Kill tmux session if still active
@@ -58,4 +64,35 @@ func Drop(projectRoot string, args []string) error {
 
 	fmt.Printf("Run '%s' dropped. Removed run data at %s\n", rc.Name, rc.RunDir)
 	return nil
+}
+
+func hasUnsavedRunArtifacts(projectRoot string, rc *RunContext) (bool, error) {
+	saveDir := filepath.Join(projectRoot, ".goalx", "runs", rc.Name)
+	if _, err := os.Stat(saveDir); err == nil {
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+
+	manifest, err := EnsureRunArtifacts(rc.RunDir, rc.Config)
+	if err != nil {
+		return false, err
+	}
+	for _, session := range manifest.Sessions {
+		if len(session.Artifacts) > 0 {
+			return true, nil
+		}
+	}
+
+	for _, path := range []string{
+		filepath.Join(rc.RunDir, "summary.md"),
+		filepath.Join(rc.RunDir, "selection.json"),
+	} {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() && info.Size() > 0 {
+			return true, nil
+		} else if err != nil && !os.IsNotExist(err) {
+			return false, err
+		}
+	}
+	return false, nil
 }
