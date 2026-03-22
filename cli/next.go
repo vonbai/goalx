@@ -16,6 +16,12 @@ func Next(projectRoot string, _ []string) error {
 	runsDir := filepath.Join(home, ".goalx", "runs", goalx.ProjectID(projectRoot))
 	savesDir := filepath.Join(projectRoot, ".goalx", "runs")
 	reg, _ := LoadProjectRegistry(projectRoot)
+	focusedRun := ""
+	if reg != nil && reg.FocusedRun != "" {
+		if _, ok := reg.ActiveRuns[reg.FocusedRun]; ok {
+			focusedRun = reg.FocusedRun
+		}
+	}
 
 	// Check for active runs
 	activeRuns := findActiveRuns(reg, projectRoot, runsDir)
@@ -26,6 +32,10 @@ func Next(projectRoot string, _ []string) error {
 	}
 	if len(activeRuns) > 1 {
 		fmt.Printf("Active runs: %s\n", strings.Join(activeRuns, ", "))
+		if focusedRun != "" {
+			fmt.Printf("Focused run: %s\n", focusedRun)
+		}
+		fmt.Println("  → goalx focus --run NAME   # choose the default run")
 		fmt.Println("  → goalx list")
 		fmt.Println("  → goalx attach --run NAME")
 		return nil
@@ -97,7 +107,7 @@ func Next(projectRoot string, _ []string) error {
 	if hasSaves {
 		fmt.Println("Saved runs exist but no clear next step detected.")
 		fmt.Println("  → goalx list        # see all runs")
-		fmt.Println("  → goalx init \"...\"  # start a new research")
+		fmt.Println("  → goalx auto \"...\"  # start a new autonomous run")
 		return nil
 	}
 
@@ -105,8 +115,7 @@ func Next(projectRoot string, _ []string) error {
 	fmt.Println("No runs or saved results found.")
 	fmt.Println()
 	fmt.Println("Quickstart:")
-	fmt.Println("  goalx init \"your objective\" --research --parallel 2")
-	fmt.Println("  goalx start")
+	fmt.Println("  goalx auto \"your objective\"")
 	return nil
 }
 

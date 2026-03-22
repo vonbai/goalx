@@ -30,17 +30,15 @@ func Pulse(projectRoot string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load runtime state: %w", err)
 	}
-	runState.Active = true
-	runState.HeartbeatSeq = heartbeat.Seq
-	runState.HeartbeatLag = state.HeartbeatLag
-	runState.MasterWakePending = state.WakePending
-	runState.MasterStale = state.StaleSince != ""
-	runState.MasterStaleSince = state.StaleSince
-	runState.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	if err := SaveRunRuntimeState(RunRuntimeStatePath(rc.RunDir), runState); err != nil {
-		return fmt.Errorf("save runtime state: %w", err)
-	}
-	if err := syncProjectStatusCache(projectRoot, runState); err != nil {
+	derived := *runState
+	derived.Active = true
+	derived.HeartbeatSeq = heartbeat.Seq
+	derived.HeartbeatLag = state.HeartbeatLag
+	derived.MasterWakePending = state.WakePending
+	derived.MasterStale = state.StaleSince != ""
+	derived.MasterStaleSince = state.StaleSince
+	derived.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := syncProjectStatusCache(projectRoot, &derived); err != nil {
 		return fmt.Errorf("update project status cache: %w", err)
 	}
 	if !SessionExists(rc.TmuxSession) {

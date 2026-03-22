@@ -115,6 +115,23 @@ func CopyArtifactsManifest(runDir, saveDir string) error {
 	return SaveArtifacts(filepath.Join(saveDir, "artifacts.json"), manifest)
 }
 
+func ResolveRunArtifacts(runDir string, cfg *goalx.Config) (*ArtifactsManifest, bool, error) {
+	manifest, err := LoadArtifacts(ArtifactsPath(runDir))
+	if err != nil {
+		return nil, false, err
+	}
+	if manifest != nil {
+		if manifest.Run == "" {
+			manifest.Run = filepath.Base(runDir)
+		}
+		if manifest.Version <= 0 {
+			manifest.Version = 1
+		}
+		return manifest, true, nil
+	}
+	return buildRunArtifactsManifest(runDir, cfg), false, nil
+}
+
 func artifactKey(meta ArtifactMeta) string {
 	if meta.DurableName != "" {
 		return "durable:" + meta.DurableName
@@ -130,11 +147,36 @@ func EnsureRunArtifacts(runDir string, cfg *goalx.Config) (*ArtifactsManifest, e
 	if err != nil {
 		return nil, err
 	}
-	if cfg == nil {
+	built := buildRunArtifactsManifest(runDir, cfg)
+	if built == nil {
 		return manifest, nil
 	}
-
 	changed := false
+	for _, session := range built.Sessions {
+		sessionState := ensureSessionArtifactsEntry(manifest, session.Name, session.Mode)
+		for _, artifact := range session.Artifacts {
+			if upsertArtifact(sessionState, artifact) {
+				changed = true
+			}
+		}
+	}
+	if changed {
+		if err := SaveArtifacts(ArtifactsPath(runDir), manifest); err != nil {
+			return nil, err
+		}
+	}
+	return manifest, nil
+}
+
+func buildRunArtifactsManifest(runDir string, cfg *goalx.Config) *ArtifactsManifest {
+	manifest := &ArtifactsManifest{
+		Run:     filepath.Base(runDir),
+		Version: 1,
+	}
+	if cfg == nil {
+		return manifest
+	}
+
 	sessions := goalx.ExpandSessions(cfg)
 	for i := range sessions {
 		sessionName := SessionName(i + 1)
@@ -153,21 +195,26 @@ func EnsureRunArtifacts(runDir string, cfg *goalx.Config) (*ArtifactsManifest, e
 		if err != nil {
 			relPath = filepath.Base(reportPath)
 		}
-		if upsertArtifact(sessionState, ArtifactMeta{
+		upsertArtifact(sessionState, ArtifactMeta{
 			Kind:        "report",
 			Path:        reportPath,
 			RelPath:     relPath,
 			DurableName: fmt.Sprintf("%s-report.md", sessionName),
-		}) {
-			changed = true
+		})
+	}
+	return manifest
+}
+
+func FindSessionArtifacts(manifest *ArtifactsManifest, sessionName string) *SessionArtifacts {
+	if manifest == nil {
+		return nil
+	}
+	for i := range manifest.Sessions {
+		if manifest.Sessions[i].Name == sessionName {
+			return &manifest.Sessions[i]
 		}
 	}
-	if changed {
-		if err := SaveArtifacts(ArtifactsPath(runDir), manifest); err != nil {
-			return nil, err
-		}
-	}
-	return manifest, nil
+	return nil
 }
 
 func FindSessionArtifact(manifest *ArtifactsManifest, sessionName, kind string) *ArtifactMeta {

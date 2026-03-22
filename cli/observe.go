@@ -29,9 +29,6 @@ func Observe(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := syncRunStateFromProjectStatus(projectRoot, rc.RunDir); err != nil {
-		return fmt.Errorf("sync run state from status cache: %w", err)
-	}
 
 	if !SessionExists(rc.TmuxSession) {
 		return fmt.Errorf("run '%s' is not active (no tmux session)", rc.Name)

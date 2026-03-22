@@ -57,6 +57,15 @@ func Park(projectRoot string, args []string) error {
 	coord.Sessions[sessionName] = digest
 	coord.Version++
 	coord.UpdatedAt = now
+	snapshot, err := SnapshotSessionRuntime(rc.RunDir, sessionName, WorktreePath(rc.RunDir, rc.Config.Name, idx))
+	if err != nil {
+		return fmt.Errorf("snapshot session runtime: %w", err)
+	}
+	snapshot.State = "parked"
+	snapshot.Mode = string(goalx.EffectiveSessionConfig(rc.Config, idx-1).Mode)
+	snapshot.Branch = fmt.Sprintf("goalx/%s/%d", rc.Config.Name, idx)
+	snapshot.OwnerScope = digest.Scope
+	snapshot.BlockedBy = digest.BlockedBy
 	if err := SaveCoordinationState(CoordinationPath(rc.RunDir), coord); err != nil {
 		return err
 	}
@@ -75,15 +84,6 @@ func Park(projectRoot string, args []string) error {
 			_ = sendAgentNudge(rc.TmuxSession+":master", rc.Config.Master.Engine)
 		}
 	}
-	snapshot, err := SnapshotSessionRuntime(rc.RunDir, sessionName, WorktreePath(rc.RunDir, rc.Config.Name, idx))
-	if err != nil {
-		return fmt.Errorf("snapshot session runtime: %w", err)
-	}
-	snapshot.State = "parked"
-	snapshot.Mode = string(goalx.EffectiveSessionConfig(rc.Config, idx-1).Mode)
-	snapshot.Branch = fmt.Sprintf("goalx/%s/%d", rc.Config.Name, idx)
-	snapshot.OwnerScope = digest.Scope
-	snapshot.BlockedBy = digest.BlockedBy
 	if err := UpsertSessionRuntimeState(rc.RunDir, snapshot); err != nil {
 		return fmt.Errorf("update session runtime state: %w", err)
 	}

@@ -7,7 +7,7 @@ user-invocable: true
 
 # GoalX
 
-Default to one autonomous run. Use low-level GoalX control only when the user explicitly asks for it.
+Default to one autonomous run. Use low-level GoalX control only when the user explicitly asks for it. Use `goalx focus --run NAME` when a project has multiple active runs and the user wants to pin the default run.
 
 ## Default Path
 
@@ -30,10 +30,11 @@ Treat GoalX as a master-led autonomous run: start it, observe it, redirect only 
 4. Do not micromanage the master or subagents unless the user explicitly asks for low-level intervention.
 5. Route direction changes through the master, not directly to subagent panes.
    When you need a low-level redirect, prefer `goalx tell` over raw `tmux send-keys`.
-6. Keep history recap short. GoalX resumes from durable run state and current files.
-7. Interpret `goalx observe` output. Report the signal, not raw tmux noise.
-8. GoalX completion is stricter than "tests passed": `goalx verify` also checks required-item completion provenance and whether the effective acceptance gate was silently narrowed.
-9. If a project has multiple active runs, always include `--run NAME` for mutating or inspection commands that target one run.
+6. If a project has multiple active runs, use `goalx focus --run NAME` to set the default run instead of relying on implicit selection.
+7. Keep history recap short. GoalX resumes from durable run state and current files.
+8. Interpret `goalx observe` output. Report the signal, not raw tmux noise.
+9. GoalX completion is stricter than "tests passed": `goalx verify` also checks required-item completion provenance and whether the effective acceptance gate was silently narrowed.
+10. If a project has multiple active runs, always include `--run NAME` for mutating or inspection commands that target one run.
 
 ## Scenario Guide
 
@@ -41,6 +42,7 @@ Treat GoalX as a master-led autonomous run: start it, observe it, redirect only 
 - Fix, implement, refactor: `goalx auto "goal" --develop`
 - Reference another repo: `goalx auto "goal" --context /path/to/other-project`
 - Check progress: `goalx observe`, `goalx status`, `goalx attach`
+- Pin the default run: `goalx focus --run NAME`
 - Redirect a running goal: send a short new direction to the master
 - Run the acceptance gate explicitly: `goalx verify --run NAME`
 - View results: `goalx result` or `goalx result --full`
@@ -52,6 +54,7 @@ Treat GoalX as a master-led autonomous run: start it, observe it, redirect only 
 | `goalx auto "goal"` | Default path: init + start one master-led run, then exit. |
 | `goalx observe [NAME]` | Live capture from all tmux windows |
 | `goalx status [NAME]` | Journal-based progress |
+| `goalx focus --run NAME` | Pin the default run for commands that omit `--run` |
 | `goalx result [NAME]` | Show summary (`--full` for raw report) |
 | `goalx save [NAME]` | Save durable artifacts and `artifacts.json` to `.goalx/runs/` |
 | `goalx verify [NAME]` | Run the active run's acceptance command and record the result |

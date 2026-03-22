@@ -11,17 +11,18 @@ import (
 // JournalEntry is a single line in a subagent or master journal.
 type JournalEntry struct {
 	// Subagent fields
-	Round         int      `json:"round,omitempty"`
-	Commit        string   `json:"commit,omitempty"`
-	Desc          string   `json:"desc,omitempty"`
-	Confidence    string   `json:"confidence,omitempty"`
-	Status        string   `json:"status,omitempty"`
-	Quality       string   `json:"quality,omitempty"`
-	OwnerScope    string   `json:"owner_scope,omitempty"`
-	BlockedBy     string   `json:"blocked_by,omitempty"`
-	DependsOn     []string `json:"depends_on,omitempty"`
-	CanSplit      bool     `json:"can_split,omitempty"`
-	SuggestedNext string   `json:"suggested_next,omitempty"`
+	Round              int                 `json:"round,omitempty"`
+	Commit             string              `json:"commit,omitempty"`
+	Desc               string              `json:"desc,omitempty"`
+	Confidence         string              `json:"confidence,omitempty"`
+	Status             string              `json:"status,omitempty"`
+	Quality            string              `json:"quality,omitempty"`
+	OwnerScope         string              `json:"owner_scope,omitempty"`
+	BlockedBy          string              `json:"blocked_by,omitempty"`
+	DependsOn          []string            `json:"depends_on,omitempty"`
+	CanSplit           bool                `json:"can_split,omitempty"`
+	SuggestedNext      string              `json:"suggested_next,omitempty"`
+	DispatchableSlices []DispatchableSlice `json:"dispatchable_slices,omitempty"`
 
 	// Master fields
 	Ts       string `json:"ts,omitempty"`
@@ -30,6 +31,16 @@ type JournalEntry struct {
 	Finding  string `json:"finding,omitempty"`
 	Reason   string `json:"reason,omitempty"`
 	Guidance string `json:"guidance,omitempty"`
+}
+
+// DispatchableSlice is a small executable or adoptable next step discovered by research.
+type DispatchableSlice struct {
+	Title           string   `json:"title"`
+	Why             string   `json:"why,omitempty"`
+	Mode            string   `json:"mode,omitempty"`
+	SuggestedOwner  string   `json:"suggested_owner,omitempty"`
+	SuggestedAction string   `json:"suggested_action,omitempty"`
+	Evidence        []string `json:"evidence,omitempty"`
 }
 
 // LoadJournal reads a JSONL journal file and returns all entries.

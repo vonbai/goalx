@@ -25,9 +25,6 @@ func Report(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := syncRunStateFromProjectStatus(projectRoot, rc.RunDir); err != nil {
-		return fmt.Errorf("sync run state from status cache: %w", err)
-	}
 
 	fmt.Printf("=== Report: %s ===\n", rc.Name)
 	fmt.Printf("Mode: %s\n", rc.Config.Mode)

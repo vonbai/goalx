@@ -24,9 +24,6 @@ func Status(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := syncRunStateFromProjectStatus(projectRoot, rc.RunDir); err != nil {
-		return fmt.Errorf("sync run state from status cache: %w", err)
-	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "SESSION\tLAST_ROUND\tSTATUS\tSUMMARY")

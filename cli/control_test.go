@@ -235,6 +235,9 @@ func TestPulseRecordsHeartbeatAndUsesControlNudge(t *testing.T) {
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		t.Fatalf("mkdir run dir: %v", err)
 	}
+	if err := os.MkdirAll(StateDir(runDir), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
 	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nif [ \"$1\" = \"has-session\" ]; then exit 0; fi\nexit 0\n"), 0o755); err != nil {
@@ -243,6 +246,10 @@ func TestPulseRecordsHeartbeatAndUsesControlNudge(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if err := os.WriteFile(RunSpecPath(runDir), []byte("name: pulse-run\nmode: develop\nobjective: ship it\nmaster:\n  engine: codex\n"), 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
+	}
+	runStateBefore := []byte(`{"version":1,"run":"pulse-run","mode":"develop","objective":"ship it","active":false,"phase":"working","recommendation":"keep going","updated_at":"2026-03-23T00:00:00Z"}`)
+	if err := os.WriteFile(RunRuntimeStatePath(runDir), runStateBefore, 0o644); err != nil {
+		t.Fatalf("write run state: %v", err)
 	}
 	if err := EnsureMasterControl(runDir); err != nil {
 		t.Fatalf("EnsureMasterControl: %v", err)
@@ -267,6 +274,13 @@ func TestPulseRecordsHeartbeatAndUsesControlNudge(t *testing.T) {
 	if state.Seq != 1 {
 		t.Fatalf("heartbeat seq = %d, want 1", state.Seq)
 	}
+	gotRunState, err := os.ReadFile(RunRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("read run state: %v", err)
+	}
+	if string(gotRunState) != string(runStateBefore) {
+		t.Fatalf("run state changed:\nwant %s\ngot  %s", string(runStateBefore), string(gotRunState))
+	}
 	if gotTarget == "" || gotEngine != "codex" {
 		t.Fatalf("nudge target=%q engine=%q, want codex target", gotTarget, gotEngine)
 	}
@@ -282,6 +296,9 @@ func TestPulseTracksHeartbeatLagAndStaleState(t *testing.T) {
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		t.Fatalf("mkdir run dir: %v", err)
 	}
+	if err := os.MkdirAll(StateDir(runDir), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
 	if err := os.MkdirAll(filepath.Join(repo, ".goalx"), 0o755); err != nil {
 		t.Fatalf("mkdir project .goalx: %v", err)
 	}
@@ -294,6 +311,10 @@ func TestPulseTracksHeartbeatLagAndStaleState(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if err := os.WriteFile(RunSpecPath(runDir), []byte("name: pulse-lag\nmode: develop\nobjective: ship it\nmaster:\n  engine: codex\n"), 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
+	}
+	runStateBefore := []byte(`{"version":1,"run":"pulse-lag","mode":"develop","objective":"ship it","active":false,"phase":"working","recommendation":"keep going","updated_at":"2026-03-23T00:00:00Z"}`)
+	if err := os.WriteFile(RunRuntimeStatePath(runDir), runStateBefore, 0o644); err != nil {
+		t.Fatalf("write run state: %v", err)
 	}
 	if err := EnsureMasterControl(runDir); err != nil {
 		t.Fatalf("EnsureMasterControl: %v", err)
@@ -321,6 +342,13 @@ func TestPulseTracksHeartbeatLagAndStaleState(t *testing.T) {
 	}
 	if state.StaleSince == "" {
 		t.Fatalf("stale since empty, want value")
+	}
+	gotRunState, err := os.ReadFile(RunRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("read run state: %v", err)
+	}
+	if string(gotRunState) != string(runStateBefore) {
+		t.Fatalf("run state changed:\nwant %s\ngot  %s", string(runStateBefore), string(gotRunState))
 	}
 
 	statusData, err := os.ReadFile(filepath.Join(repo, ".goalx", "status.json"))

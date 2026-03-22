@@ -93,6 +93,30 @@ func TestLoadJournalBlockedEntry(t *testing.T) {
 	}
 }
 
+func TestLoadJournalDispatchableSlices(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "research.jsonl")
+	data := `{"round":5,"desc":"research found follow-up slices","status":"progress","dispatchable_slices":[{"title":"split backend retries","why":"keep backend moving","mode":"develop","suggested_owner":"session-2"}]}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := LoadJournal(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len = %d, want 1", len(entries))
+	}
+	if len(entries[0].DispatchableSlices) != 1 {
+		t.Fatalf("DispatchableSlices len = %d, want 1", len(entries[0].DispatchableSlices))
+	}
+	slice := entries[0].DispatchableSlices[0]
+	if slice.Title != "split backend retries" || slice.SuggestedOwner != "session-2" {
+		t.Fatalf("slice = %+v", slice)
+	}
+}
+
 func TestSummary(t *testing.T) {
 	entries := []JournalEntry{
 		{Round: 1, Desc: "read code", Status: "progress"},

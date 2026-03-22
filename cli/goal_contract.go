@@ -27,6 +27,10 @@ const (
 	goalSatisfactionPreexisting = "preexisting"
 	goalSatisfactionRunChange   = "run_change"
 	goalSatisfactionMixed       = "mixed"
+
+	goalContractExecutionStateActive          = "active"
+	goalContractExecutionStateWaitingExternal = "waiting_external"
+	goalContractExecutionStateDispatchable    = "dispatchable"
 )
 
 type GoalContractState struct {
@@ -37,16 +41,17 @@ type GoalContractState struct {
 }
 
 type GoalContractItem struct {
-	ID           string   `json:"id"`
-	Kind         string   `json:"kind"`
-	Source       string   `json:"source,omitempty"`
-	Requirement  string   `json:"requirement"`
-	Status       string   `json:"status"`
-	SatisfactionBasis string `json:"satisfaction_basis,omitempty"`
-	Owner        string   `json:"owner,omitempty"`
-	Notes        string   `json:"notes,omitempty"`
-	Evidence     []string `json:"evidence,omitempty"`
-	UserApproved bool     `json:"user_approved,omitempty"`
+	ID                string   `json:"id"`
+	Kind              string   `json:"kind"`
+	Source            string   `json:"source,omitempty"`
+	Requirement       string   `json:"requirement"`
+	Status            string   `json:"status"`
+	ExecutionState    string   `json:"execution_state,omitempty"`
+	SatisfactionBasis string   `json:"satisfaction_basis,omitempty"`
+	Owner             string   `json:"owner,omitempty"`
+	Notes             string   `json:"notes,omitempty"`
+	Evidence          []string `json:"evidence,omitempty"`
+	UserApproved      bool     `json:"user_approved,omitempty"`
 }
 
 type GoalContractSummary struct {
@@ -56,6 +61,16 @@ type GoalContractSummary struct {
 	RequiredDone      int
 	RequiredRemaining int
 	EnhancementOpen   int
+}
+
+type GoalDispatchSummary struct {
+	Total             int
+	RequiredTotal     int
+	RequiredDone      int
+	RequiredRemaining int
+	Blocked           int
+	WaitingExternal   int
+	Dispatchable      int
 }
 
 func GoalContractPath(runDir string) string {
@@ -182,6 +197,63 @@ func SummarizeGoalContract(state *GoalContractState) GoalContractSummary {
 		summary.Status = goalContractSummarySatisfied
 	}
 	return summary
+}
+
+func SummarizeGoalDispatch(state *GoalContractState) GoalDispatchSummary {
+	summary := GoalDispatchSummary{}
+	if state == nil {
+		return summary
+	}
+	summary.Total = len(state.Items)
+	for _, item := range state.Items {
+		kind := strings.TrimSpace(item.Kind)
+		if kind == "" {
+			kind = goalContractKindUserRequired
+		}
+		if !isRequiredGoalContractKind(kind) {
+			continue
+		}
+		summary.RequiredTotal++
+		status := strings.TrimSpace(item.Status)
+		if status == "" {
+			status = goalContractStatusQueued
+		}
+		if status == goalContractStatusDone || (status == goalContractStatusWaived && item.UserApproved) {
+			summary.RequiredDone++
+			continue
+		}
+		summary.RequiredRemaining++
+		if status == goalContractStatusBlocked {
+			summary.Blocked++
+			continue
+		}
+		switch normalizeGoalExecutionState(item.ExecutionState) {
+		case goalContractExecutionStateWaitingExternal:
+			summary.WaitingExternal++
+		case goalContractExecutionStateDispatchable, goalContractExecutionStateActive:
+			summary.Dispatchable++
+		default:
+			summary.Dispatchable++
+		}
+	}
+	return summary
+}
+
+func (s GoalDispatchSummary) HasDispatchableWork() bool {
+	return s.Dispatchable > 0
+}
+
+func normalizeGoalExecutionState(state string) string {
+	switch strings.TrimSpace(state) {
+	case goalContractExecutionStateActive:
+		return goalContractExecutionStateActive
+	case goalContractExecutionStateWaitingExternal:
+		return goalContractExecutionStateWaitingExternal
+	case goalContractExecutionStateDispatchable:
+		return goalContractExecutionStateDispatchable
+	default:
+		return goalContractExecutionStateDispatchable
+	}
 }
 
 func ValidateGoalContractForCompletion(state *GoalContractState) (GoalContractSummary, error) {

@@ -61,7 +61,7 @@ goalx verify
 goalx result
 ```
 
-Default to `goalx auto`. Only use `goalx init` / `goalx start` when you explicitly want config-first or low-level control.
+Default to `goalx auto`. Only use `goalx init` / `goalx start` when you explicitly want config-first or low-level control. Use `goalx focus --run NAME` when a project has multiple active runs and you want to pin the default run.
 
 ## Commands
 
@@ -73,6 +73,7 @@ Default to `goalx auto`. Only use `goalx init` / `goalx start` when you explicit
 | `goalx auto` | Init and start one master-led run, then exit |
 | `goalx observe` | Live tmux capture from all agents |
 | `goalx status` | Journal-based progress summary |
+| `goalx focus` | Set the default run used by commands that omit `--run` |
 | `goalx add` | Add a session to a running run (`--mode research` launches a temporary research session) |
 | `goalx tell` | Send a durable instruction to the master or a specific session |
 | `goalx park` | Park an idle/blocked session for later reuse without deleting its worktree |
@@ -114,10 +115,11 @@ Use `goalx init` + `goalx start`, direct config edits, or manual session control
 - Active runtime state lives under `~/.goalx/runs/{projectID}/{run}`.
 - Each active run now has an immutable `run-spec.yaml` plus mutable `state/run.json`, `state/sessions.json`, and `control/*`.
 - Project-level `.goalx/runs.json` tracks active and saved runs for that repo.
+- `focused_run` in `.goalx/runs.json` is the explicit default run when a project has multiple active runs.
 - Durable project artifacts live under `<project>/.goalx/runs/{run}` after `goalx save`.
 - `artifacts.json` is the durable index for saved reports and other research outputs consumed by `result`, `debate`, and `implement`.
 - GoalX bootstraps `.goalx/` into `.git/info/exclude` for local repos so project-scoped run state stays out of git by default.
-- When a project has multiple active runs, pass `--run NAME` explicitly for mutating commands.
+- When a project has multiple active runs, pass `--run NAME` explicitly for mutating commands. Use `goalx focus --run NAME` to pin the default run for commands that omit `--run`.
 
 ## Goal Dimensions
 

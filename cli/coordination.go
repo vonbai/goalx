@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 type CoordinationState struct {
@@ -20,11 +22,13 @@ type CoordinationState struct {
 }
 
 type CoordinationSession struct {
-	State     string `json:"state,omitempty"`
-	Scope     string `json:"scope,omitempty"`
-	BlockedBy string `json:"blocked_by,omitempty"`
-	LastRound int    `json:"last_round,omitempty"`
-	UpdatedAt string `json:"updated_at,omitempty"`
+	State              string                    `json:"state,omitempty"`
+	ExecutionState     string                    `json:"execution_state,omitempty"`
+	Scope              string                    `json:"scope,omitempty"`
+	BlockedBy          string                    `json:"blocked_by,omitempty"`
+	DispatchableSlices []goalx.DispatchableSlice `json:"dispatchable_slices,omitempty"`
+	LastRound          int                       `json:"last_round,omitempty"`
+	UpdatedAt          string                    `json:"updated_at,omitempty"`
 }
 
 func CoordinationPath(runDir string) string {

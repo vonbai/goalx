@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,56 @@ func TestParkMarksSessionParkedAndStopsWindow(t *testing.T) {
 	}
 	if sess.BlockedBy != "postgres lock timeout" {
 		t.Fatalf("session blocked_by = %q, want postgres lock timeout", sess.BlockedBy)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	if !strings.Contains(string(logData), "kill-window -t "+goalx.TmuxSessionName(repo, runName)+":session-1") {
+		t.Fatalf("tmux log missing kill-window call:\n%s", string(logData))
+	}
+}
+
+func TestParkSnapshotsDirtyWorktreeBeforeWindowTermination(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	wtPath := WorktreePath(runDir, runName, 1)
+	runGit(t, wtPath, "init")
+	runGit(t, wtPath, "config", "user.email", "test@example.com")
+	runGit(t, wtPath, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(wtPath, "tracked.txt"), []byte("before\n"), 0o644); err != nil {
+		t.Fatalf("write tracked file: %v", err)
+	}
+	runGit(t, wtPath, "add", "tracked.txt")
+	runGit(t, wtPath, "commit", "-m", "seed tracked file")
+	if err := os.WriteFile(filepath.Join(wtPath, "tracked.txt"), []byte("after\n"), 0o644); err != nil {
+		t.Fatalf("modify tracked file: %v", err)
+	}
+
+	logPath := installFakeTmuxWithKillAction(t, "master heartbeat session-1", fmt.Sprintf("rm -rf %q", wtPath))
+	if err := Park(repo, []string{"--run", runName, "session-1"}); err != nil {
+		t.Fatalf("Park: %v", err)
+	}
+
+	state, err := EnsureSessionsRuntimeState(runDir)
+	if err != nil {
+		t.Fatalf("EnsureSessionsRuntimeState: %v", err)
+	}
+	sess := state.Sessions["session-1"]
+	if sess.State != "parked" {
+		t.Fatalf("session runtime state = %q, want parked", sess.State)
+	}
+	if sess.DirtyFiles == 0 {
+		t.Fatalf("expected parked snapshot to retain dirty worktree details, got %+v", sess)
+	}
+	if !strings.Contains(sess.DiffStat, "tracked.txt") {
+		t.Fatalf("expected diff stat to mention tracked.txt, got %q", sess.DiffStat)
 	}
 
 	logData, err := os.ReadFile(logPath)
@@ -144,6 +195,11 @@ func TestStatusShowsParkedSessionStateFromCoordination(t *testing.T) {
 
 func installFakeTmux(t *testing.T, windows string) string {
 	t.Helper()
+	return installFakeTmuxWithKillAction(t, windows, "")
+}
+
+func installFakeTmuxWithKillAction(t *testing.T, windows, killAction string) string {
+	t.Helper()
 
 	fakeBin := t.TempDir()
 	logPath := filepath.Join(fakeBin, "tmux.log")
@@ -163,6 +219,12 @@ case "$1" in
     printf 'pane output\n'
     exit 0
     ;;
+  kill-window)
+    if [ -n "$TMUX_KILL_ACTION" ]; then
+      eval "$TMUX_KILL_ACTION"
+    fi
+    exit 0
+    ;;
   *)
     exit 0
     ;;
@@ -174,6 +236,7 @@ esac
 	}
 	t.Setenv("TMUX_LOG", logPath)
 	t.Setenv("TMUX_WINDOWS", windows)
+	t.Setenv("TMUX_KILL_ACTION", killAction)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return logPath
 }

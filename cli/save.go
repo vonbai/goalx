@@ -35,12 +35,9 @@ func Save(projectRoot string, args []string) error {
 	if err := os.MkdirAll(saveDir, 0755); err != nil {
 		return fmt.Errorf("create save dir: %w", err)
 	}
-	if err := syncRunStateFromProjectStatus(projectRoot, rc.RunDir); err != nil {
-		return fmt.Errorf("sync run state from status cache: %w", err)
-	}
-	manifest, err := EnsureRunArtifacts(rc.RunDir, rc.Config)
+	manifest, manifestFromFile, err := ResolveRunArtifacts(rc.RunDir, rc.Config)
 	if err != nil {
-		return fmt.Errorf("ensure run artifacts: %w", err)
+		return fmt.Errorf("resolve run artifacts: %w", err)
 	}
 
 	// Copy summary
@@ -125,10 +122,11 @@ func Save(projectRoot string, args []string) error {
 			}
 		}
 		reportSource := ""
+		declaredSession := FindSessionArtifacts(manifest, sName)
 		artifact := FindSessionArtifact(manifest, sName, "report")
 		if artifact != nil && artifact.Path != "" {
 			reportSource = artifact.Path
-		} else {
+		} else if !manifestFromFile || declaredSession == nil {
 			worktreePath := sess.WorktreePath
 			if worktreePath == "" {
 				if num, parseErr := parseSessionNumber(sName); parseErr == nil {

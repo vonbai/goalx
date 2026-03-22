@@ -111,9 +111,6 @@ func Verify(projectRoot string, args []string) error {
 		if err := updateStatusWithAcceptance(filepath.Join(projectRoot, ".goalx", "status.json"), state, contractSummary, completion); err != nil {
 			return fmt.Errorf("update status: %w", err)
 		}
-		if err := syncRunStateFromProjectStatus(projectRoot, rc.RunDir); err != nil {
-			return fmt.Errorf("sync runtime state: %w", err)
-		}
 		if runErr != nil {
 			return fmt.Errorf("acceptance command failed (%d): %w", exitCode, runErr)
 		}
@@ -133,9 +130,6 @@ func Verify(projectRoot string, args []string) error {
 	}
 	if err := updateStatusWithAcceptance(filepath.Join(projectRoot, ".goalx", "status.json"), state, contractSummary, completion); err != nil {
 		return fmt.Errorf("update status: %w", err)
-	}
-	if err := syncRunStateFromProjectStatus(projectRoot, rc.RunDir); err != nil {
-		return fmt.Errorf("sync runtime state: %w", err)
 	}
 
 	fmt.Printf("Acceptance passed for run '%s'\n", rc.Name)

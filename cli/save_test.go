@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	goalx "github.com/vonbai/goalx"
 	"gopkg.in/yaml.v3"
@@ -170,5 +171,187 @@ func TestSaveCopiesGoalContractState(t *testing.T) {
 	}
 	if string(got) != contract {
 		t.Fatalf("saved goal contract = %q, want %q", string(got), contract)
+	}
+}
+
+func TestSaveDoesNotMutateRunStateFromProjectStatusCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	runName := "demo"
+	runDir := goalx.RunDir(projectRoot, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+
+	cfg := goalx.Config{
+		Name:      runName,
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship feature",
+		Target:    goalx.TargetConfig{Files: []string{"README.md"}},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+
+	runState := &RunRuntimeState{
+		Version:        1,
+		Run:            runName,
+		Mode:           string(goalx.ModeDevelop),
+		Objective:      "ship feature",
+		Phase:          "researching",
+		AcceptanceMet:  false,
+		StartedAt:      "2026-03-23T00:00:00Z",
+		UpdatedAt:      "2026-03-23T00:00:00Z",
+		CompletionMode: "implementation_and_verification",
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), runState); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+
+	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
+	if err := os.MkdirAll(filepath.Dir(statusPath), 0o755); err != nil {
+		t.Fatalf("mkdir status dir: %v", err)
+	}
+	if err := os.WriteFile(statusPath, []byte(`{"run":"demo","phase":"complete","acceptance_met":true}`), 0o644); err != nil {
+		t.Fatalf("write status cache: %v", err)
+	}
+
+	before, err := os.ReadFile(RunRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("read run state before: %v", err)
+	}
+	beforeInfo, err := os.Stat(RunRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("stat run state before: %v", err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	after, err := os.ReadFile(RunRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("read run state after: %v", err)
+	}
+	afterInfo, err := os.Stat(RunRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("stat run state after: %v", err)
+	}
+
+	if string(after) != string(before) {
+		t.Fatalf("run state mutated during save:\nwant: %s\ngot:  %s", string(before), string(after))
+	}
+	if !afterInfo.ModTime().Equal(beforeInfo.ModTime()) {
+		t.Fatalf("run state modtime changed during save: before=%s after=%s", beforeInfo.ModTime(), afterInfo.ModTime())
+	}
+}
+
+func TestSaveDoesNotGuessReportWhenManifestExistsWithoutDeclaredReport(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	runName := "demo"
+	runDir := goalx.RunDir(projectRoot, runName)
+	wtPath := WorktreePath(runDir, runName, 1)
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+
+	cfg := goalx.Config{
+		Name:      runName,
+		Mode:      goalx.ModeResearch,
+		Objective: "inspect",
+		Target: goalx.TargetConfig{
+			Files: []string{"notes.md"},
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wtPath, "notes.md"), []byte("guessed report\n"), 0o644); err != nil {
+		t.Fatalf("write notes.md: %v", err)
+	}
+
+	if err := SaveArtifacts(ArtifactsPath(runDir), &ArtifactsManifest{
+		Run:     runName,
+		Version: 1,
+		Sessions: []SessionArtifacts{
+			{Name: "session-1", Mode: string(goalx.ModeResearch)},
+		},
+	}); err != nil {
+		t.Fatalf("SaveArtifacts: %v", err)
+	}
+
+	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	savedPath := filepath.Join(projectRoot, ".goalx", "runs", runName, "session-1-report.md")
+	if _, err := os.Stat(savedPath); err == nil {
+		t.Fatalf("save guessed a report even though manifest declared no report: %s", savedPath)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("stat saved report: %v", err)
+	}
+}
+
+func TestSaveDoesNotCreateActiveRunArtifactsManifest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	runName := "demo"
+	runDir := goalx.RunDir(projectRoot, runName)
+	wtPath := WorktreePath(runDir, runName, 1)
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+
+	cfg := goalx.Config{
+		Name:      runName,
+		Mode:      goalx.ModeResearch,
+		Objective: "inspect",
+		Target: goalx.TargetConfig{
+			Files: []string{"notes.md"},
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wtPath, "notes.md"), []byte("custom report\n"), 0o644); err != nil {
+		t.Fatalf("write notes.md: %v", err)
+	}
+
+	if _, err := os.Stat(ArtifactsPath(runDir)); !os.IsNotExist(err) {
+		t.Fatalf("expected no active-run artifacts manifest before save, got err=%v", err)
+	}
+
+	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if _, err := os.Stat(ArtifactsPath(runDir)); err == nil {
+		t.Fatalf("save created active-run artifacts manifest at %s", ArtifactsPath(runDir))
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("stat active-run artifacts manifest: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(projectRoot, ".goalx", "runs", runName, "artifacts.json")); err != nil {
+		t.Fatalf("expected saved artifacts manifest: %v", err)
 	}
 }

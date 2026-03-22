@@ -65,6 +65,7 @@ Good research here looks like:
 - **Quantify** what you can.
 - Every major finding MUST have a Counter-evidence section. Challenge your own conclusions and actively look for counter-evidence.
 - **Each round should produce NEW insight.**
+- If the research reveals actionable follow-up work, emit `dispatchable_slices` entries that are small enough for the master to dispatch or directly adopt.
 - **Do not declare yourself done.** The master decides when to stop.
 
 Your report MUST include these section titles exactly:
@@ -133,7 +134,7 @@ Rely on the current filesystem and durable run state. When you believe the curre
 Append entries to `{{.JournalPath}}`:
 
 ```json
-{"round":1,"commit":"abc1234","desc":"what you investigated","confidence":"HIGH|MEDIUM|LOW","status":"progress","quality":"A|B|C","owner_scope":"...","blocked_by":"...","depends_on":["session-2"],"can_split":true,"suggested_next":"..."}
+{"round":1,"commit":"abc1234","desc":"what you investigated","confidence":"HIGH|MEDIUM|LOW","status":"progress","quality":"A|B|C","owner_scope":"...","blocked_by":"...","depends_on":["session-2"],"can_split":true,"suggested_next":"...","dispatchable_slices":[{"title":"...","why":"...","mode":"develop|research","suggested_owner":"session-2","suggested_action":"dispatch|adopt","evidence":["/abs/path"]}]}
 ```
 
 Quality rubric:
@@ -141,7 +142,7 @@ Quality rubric:
 - B=reasonable but gaps remain
 - C=preliminary flag for deepening
 
-The extra blocker fields are optional unless you are stuck. If you are blocked, append a `status:"stuck"` entry with the blocker, dependency, ownership scope, and the next smallest useful split the master could dispatch.
+The extra blocker fields are optional unless you are stuck. If you are blocked, append a `status:"stuck"` entry with the blocker, dependency, ownership scope, and the next smallest useful split the master could dispatch. If you have actionable next steps, prefer `dispatchable_slices` over prose so the master can either dispatch them or directly adopt them.
 
 ## Budget
 
