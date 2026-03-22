@@ -63,7 +63,7 @@ func TestGenerateAdapterQuotesGuidancePath(t *testing.T) {
 	}
 }
 
-func TestGenerateMasterAdapterBlocksStopUntilStatusComplete(t *testing.T) {
+func TestGenerateMasterAdapterRequiresVerifiedCompletionForDone(t *testing.T) {
 	projectRoot := t.TempDir()
 	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
 	if err := os.MkdirAll(filepath.Dir(statusPath), 0o755); err != nil {
@@ -123,10 +123,25 @@ func TestGenerateMasterAdapterBlocksStopUntilStatusComplete(t *testing.T) {
 		t.Fatalf("running status exit code = %d, want 2", exitErr.ExitCode())
 	}
 
-	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete"}`), 0o644); err != nil {
-		t.Fatalf("write complete status: %v", err)
+	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete","recommendation":"done","acceptance_status":"pending"}`), 0o644); err != nil {
+		t.Fatalf("write unverified done status: %v", err)
+	}
+	out, err = runHook()
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unverified done should block stop, err=%v out=%q", err, out)
+	}
+
+	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete","recommendation":"more-research","acceptance_status":"failed"}`), 0o644); err != nil {
+		t.Fatalf("write more-research status: %v", err)
 	}
 	if out, err = runHook(); err != nil {
-		t.Fatalf("complete status should allow stop, err=%v out=%q", err, out)
+		t.Fatalf("more-research completion should allow stop, err=%v out=%q", err, out)
+	}
+
+	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete","recommendation":"done","acceptance_status":"passed"}`), 0o644); err != nil {
+		t.Fatalf("write verified done status: %v", err)
+	}
+	if out, err = runHook(); err != nil {
+		t.Fatalf("verified done should allow stop, err=%v out=%q", err, out)
 	}
 }

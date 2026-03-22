@@ -69,6 +69,7 @@ goalx result
 | `goalx status` | Journal-based progress summary |
 | `goalx add` | Add a session to a running run |
 | `goalx save` | Save artifacts to `.goalx/runs/` |
+| `goalx verify` | Run the active run's acceptance command and record the result |
 | `goalx debate` | Generate debate config from prior research |
 | `goalx implement` | Generate develop config from consensus |
 | `goalx keep` | Merge session branch into main |
@@ -147,7 +148,7 @@ goalx/
 
 GoalX is a **protocol scaffolding tool**. The Go code launches the master, exposes worker-management tools, and handles git/worktree mechanics; the orchestration logic lives in the protocol templates:
 
-**Master** (`master.md.tmpl`): Final responsible party. Writes acceptance checklist, challenges subagent findings, rescues dead sessions, synthesizes results, recommends next steps.
+**Master** (`master.md.tmpl`): Final responsible party. Writes acceptance checklist, challenges subagent findings, rescues dead sessions, runs verification before `done` / `implement`, synthesizes results, recommends next steps.
 
 **Subagent** (`program.md.tmpl`): Hypothesis-driven exploration (research) or structured TDD (develop). Communicates via journal files and guidance files.
 
@@ -180,9 +181,9 @@ goalx serve    # starts on configured bind address
 API endpoints:
 - `GET /projects` — list all configured workspaces
 - `POST /projects/:name/goalx/start` — start a run
-- `GET /projects/:name/goalx/observe` — check agent progress
+- `POST /projects/:name/goalx/observe` — check agent progress
 - `POST /projects/:name/goalx/tell` — send instructions to master
-- `PUT /projects/:name/goalx/config` — modify run configuration
+- `POST /projects/:name/goalx/config` — read or modify project/run configuration
 - `POST /workspaces` — add project directory (auto git-init if needed)
 - `GET /runs` — all active runs across all projects
 

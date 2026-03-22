@@ -26,6 +26,7 @@ Usage:
   goalx keep    [--run NAME] <session> Merge/preserve session
   goalx archive [--run NAME] <session> Git tag + preserve
   goalx save    [--run NAME]           Save run artifacts to .goalx/runs/<name>/
+  goalx verify  [--run NAME]           Run the active run's acceptance command and record the result
   goalx debate                         Generate debate config from latest research
   goalx implement                      Generate develop config from consensus
   goalx drop    [--run NAME]           Cleanup branch + worktree
@@ -109,6 +110,8 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.Archive(cwd, args)
 	case "save":
 		return cli.Save(cwd, args)
+	case "verify":
+		return cli.Verify(cwd, args)
 	case "drop":
 		return cli.Drop(cwd, args)
 	case "report":

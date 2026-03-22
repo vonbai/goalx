@@ -219,6 +219,7 @@ esac
 		filepath.Join(runDir, "master.md"),
 		filepath.Join(runDir, "master.jsonl"),
 		filepath.Join(runDir, "acceptance.md"),
+		filepath.Join(runDir, "acceptance.json"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
@@ -244,6 +245,21 @@ esac
 	}
 	if !strings.Contains(logText, "new-session -d -s "+goalx.TmuxSessionName(repo, cfg.Name)+" -n master") {
 		t.Fatalf("start log missing master session creation:\n%s", logText)
+	}
+
+	stateData, err := os.ReadFile(filepath.Join(runDir, "acceptance.json"))
+	if err != nil {
+		t.Fatalf("read acceptance state: %v", err)
+	}
+	stateText := string(stateData)
+	for _, want := range []string{
+		`"status": "pending"`,
+		`"command": "test -f README.md"`,
+		`"command_source": "harness"`,
+	} {
+		if !strings.Contains(stateText, want) {
+			t.Fatalf("acceptance state missing %q:\n%s", want, stateText)
+		}
 	}
 }
 

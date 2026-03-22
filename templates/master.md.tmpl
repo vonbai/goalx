@@ -70,6 +70,9 @@ CLI overrides take precedence. You may deviate if circumstances warrant it.
 
 - Bash: full access to all worktrees, tmux sessions, project root (`{{.ProjectRoot}}`)
 - Harness: `{{.Harness.Command}}`
+- Acceptance checklist: `{{.AcceptancePath}}`
+{{if .AcceptanceStatePath}}- Acceptance state: `{{.AcceptanceStatePath}}`{{end}}
+- Verify acceptance gate: `goalx verify --run {{.RunName}}`
 - Launch session: `goalx add --run {{.RunName}} "sub-goal"` or `goalx add --run {{.RunName}} --engine ENGINE --model MODEL "sub-goal"`
 - Merge session: `goalx keep --run {{.RunName}} session-N`
 - Save artifacts: `goalx save {{.RunName}}`
@@ -83,15 +86,15 @@ CLI overrides take precedence. You may deviate if circumstances warrant it.
 
 ## Your Job
 
-**Before first heartbeat**: launch sessions, write acceptance criteria (3-7 testable bullets) to `{{.AcceptancePath}}` with quality dimensions such as completeness, evidence density (code refs), counter-evidence, quantification, actionability, and structure, then log to `{{.MasterJournalPath}}`.
+**Before first heartbeat**: launch sessions, write acceptance criteria (3-7 testable bullets) to `{{.AcceptancePath}}` with quality dimensions such as completeness, evidence density (code refs), counter-evidence, quantification, actionability, and structure, and keep the machine-readable contract in `{{.AcceptanceStatePath}}` synchronized with version/source/check status, then log to `{{.MasterJournalPath}}`.
 
-**On each heartbeat**: for each session — alive? criteria met? Act accordingly. Update `{{.StatusPath}}` and log to `{{.MasterJournalPath}}`.
+**On each heartbeat**: for each session — alive? criteria met? Act accordingly. Re-read `{{.AcceptancePath}}` and `{{.AcceptanceStatePath}}` before deciding the run is complete. If you change the acceptance standard yourself or the user tells you to change it, update both files first, then continue. Update `{{.StatusPath}}` and log to `{{.MasterJournalPath}}`.
 
 **On completion**: when criteria are met or you decide the current phase is done:
 
-1. If the goal is **fully achieved**: write summary to `{{.SummaryPath}}`, merge results with `goalx keep`, update `{{.StatusPath}}` with `{"phase":"complete","recommendation":"done","acceptance_met":true}`, stop sessions.
+1. If the goal is **fully achieved**: first run `goalx verify --run {{.RunName}}`. Only if the objective is satisfied **and** `{{.AcceptanceStatePath}}` shows a passing acceptance check may you write summary to `{{.SummaryPath}}`, merge results with `goalx keep`, update `{{.StatusPath}}` with `{"phase":"complete","recommendation":"done","acceptance_met":true,"acceptance_status":"passed"}`, stop sessions.
 
-2. If the goal needs a **next phase** (implement, debate, more-research): stop sessions, save artifacts, then **execute the transition yourself**:
+2. If the goal needs a **next phase** (implement, debate, more-research): for `implement`, run `goalx verify --run {{.RunName}}` first and require a passing acceptance check for the current phase. For `debate` and `more-research`, record why acceptance is still not met. Then stop sessions, save artifacts, and **execute the transition yourself**:
    ```bash
    goalx stop --run {{.RunName}} && goalx save {{.RunName}} && goalx implement && goalx start
    ```
@@ -101,9 +104,9 @@ CLI overrides take precedence. You may deviate if circumstances warrant it.
 
 Write to `{{.StatusPath}}` as JSON:
 ```json
-{"phase":"complete","recommendation":"done","heartbeat":N,"acceptance_met":true}
+{"phase":"complete","recommendation":"done","heartbeat":N,"acceptance_met":true,"acceptance_status":"passed","acceptance_checked_at":"RFC3339","acceptance_evidence_path":"..."}
 ```
-Set `keep_session` when a develop-mode session should be merged before stopping.
+Set `keep_session` when a develop-mode session should be merged before stopping. Do not set `acceptance_met:true` for `done` or `implement` until `goalx verify --run {{.RunName}}` has passed for the current contract version.
 
 ## Rules
 

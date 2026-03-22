@@ -43,6 +43,7 @@ For explicit control over config: `goalx init "goal" → edit .goalx/goalx.yaml 
 - Fix, implement, refactor: `goalx auto "goal" --develop`
 - Reference another repo: `goalx auto "goal" --context /path/to/other-project`
 - Check progress: `goalx observe`, `goalx status`, `goalx attach`
+- Run the acceptance gate explicitly: `goalx verify --run NAME`
 - Redirect mid-run: `tmux send-keys -t <session>:master "new direction" Enter`
 - View results: `goalx result` or `goalx result --full`
 
@@ -59,6 +60,7 @@ For explicit control over config: `goalx init "goal" → edit .goalx/goalx.yaml 
 | `goalx add "direction"` | Add a subagent session (master does this itself) |
 | `goalx keep [NAME] <session>` | Merge session branch into main |
 | `goalx save [NAME]` | Save artifacts to `.goalx/runs/` |
+| `goalx verify [NAME]` | Run the active run's acceptance command and record the result |
 | `goalx stop [NAME]` | Graceful shutdown |
 | `goalx drop [NAME]` | Cleanup worktrees and branches |
 | `goalx attach [NAME]` | Attach to tmux session |
@@ -70,5 +72,5 @@ For explicit control over config: `goalx init "goal" → edit .goalx/goalx.yaml 
 - Healthy: summarize progress, wait.
 - Stuck 2+ heartbeats: redirect the master.
 - Wrong direction: steer the master, not subagents.
+- Need an explicit acceptance check: run `goalx verify` before treating the run as done.
 - Complete: `goalx save` then `goalx result` to review.
-

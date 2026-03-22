@@ -299,6 +299,53 @@ func TestServeHandlerConfigEndpointReadsAndWritesGoalxYAML(t *testing.T) {
 	}
 }
 
+func TestServeHandlerConfigEndpointCanTargetRunSnapshot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir workspace .goalx: %v", err)
+	}
+	rootCfgPath := filepath.Join(workspace, ".goalx", "goalx.yaml")
+	if err := os.WriteFile(rootCfgPath, []byte("name: root\nmode: research\n"), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+
+	writeRunSnapshot(t, workspace, "auth-audit", goalx.ModeResearch, "audit auth flow")
+	runCfgPath := filepath.Join(goalx.RunDir(workspace, "auth-audit"), "goalx.yaml")
+
+	app := newServeApp(goalx.ServeConfig{
+		Token:      "secret-token",
+		Workspaces: map[string]string{"goalx": workspace},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/projects/goalx/goalx/config", bytes.NewBufferString(`{"run":"auth-audit","content":"name: auth-audit\nmode: develop\n"}`))
+	req.Header.Set("Authorization", "Bearer secret-token")
+	rec := httptest.NewRecorder()
+	app.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	runData, err := os.ReadFile(runCfgPath)
+	if err != nil {
+		t.Fatalf("read run config: %v", err)
+	}
+	if string(runData) != "name: auth-audit\nmode: develop\n" {
+		t.Fatalf("run goalx.yaml = %q", string(runData))
+	}
+
+	rootData, err := os.ReadFile(rootCfgPath)
+	if err != nil {
+		t.Fatalf("read root config: %v", err)
+	}
+	if string(rootData) != "name: root\nmode: research\n" {
+		t.Fatalf("root goalx.yaml should stay unchanged, got %q", string(rootData))
+	}
+}
+
 func TestServeHandlerTellWritesGuidanceAndNudgesSession(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

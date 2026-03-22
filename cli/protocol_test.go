@@ -233,14 +233,15 @@ func TestRenderSubagentProtocolIncludesQualityJournalAndSelfCheck(t *testing.T) 
 func TestRenderSubagentProtocolIncludesTeamContext(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective:      "investigate auth",
-		Mode:           goalx.ModeResearch,
-		Engine:         "codex",
-		Target:         goalx.TargetConfig{Files: []string{"report.md"}},
-		SessionName:    "session-1",
-		JournalPath:    "/tmp/journal.jsonl",
-		GuidancePath:   "/tmp/guidance.md",
-		AcceptancePath: "/tmp/acceptance.md",
+		Objective:           "investigate auth",
+		Mode:                goalx.ModeResearch,
+		Engine:              "codex",
+		Target:              goalx.TargetConfig{Files: []string{"report.md"}},
+		SessionName:         "session-1",
+		JournalPath:         "/tmp/journal.jsonl",
+		GuidancePath:        "/tmp/guidance.md",
+		AcceptancePath:      "/tmp/acceptance.md",
+		AcceptanceStatePath: "/tmp/acceptance.json",
 		Sessions: []SessionData{
 			{Name: "session-1", WorktreePath: "/tmp/worktree-1"},
 			{Name: "session-2", WorktreePath: "/tmp/worktree-2"},
@@ -272,14 +273,15 @@ func TestRenderSubagentProtocolIncludesTeamContext(t *testing.T) {
 func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective:      "ship it",
-		RunName:        "demo",
-		Mode:           goalx.ModeDevelop,
-		TmuxSession:    "ar-demo",
-		SummaryPath:    "/tmp/summary.md",
-		AcceptancePath: "/tmp/acceptance.md",
-		StatusPath:     "/tmp/status.json",
-		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
+		Objective:           "ship it",
+		RunName:             "demo",
+		Mode:                goalx.ModeDevelop,
+		TmuxSession:         "ar-demo",
+		SummaryPath:         "/tmp/summary.md",
+		AcceptancePath:      "/tmp/acceptance.md",
+		AcceptanceStatePath: "/tmp/acceptance.json",
+		StatusPath:          "/tmp/status.json",
+		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -296,6 +298,8 @@ func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testin
 		"The user specified **develop** mode.",
 		"## Your Job",
 		"acceptance criteria",
+		"acceptance.json",
+		"goalx verify --run demo",
 		"completeness",
 		"evidence density (code refs)",
 		"counter-evidence",

@@ -104,7 +104,8 @@ func Start(projectRoot string, args []string) (err error) {
 	}
 	masterProtocolPath := filepath.Join(runDir, "master.md")
 	masterPrompt := goalx.ResolvePrompt(engines, cfg.Master.Engine, masterProtocolPath)
-	acceptancePath := filepath.Join(runDir, "acceptance.md")
+	acceptancePath := AcceptanceChecklistPath(runDir)
+	acceptanceStatePath := AcceptanceStatePath(runDir)
 	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
 
 	if err := EnsureEngineTrusted(cfg.Master.Engine, absProjectRoot); err != nil {
@@ -116,24 +117,25 @@ func Start(projectRoot string, args []string) (err error) {
 
 	// 11. Render protocols
 	masterData := ProtocolData{
-		RunName:           cfg.Name,
-		Objective:         cfg.Objective,
-		Description:       cfg.Description,
-		Mode:              cfg.Mode,
-		Engines:           engines,
-		Master:            cfg.Master,
-		Harness:           cfg.Harness,
-		Budget:            cfg.Budget,
-		Target:            cfg.Target,
-		Context:           cfg.Context,
-		Preferences:       cfg.Preferences,
-		TmuxSession:       tmuxSess,
-		ProjectRoot:       absProjectRoot,
-		SummaryPath:       filepath.Join(runDir, "summary.md"),
-		AcceptancePath:    acceptancePath,
-		MasterJournalPath: filepath.Join(runDir, "master.jsonl"),
-		StatusPath:        statusPath,
-		EngineCommand:     masterCmd,
+		RunName:             cfg.Name,
+		Objective:           cfg.Objective,
+		Description:         cfg.Description,
+		Mode:                cfg.Mode,
+		Engines:             engines,
+		Master:              cfg.Master,
+		Harness:             cfg.Harness,
+		Budget:              cfg.Budget,
+		Target:              cfg.Target,
+		Context:             cfg.Context,
+		Preferences:         cfg.Preferences,
+		TmuxSession:         tmuxSess,
+		ProjectRoot:         absProjectRoot,
+		SummaryPath:         filepath.Join(runDir, "summary.md"),
+		AcceptancePath:      acceptancePath,
+		AcceptanceStatePath: acceptanceStatePath,
+		MasterJournalPath:   filepath.Join(runDir, "master.jsonl"),
+		StatusPath:          statusPath,
+		EngineCommand:       masterCmd,
 	}
 	if err := RenderMasterProtocol(masterData, runDir); err != nil {
 		return fmt.Errorf("render master protocol: %w", err)
@@ -145,6 +147,9 @@ func Start(projectRoot string, args []string) (err error) {
 	}
 	if err := os.WriteFile(acceptancePath, nil, 0644); err != nil {
 		return fmt.Errorf("init acceptance checklist: %w", err)
+	}
+	if _, err := EnsureAcceptanceState(runDir, cfg); err != nil {
+		return fmt.Errorf("init acceptance state: %w", err)
 	}
 
 	// 13. Create tmux session (first window = "master")

@@ -202,6 +202,84 @@ harness:
 	}
 }
 
+func TestAddRendersAcceptanceContractAndTeamContext(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	runName := "add-run"
+	runDir := goalx.RunDir(repo, runName)
+	for _, dir := range []string{
+		runDir,
+		filepath.Join(runDir, "journals"),
+		filepath.Join(runDir, "guidance"),
+		filepath.Join(runDir, "worktrees"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+engine: codex
+model: codex
+parallel: 1
+sessions:
+  - hint: first
+target:
+  files: ["."]
+harness:
+  command: "go test ./..."
+acceptance:
+  command: "go test -run E2E ./..."
+`)
+	if err := os.WriteFile(filepath.Join(runDir, "goalx.yaml"), snapshot, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "acceptance.md"), []byte("- deploy succeeds\n- e2e passes\n"), 0o644); err != nil {
+		t.Fatalf("write acceptance checklist: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "acceptance.json"), []byte(`{"status":"pending","command":"go test -run E2E ./..."}`), 0o644); err != nil {
+		t.Fatalf("write acceptance state: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
+	}
+
+	if err := Add(repo, []string{"second direction", "--run", runName}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "program-2.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"## Team Context",
+		"session-1",
+		"session-2",
+		"of 2 sessions",
+		"acceptance.md",
+		"acceptance.json",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered protocol missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestAddStartsNumberingFromExistingRunArtifacts(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

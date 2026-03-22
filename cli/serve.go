@@ -8,11 +8,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"os/exec"
 	"sync"
 
 	goalx "github.com/vonbai/goalx"
@@ -182,6 +182,9 @@ func (a *serveApp) handleGoalxAction(w http.ResponseWriter, r *http.Request, pro
 
 func (a *serveApp) handleConfigAction(w http.ResponseWriter, projectRoot string, req serveActionRequest) {
 	cfgPath := filepath.Join(projectRoot, ".goalx", "goalx.yaml")
+	if req.Run != "" {
+		cfgPath = filepath.Join(goalx.RunDir(projectRoot, req.Run), "goalx.yaml")
+	}
 	content := req.Content
 	if content != "" {
 		if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {

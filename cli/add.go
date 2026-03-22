@@ -131,21 +131,46 @@ func Add(projectRoot string, args []string) error {
 		}
 	}
 
+	newSess := goalx.SessionConfig{Hint: hint}
+	if flagEngine != "" {
+		newSess.Engine = flagEngine
+	}
+	if flagModel != "" {
+		newSess.Model = flagModel
+	}
+
+	renderCfg := *rc.Config
+	renderCfg.Sessions = append([]goalx.SessionConfig(nil), rc.Config.Sessions...)
+	if len(renderCfg.Sessions) > 0 {
+		renderCfg.Sessions = append(renderCfg.Sessions, newSess)
+	} else {
+		renderCfg.Parallel = newNum
+	}
+	sessionDataList, err := buildSessionDataList(rc.RunDir, &renderCfg, engines)
+	if err != nil {
+		return fmt.Errorf("build session roster: %w", err)
+	}
+
 	// Render protocol
 	protocolPath := filepath.Join(rc.RunDir, fmt.Sprintf("program-%d.md", newNum))
 	subData := ProtocolData{
-		Objective:     rc.Config.Objective,
-		Mode:          rc.Config.Mode,
-		Engine:        engine,
-		Target:        rc.Config.Target,
-		Harness:       rc.Config.Harness,
-		Context:       rc.Config.Context,
-		Budget:        rc.Config.Budget,
-		SessionName:   sName,
-		JournalPath:   journalPath,
-		GuidancePath:  guidancePath,
-		WorktreePath:  wtPath,
-		DiversityHint: hint,
+		RunName:             rc.Config.Name,
+		Objective:           rc.Config.Objective,
+		Mode:                rc.Config.Mode,
+		Engine:              engine,
+		Sessions:            sessionDataList,
+		Target:              rc.Config.Target,
+		Harness:             rc.Config.Harness,
+		Context:             rc.Config.Context,
+		Budget:              rc.Config.Budget,
+		SessionName:         sName,
+		SessionIndex:        newNum - 1,
+		JournalPath:         journalPath,
+		GuidancePath:        guidancePath,
+		WorktreePath:        wtPath,
+		AcceptancePath:      AcceptanceChecklistPath(rc.RunDir),
+		AcceptanceStatePath: AcceptanceStatePath(rc.RunDir),
+		DiversityHint:       hint,
 	}
 	if err := RenderSubagentProtocol(subData, rc.RunDir, newNum-1); err != nil {
 		return fmt.Errorf("render protocol: %w", err)
@@ -169,13 +194,6 @@ func Add(projectRoot string, args []string) error {
 	SendKeys(rc.TmuxSession+":master", masterMsg)
 
 	// Update config snapshot with new session count
-	newSess := goalx.SessionConfig{Hint: hint}
-	if flagEngine != "" {
-		newSess.Engine = flagEngine
-	}
-	if flagModel != "" {
-		newSess.Model = flagModel
-	}
 	if len(rc.Config.Sessions) > 0 {
 		rc.Config.Sessions = append(rc.Config.Sessions, newSess)
 	} else {
@@ -194,4 +212,42 @@ func Add(projectRoot string, args []string) error {
 	fmt.Printf("  direction: %s\n", hint)
 	fmt.Printf("  master notified\n")
 	return nil
+}
+
+func buildSessionDataList(runDir string, cfg *goalx.Config, engines map[string]goalx.EngineConfig) ([]SessionData, error) {
+	indexes, err := existingSessionIndexes(runDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sessions := goalx.ExpandSessions(cfg)
+	list := make([]SessionData, 0, len(indexes))
+	for _, num := range indexes {
+		sName := SessionName(num)
+		engine := cfg.Engine
+		model := cfg.Model
+		if idx := num - 1; idx >= 0 && idx < len(sessions) {
+			if sessions[idx].Engine != "" {
+				engine = sessions[idx].Engine
+			}
+			if sessions[idx].Model != "" {
+				model = sessions[idx].Model
+			}
+		}
+		engineCmd, err := goalx.ResolveEngineCommand(engines, engine, model)
+		if err != nil {
+			return nil, fmt.Errorf("resolve session-%d engine: %w", num, err)
+		}
+		list = append(list, SessionData{
+			Name:          sName,
+			WindowName:    sessionWindowName(cfg.Name, num),
+			WorktreePath:  WorktreePath(runDir, cfg.Name, num),
+			JournalPath:   JournalPath(runDir, sName),
+			GuidancePath:  GuidancePath(runDir, sName),
+			Engine:        engine,
+			Model:         model,
+			EngineCommand: engineCmd,
+		})
+	}
+	return list, nil
 }

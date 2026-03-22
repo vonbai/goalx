@@ -493,13 +493,23 @@ func ExpandSessions(cfg *Config) []SessionConfig {
 // ResolveAcceptanceCommand returns the acceptance command, falling back to the
 // regular harness when no dedicated acceptance command is configured.
 func ResolveAcceptanceCommand(cfg *Config) string {
+	cmd, _ := ResolveAcceptanceCommandSource(cfg)
+	return cmd
+}
+
+// ResolveAcceptanceCommandSource returns the effective acceptance command plus
+// the config field it came from ("acceptance" or "harness").
+func ResolveAcceptanceCommandSource(cfg *Config) (string, string) {
 	if cfg == nil {
-		return ""
+		return "", ""
 	}
 	if cmd := strings.TrimSpace(cfg.Acceptance.Command); cmd != "" {
-		return cmd
+		return cmd, "acceptance"
 	}
-	return cfg.Harness.Command
+	if cmd := strings.TrimSpace(cfg.Harness.Command); cmd != "" {
+		return cmd, "harness"
+	}
+	return "", ""
 }
 
 // ProjectID returns a slug from the project root path.

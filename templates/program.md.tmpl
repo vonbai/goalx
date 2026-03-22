@@ -33,6 +33,7 @@ You are **{{.SessionName}}** of {{len .Sessions}} sessions working in parallel o
 {{if .AcceptancePath}}### Acceptance Criteria
 
 Master's acceptance checklist: `{{.AcceptancePath}}` (read-only — master evaluates these)
+{{if .AcceptanceStatePath}}Machine-readable acceptance state: `{{.AcceptanceStatePath}}` (read-only — use this to understand the latest contract/check status){{end}}
 {{end}}
 {{end}}
 
