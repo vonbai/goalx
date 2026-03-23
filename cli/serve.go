@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	goalx "github.com/vonbai/goalx"
 	"gopkg.in/yaml.v3"
@@ -315,7 +314,12 @@ func (a *serveApp) runs() ([]serveRun, error) {
 				continue
 			}
 
-			status := deriveServeRunStatus(project.Path, filepath.Join(runsDir, entry.Name()), cfg.Name, reg, a.sessionExists)
+			status := "completed"
+			if state, err := loadDerivedRunState(project.Path, filepath.Join(runsDir, entry.Name())); err == nil && state != nil {
+				status = state.Status
+			} else if _, ok := reg.ActiveRuns[cfg.Name]; ok || a.sessionExists(goalx.TmuxSessionName(project.Path, cfg.Name)) {
+				status = "active"
+			}
 
 			runs = append(runs, serveRun{
 				Workspace: project.Name,
@@ -336,43 +340,6 @@ func (a *serveApp) runs() ([]serveRun, error) {
 	})
 
 	return runs, nil
-}
-
-func deriveServeRunStatus(projectRoot, runDir, runName string, reg *ProjectRegistry, sessionExists func(string) bool) string {
-	if runState, err := LoadControlRunState(ControlRunStatePath(runDir)); err == nil && runState != nil && runState.LifecycleState != "" {
-		switch runState.LifecycleState {
-		case "stopped", "dropped", "inactive":
-			return runState.LifecycleState
-		case "active":
-			if controlLeaseActive(runDir, "sidecar") || controlLeaseActive(runDir, "master") {
-				return "active"
-			}
-			return "degraded"
-		default:
-			return runState.LifecycleState
-		}
-	}
-	if reg != nil {
-		if _, ok := reg.ActiveRuns[runName]; ok {
-			return "active"
-		}
-	}
-	if sessionExists != nil && sessionExists(goalx.TmuxSessionName(projectRoot, runName)) {
-		return "active"
-	}
-	return "completed"
-}
-
-func controlLeaseActive(runDir, holder string) bool {
-	lease, err := LoadControlLease(ControlLeasePath(runDir, holder))
-	if err != nil || lease == nil || lease.ExpiresAt == "" {
-		return false
-	}
-	expiresAt, err := time.Parse(time.RFC3339, lease.ExpiresAt)
-	if err != nil {
-		return false
-	}
-	return expiresAt.After(time.Now().UTC())
 }
 
 func (a *serveApp) handleTellAction(w http.ResponseWriter, projectRoot string, req serveActionRequest) {

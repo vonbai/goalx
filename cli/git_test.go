@@ -421,6 +421,44 @@ func TestDirectCommandHelpPrintUsage(t *testing.T) {
 	}
 }
 
+func TestAttachDistinguishesDegradedTransportFromStoppedRun(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	runDir := writeRunSpecFixture(t, repo, &goalx.Config{
+		Name:      "attach-run",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship it",
+		Master:    goalx.MasterConfig{Engine: "codex"},
+	})
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+		t.Fatalf("SaveControlRunState active: %v", err)
+	}
+	if err := SaveProjectRegistry(repo, &ProjectRegistry{
+		Version:    1,
+		FocusedRun: "attach-run",
+		ActiveRuns: map[string]ProjectRunRef{"attach-run": {Name: "attach-run", State: "active"}},
+	}); err != nil {
+		t.Fatalf("SaveProjectRegistry active: %v", err)
+	}
+
+	err := Attach(repo, []string{"--run", "attach-run"})
+	if err == nil || !strings.Contains(err.Error(), "transport unavailable") {
+		t.Fatalf("Attach degraded err = %v, want transport unavailable", err)
+	}
+
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "stopped"}); err != nil {
+		t.Fatalf("SaveControlRunState stopped: %v", err)
+	}
+	err = Attach(repo, []string{"--run", "attach-run"})
+	if err == nil || !strings.Contains(err.Error(), "run may have stopped") {
+		t.Fatalf("Attach stopped err = %v, want stopped hint", err)
+	}
+}
+
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 

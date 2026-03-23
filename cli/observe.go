@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 // Observe captures live tmux pane output for all windows in a run.
@@ -27,15 +30,10 @@ func Observe(projectRoot string, args []string) error {
 
 	rc, err := ResolveRun(projectRoot, runName)
 	if err != nil && runName == "" {
-		// Fallback: find the only active run
-		rc, err = findSingleActiveRun(projectRoot)
+		rc, err = findSingleRunnableRun(projectRoot)
 	}
 	if err != nil {
 		return err
-	}
-
-	if !SessionExists(rc.TmuxSession) {
-		return fmt.Errorf("run '%s' is not active (no tmux session)", rc.Name)
 	}
 
 	fmt.Printf("## Run: %s — Observe\n\n", rc.Name)
@@ -49,7 +47,27 @@ func Observe(projectRoot string, args []string) error {
 		fmt.Println()
 	}
 
-	// Master
+	if !SessionExists(rc.TmuxSession) {
+		fmt.Println("### transport")
+		fmt.Println("transport degraded (no tmux session)")
+		fmt.Println()
+
+		fmt.Println("### master")
+		printJournalExcerpt(filepath.Join(rc.RunDir, "master.jsonl"))
+		fmt.Println()
+
+		sessionIndexes, err := existingSessionIndexes(rc.RunDir)
+		if err != nil {
+			return err
+		}
+		for _, num := range sessionIndexes {
+			fmt.Printf("### %s\n", SessionName(num))
+			printJournalExcerpt(JournalPath(rc.RunDir, SessionName(num)))
+			fmt.Println()
+		}
+		return nil
+	}
+
 	fmt.Println("### master")
 	printPaneCapture(rc.TmuxSession, "master")
 	fmt.Println()
@@ -119,12 +137,25 @@ func printPaneCapture(tmuxSession, window string) {
 	}
 }
 
-// findSingleActiveRun finds the only active run for this project.
-// Returns error if zero or multiple active runs.
-func findSingleActiveRun(projectRoot string) (*RunContext, error) {
-	runName, err := ResolveDefaultRunName(projectRoot)
-	if err != nil {
-		return nil, err
+func printJournalExcerpt(path string) {
+	entries, err := goalx.LoadJournal(path)
+	if err != nil || len(entries) == 0 {
+		fmt.Println("(no journal output)")
+		return
 	}
-	return ResolveRun(projectRoot, runName)
+	start := 0
+	if len(entries) > 5 {
+		start = len(entries) - 5
+	}
+	for _, entry := range entries[start:] {
+		desc := strings.TrimSpace(entry.Desc)
+		if desc == "" {
+			desc = "(no description)"
+		}
+		if entry.Status != "" {
+			fmt.Printf("[%d] %s: %s\n", entry.Round, entry.Status, desc)
+			continue
+		}
+		fmt.Printf("[%d] %s\n", entry.Round, desc)
+	}
 }

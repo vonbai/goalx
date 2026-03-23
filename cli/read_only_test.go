@@ -34,6 +34,36 @@ func TestObserveLeavesRunAndStatusStateUntouched(t *testing.T) {
 	assertTmuxTouched(t, logPath)
 }
 
+func TestObserveShowsDegradedRunWithoutTmux(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	runName, runDir, runStateBefore, statusBefore := writeReadOnlyRunFixture(t, repo)
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "master.jsonl"), []byte("{\"round\":1,\"desc\":\"master still coordinating\",\"status\":\"active\"}\n"), 0o644); err != nil {
+		t.Fatalf("write master journal: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Observe(repo, []string{"--run", runName}); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	})
+	for _, want := range []string{"transport degraded", "master still coordinating"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("observe output missing %q:\n%s", want, out)
+		}
+	}
+
+	assertFileUnchanged(t, RunRuntimeStatePath(runDir), runStateBefore)
+	assertFileUnchanged(t, ProjectStatusCachePath(repo), statusBefore)
+}
+
 func TestObserveHelpDoesNotResolveRun(t *testing.T) {
 	out := captureStdout(t, func() {
 		if err := Observe(t.TempDir(), []string{"--help"}); err != nil {

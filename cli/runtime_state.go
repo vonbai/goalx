@@ -399,155 +399,32 @@ func refreshProjectStatusCache(projectRoot string) error {
 		return err
 	}
 	if reg.FocusedRun != "" {
-		if _, ok := reg.ActiveRuns[reg.FocusedRun]; ok {
-			runDir := goalx.RunDir(projectRoot, reg.FocusedRun)
-			state, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
+		runDir := goalx.RunDir(projectRoot, reg.FocusedRun)
+		if state, err := loadDerivedRunState(projectRoot, runDir); err == nil && state != nil && (state.Status == "active" || state.Status == "degraded") {
+			runtimeState, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
 			if err != nil {
 				return err
 			}
-			return syncProjectStatusCache(projectRoot, state)
+			return syncProjectStatusCache(projectRoot, runtimeState)
 		}
 	}
-	if len(reg.ActiveRuns) == 1 {
-		for name := range reg.ActiveRuns {
-			runDir := goalx.RunDir(projectRoot, name)
-			state, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
+	if states, err := listDerivedRunStates(projectRoot); err == nil {
+		openRuns := make([]string, 0)
+		for _, state := range states {
+			if state.Status == "active" || state.Status == "degraded" {
+				openRuns = append(openRuns, state.Name)
+			}
+		}
+		if len(openRuns) == 1 {
+			runDir := goalx.RunDir(projectRoot, openRuns[0])
+			runtimeState, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
 			if err != nil {
 				return err
 			}
-			return syncProjectStatusCache(projectRoot, state)
+			return syncProjectStatusCache(projectRoot, runtimeState)
 		}
 	}
 	return syncProjectStatusCache(projectRoot, nil)
-}
-
-func syncRunStateFromProjectStatus(projectRoot, runDir string) error {
-	statusPath := ProjectStatusCachePath(projectRoot)
-	data, err := os.ReadFile(statusPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if len(strings.TrimSpace(string(data))) == 0 {
-		return nil
-	}
-	payload := map[string]any{}
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return fmt.Errorf("parse status cache: %w", err)
-	}
-	state, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
-	if err != nil {
-		return err
-	}
-	if state == nil {
-		return nil
-	}
-	if run, _ := payload["run"].(string); run != "" && state.Run != "" && run != state.Run {
-		return nil
-	}
-	if err := updateRunStateFromStatusJSON(runDir, payload); err != nil {
-		return err
-	}
-	state, err = LoadRunRuntimeState(RunRuntimeStatePath(runDir))
-	if err != nil {
-		return err
-	}
-	return syncProjectStatusCache(projectRoot, state)
-}
-
-func updateRunStateFromStatusJSON(runDir string, status map[string]any) error {
-	state, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
-	if err != nil {
-		return err
-	}
-	if state == nil {
-		return nil
-	}
-	applyStatusMapToRunState(state, status)
-	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	return SaveRunRuntimeState(RunRuntimeStatePath(runDir), state)
-}
-
-func applyStatusMapToRunState(state *RunRuntimeState, payload map[string]any) {
-	if state == nil {
-		return
-	}
-	if v, ok := payload["phase"].(string); ok {
-		state.Phase = v
-	}
-	if v, ok := payload["recommendation"].(string); ok {
-		state.Recommendation = v
-	}
-	if v, ok := asInt64(payload["heartbeat"]); ok {
-		state.Heartbeat = v
-	}
-	if v, ok := asInt64(payload["heartbeat_seq"]); ok {
-		state.HeartbeatSeq = v
-	}
-	if v, ok := asInt64(payload["heartbeat_lag"]); ok {
-		state.HeartbeatLag = v
-	}
-	if v, ok := payload["master_wake_pending"].(bool); ok {
-		state.MasterWakePending = v
-	}
-	if v, ok := payload["master_stale"].(bool); ok {
-		state.MasterStale = v
-	}
-	if v, ok := payload["master_stale_since"].(string); ok {
-		state.MasterStaleSince = v
-	}
-	if v, ok := payload["acceptance_met"].(bool); ok {
-		state.AcceptanceMet = v
-	}
-	if v, ok := payload["acceptance_status"].(string); ok {
-		state.AcceptanceStatus = v
-	}
-	if v, ok := payload["goal_contract_status"].(string); ok {
-		state.GoalContractStatus = v
-	}
-	if v, ok := asInt(payload["goal_required_total"]); ok {
-		state.GoalRequiredTotal = v
-	}
-	if v, ok := asInt(payload["goal_required_done"]); ok {
-		state.GoalRequiredDone = v
-	}
-	if v, ok := asInt(payload["goal_required_remaining"]); ok {
-		state.GoalRequiredRemain = v
-	}
-	if v, ok := payload["completion_mode"].(string); ok {
-		state.CompletionMode = v
-	}
-	if v, ok := payload["code_changed"].(bool); ok {
-		state.CodeChanged = v
-	}
-}
-
-func asInt64(v any) (int64, bool) {
-	switch n := v.(type) {
-	case int64:
-		return n, true
-	case int:
-		return int64(n), true
-	case float64:
-		return int64(n), true
-	default:
-		return 0, false
-	}
-}
-
-func asInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case float64:
-		return int(n), true
-	default:
-		return 0, false
-	}
 }
 
 func normalizeDiffStat(s string) string {

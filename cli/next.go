@@ -18,28 +18,44 @@ func Next(projectRoot string, args []string) error {
 	}
 	runsDir := ProjectDataDir(projectRoot)
 	reg, _ := LoadProjectRegistry(projectRoot)
+	states, _ := listDerivedRunStates(projectRoot)
+	stateByName := make(map[string]DerivedRunState, len(states))
+	for _, state := range states {
+		stateByName[state.Name] = state
+	}
 	focusedRun := ""
 	if reg != nil && reg.FocusedRun != "" {
-		if _, ok := reg.ActiveRuns[reg.FocusedRun]; ok {
+		if state, ok := stateByName[reg.FocusedRun]; ok && (state.Status == "active" || state.Status == "degraded") {
+			focusedRun = reg.FocusedRun
+		} else if len(states) == 0 {
 			focusedRun = reg.FocusedRun
 		}
 	}
 
-	// Check for active runs
-	activeRuns := findActiveRuns(reg, projectRoot, runsDir)
+	activeRuns, degradedRuns := findRunnableRuns(reg, projectRoot)
 	if len(activeRuns) == 1 {
 		fmt.Printf("Active run: %s\n", activeRuns[0])
 		fmt.Printf("  → goalx attach --run %s\n", activeRuns[0])
 		return nil
 	}
-	if len(activeRuns) > 1 {
-		fmt.Printf("Active runs: %s\n", strings.Join(activeRuns, ", "))
+	if len(activeRuns) == 0 && len(degradedRuns) == 1 {
+		fmt.Printf("Degraded run: %s\n", degradedRuns[0])
+		fmt.Printf("  → goalx observe --run %s\n", degradedRuns[0])
+		fmt.Printf("  → goalx status --run %s\n", degradedRuns[0])
+		return nil
+	}
+	if len(activeRuns)+len(degradedRuns) > 1 {
+		names := append([]string{}, activeRuns...)
+		for _, name := range degradedRuns {
+			names = append(names, name+" (degraded)")
+		}
+		fmt.Printf("Open runs: %s\n", strings.Join(names, ", "))
 		if focusedRun != "" {
 			fmt.Printf("Focused run: %s\n", focusedRun)
 		}
 		fmt.Println("  → goalx focus --run NAME   # choose the default run")
 		fmt.Println("  → goalx list")
-		fmt.Println("  → goalx attach --run NAME")
+		fmt.Println("  → goalx observe --run NAME")
 		return nil
 	}
 
@@ -136,38 +152,47 @@ func Next(projectRoot string, args []string) error {
 	return nil
 }
 
-func findActiveRuns(reg *ProjectRegistry, projectRoot, runsDir string) []string {
+func findRunnableRuns(reg *ProjectRegistry, projectRoot string) ([]string, []string) {
+	states, err := listDerivedRunStates(projectRoot)
+	if err == nil && len(states) > 0 {
+		active := make([]string, 0)
+		degraded := make([]string, 0)
+		for _, state := range states {
+			switch state.Status {
+			case "active":
+				active = append(active, state.Name)
+			case "degraded":
+				degraded = append(degraded, state.Name)
+			}
+		}
+		return active, degraded
+	}
 	if reg != nil && len(reg.ActiveRuns) > 0 {
-		return sortedRunNames(reg.ActiveRuns)
+		return sortedRunNames(reg.ActiveRuns), nil
 	}
-	entries, err := os.ReadDir(runsDir)
-	if err != nil {
-		return nil
-	}
-	var active []string
-	for _, e := range entries {
-		if !e.IsDir() || e.Name() == "saved" {
-			continue
-		}
-		tmuxSess := goalx.TmuxSessionName(projectRoot, e.Name())
-		if SessionExists(tmuxSess) {
-			active = append(active, e.Name())
-		}
-	}
-	sort.Strings(active)
-	return active
+	return nil, nil
 }
 
 func findCompletedRuns(reg *ProjectRegistry, projectRoot, runsDir string) []string {
-	entries, err := os.ReadDir(runsDir)
-	if err != nil {
-		return nil
+	states, err := listDerivedRunStates(projectRoot)
+	if err == nil && len(states) > 0 {
+		completed := make([]string, 0)
+		for _, state := range states {
+			if state.Completed && state.Status != "active" && state.Status != "degraded" {
+				completed = append(completed, state.Name)
+			}
+		}
+		return completed
 	}
 	active := map[string]struct{}{}
 	if reg != nil {
 		for name := range reg.ActiveRuns {
 			active[name] = struct{}{}
 		}
+	}
+	entries, err := os.ReadDir(runsDir)
+	if err != nil {
+		return nil
 	}
 	var completed []string
 	for _, e := range entries {
@@ -185,13 +210,4 @@ func findCompletedRuns(reg *ProjectRegistry, projectRoot, runsDir string) []stri
 	}
 	sort.Strings(completed)
 	return completed
-}
-
-func containsAny(s string, substrs ...string) bool {
-	for _, sub := range substrs {
-		if strings.Contains(s, sub) {
-			return true
-		}
-	}
-	return false
 }
