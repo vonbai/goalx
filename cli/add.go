@@ -252,7 +252,7 @@ func Add(projectRoot string, args []string) error {
 	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_added", "goalx add", masterMsg); err != nil {
 		return fmt.Errorf("notify master inbox: %w", err)
 	}
-	if err := sendAgentNudge(rc.TmuxSession+":master", rc.Config.Master.Engine); err != nil {
+	if _, err := DeliverControlNudge(rc.RunDir, "session-added:"+sName, "session-added:"+sName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudge); err != nil {
 		return fmt.Errorf("nudge master: %w", err)
 	}
 

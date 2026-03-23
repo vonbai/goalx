@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"text/tabwriter"
+	"time"
 
 	goalx "github.com/vonbai/goalx"
 )
@@ -162,7 +163,8 @@ func printStatusControlSummary(rc *RunContext) {
 			wakePending = true
 		}
 	}
-	fmt.Printf("Control: unread_inbox=%d heartbeat_lag=%d wake_pending=%t stale=%t\n", unread, heartbeatLag, wakePending, stale)
+	remindersDue, deliveriesFailed := controlQueueSummary(rc.RunDir)
+	fmt.Printf("Control: unread_inbox=%d heartbeat_lag=%d wake_pending=%t stale=%t reminders_due=%d deliveries_failed=%d\n", unread, heartbeatLag, wakePending, stale, remindersDue, deliveriesFailed)
 
 	meta, _ := LoadRunMetadata(RunMetadataPath(rc.RunDir))
 	if meta == nil || meta.ProtocolVersion < currentProtocolVersion {
@@ -206,4 +208,32 @@ func splitNonEmptyLines(s string) []string {
 		}
 	}
 	return lines
+}
+
+func controlQueueSummary(runDir string) (int, int) {
+	remindersDue := 0
+	deliveriesFailed := 0
+	now := time.Now().UTC()
+
+	if reminders, err := LoadControlReminders(ControlRemindersPath(runDir)); err == nil && reminders != nil {
+		for _, item := range reminders.Items {
+			if item.Suppressed || item.AckedAt != "" {
+				continue
+			}
+			if item.CooldownUntil != "" {
+				if cooldownUntil, err := time.Parse(time.RFC3339, item.CooldownUntil); err == nil && cooldownUntil.After(now) {
+					continue
+				}
+			}
+			remindersDue++
+		}
+	}
+	if deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir)); err == nil && deliveries != nil {
+		for _, item := range deliveries.Items {
+			if item.Status == "failed" {
+				deliveriesFailed++
+			}
+		}
+	}
+	return remindersDue, deliveriesFailed
 }

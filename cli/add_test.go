@@ -364,6 +364,13 @@ harness:
 			t.Fatalf("master inbox missing %q:\n%s", want, text)
 		}
 	}
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	if len(deliveries.Items) != 1 || deliveries.Items[0].Status != "sent" {
+		t.Fatalf("unexpected deliveries: %+v", deliveries.Items)
+	}
 }
 
 func TestAddStartsNumberingFromExistingRunArtifacts(t *testing.T) {

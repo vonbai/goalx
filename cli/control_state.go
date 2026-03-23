@@ -62,6 +62,7 @@ type ControlReminders struct {
 type ControlDelivery struct {
 	DeliveryID  string `json:"delivery_id,omitempty"`
 	MessageID   string `json:"message_id,omitempty"`
+	DedupeKey   string `json:"dedupe_key,omitempty"`
 	Target      string `json:"target,omitempty"`
 	Adapter     string `json:"adapter,omitempty"`
 	Status      string `json:"status,omitempty"`

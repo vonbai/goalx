@@ -56,6 +56,16 @@ func TestTellWritesSessionGuidanceStateAndNudges(t *testing.T) {
 	if gotTarget != wantTarget || gotEngine != "codex" {
 		t.Fatalf("sendAgentNudge target=%q engine=%q, want %q codex", gotTarget, gotEngine, wantTarget)
 	}
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	if len(deliveries.Items) != 1 {
+		t.Fatalf("deliveries len = %d, want 1", len(deliveries.Items))
+	}
+	if deliveries.Items[0].Status != "sent" || deliveries.Items[0].Target != wantTarget {
+		t.Fatalf("unexpected delivery: %+v", deliveries.Items[0])
+	}
 }
 
 func TestTellResolvesExplicitProjectSelectorOutsideProjectRoot(t *testing.T) {
@@ -100,6 +110,13 @@ func TestTellResolvesExplicitProjectSelectorOutsideProjectRoot(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("sendAgentNudge was not called")
+	}
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	if len(deliveries.Items) != 1 || deliveries.Items[0].Status != "sent" {
+		t.Fatalf("unexpected deliveries: %+v", deliveries.Items)
 	}
 }
 

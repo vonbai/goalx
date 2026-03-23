@@ -480,6 +480,13 @@ func TestServeHandlerTellWritesGuidanceAndNudgesSession(t *testing.T) {
 	if gotTarget != wantTarget || gotEngine != "" {
 		t.Fatalf("sendNudge target=%q engine=%q, want target=%q engine=\"\"", gotTarget, gotEngine, wantTarget)
 	}
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	if len(deliveries.Items) != 1 || deliveries.Items[0].Status != "sent" {
+		t.Fatalf("unexpected deliveries: %+v", deliveries.Items)
+	}
 }
 
 func TestServeHandlerTellWritesMasterInboxAndUsesControlNudge(t *testing.T) {
@@ -526,6 +533,13 @@ func TestServeHandlerTellWritesMasterInboxAndUsesControlNudge(t *testing.T) {
 	wantTarget := goalx.TmuxSessionName(workspace, "auth-audit") + ":master"
 	if gotTarget != wantTarget || gotEngine != "" {
 		t.Fatalf("sendNudge target=%q engine=%q, want target=%q with default engine", gotTarget, gotEngine, wantTarget)
+	}
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	if len(deliveries.Items) != 1 || deliveries.Items[0].Status != "sent" {
+		t.Fatalf("unexpected deliveries: %+v", deliveries.Items)
 	}
 }
 

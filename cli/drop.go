@@ -35,6 +35,7 @@ func Drop(projectRoot string, args []string) error {
 	if err := stopRunSidecar(rc.RunDir); err != nil {
 		return err
 	}
+	_ = FinalizeControlRun(rc.RunDir, "dropped")
 
 	// Kill tmux session if still active
 	if SessionExists(rc.TmuxSession) {

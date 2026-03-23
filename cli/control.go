@@ -35,7 +35,6 @@ type HeartbeatState struct {
 }
 
 var sendAgentNudge = SendAgentNudge
-var captureAgentPane = CapturePaneTargetOutput
 var sendAgentKeys = sendKeysWithSubmit
 
 const heartbeatLagStaleThreshold = 3
@@ -224,69 +223,7 @@ func RecordHeartbeatTick(runDir string) (*HeartbeatState, error) {
 }
 
 func SendAgentNudge(target, engine string) error {
-	pane, err := captureAgentPane(target)
-	if err != nil {
-		pane = ""
-	}
-	plan := planAgentNudge(engine, pane)
-	if plan.Skip {
-		return nil
-	}
-	return sendAgentKeys(target, plan.Keys, plan.SubmitKey)
-}
-
-type agentNudgePlan struct {
-	Keys      string
-	SubmitKey string
-	Skip      bool
-}
-
-func planAgentNudge(engine, pane string) agentNudgePlan {
-	if engine == "codex" {
-		switch detectWakeMessageState(pane) {
-		case wakeMessageDrafted:
-			return agentNudgePlan{SubmitKey: "Enter"}
-		case wakeMessageQueued:
-			return agentNudgePlan{SubmitKey: "Enter"}
-		}
-		if strings.Contains(strings.ToLower(pane), "tab to queue message") {
-			return agentNudgePlan{Skip: true}
-		}
-	}
-	return agentNudgePlan{Keys: masterWakeMessage, SubmitKey: "Enter"}
-}
-
-type wakeMessageState int
-
-const (
-	wakeMessageAbsent wakeMessageState = iota
-	wakeMessageDrafted
-	wakeMessageQueued
-)
-
-func detectWakeMessageState(pane string) wakeMessageState {
-	lines := strings.Split(pane, "\n")
-	if len(lines) > 20 {
-		lines = lines[len(lines)-20:]
-	}
-	draft := false
-	queuedCount := 0
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case strings.Contains(trimmed, "› "+masterWakeMessage):
-			draft = true
-		case trimmed == masterWakeMessage:
-			queuedCount++
-		}
-	}
-	if queuedCount > 0 {
-		return wakeMessageQueued
-	}
-	if draft {
-		return wakeMessageDrafted
-	}
-	return wakeMessageAbsent
+	return sendAgentKeys(target, masterWakeMessage, "Enter")
 }
 
 func RefreshMasterHeartbeatState(runDir string) (*MasterState, *HeartbeatState, error) {

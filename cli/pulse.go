@@ -44,8 +44,8 @@ func Pulse(projectRoot string, args []string) error {
 	if !SessionExists(rc.TmuxSession) {
 		return nil
 	}
-	if err := sendAgentNudge(rc.TmuxSession+":master", rc.Config.Master.Engine); err != nil {
-		return fmt.Errorf("nudge master: %w", err)
+	if _, err := QueueControlReminder(rc.RunDir, "master-wake", "heartbeat", rc.TmuxSession+":master"); err != nil {
+		return fmt.Errorf("queue master wake reminder: %w", err)
 	}
 	return nil
 }

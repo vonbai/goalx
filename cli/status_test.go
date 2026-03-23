@@ -65,6 +65,24 @@ func TestStatusShowsUnreadInboxAndLegacyProtocolDrift(t *testing.T) {
 	if err := SaveHeartbeatState(HeartbeatStatePath(runDir), &HeartbeatState{Seq: 7}); err != nil {
 		t.Fatalf("SaveHeartbeatState: %v", err)
 	}
+	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
+		Version: 1,
+		Items: []ControlReminder{
+			{ReminderID: "rem-1", DedupeKey: "master-wake", Reason: "heartbeat", Target: "gx-demo:master"},
+			{ReminderID: "rem-2", DedupeKey: "acked", Reason: "heartbeat", Target: "gx-demo:master", AckedAt: "2026-03-23T00:00:00Z"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlReminders: %v", err)
+	}
+	if err := SaveControlDeliveries(ControlDeliveriesPath(runDir), &ControlDeliveries{
+		Version: 1,
+		Items: []ControlDelivery{
+			{DeliveryID: "del-1", DedupeKey: "master-wake", Status: "failed", Target: "gx-demo:master"},
+			{DeliveryID: "del-2", DedupeKey: "tell:1", Status: "sent", Target: "gx-demo:master"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlDeliveries: %v", err)
+	}
 
 	out := captureStdout(t, func() {
 		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
@@ -79,6 +97,8 @@ func TestStatusShowsUnreadInboxAndLegacyProtocolDrift(t *testing.T) {
 		"heartbeat_lag=2",
 		"wake_pending=true",
 		"stale=true",
+		"reminders_due=1",
+		"deliveries_failed=1",
 		"legacy protocol",
 	} {
 		if !strings.Contains(out, want) {

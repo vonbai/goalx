@@ -73,6 +73,66 @@ func TestRunSidecarTickRenewsLease(t *testing.T) {
 	}
 }
 
+func TestRunSidecarTickDeliversDueMasterWakeReminder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "base", "base commit")
+	cfg := &goalx.Config{
+		Name:      "sidecar-run",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	runDir := writeRunSpecFixture(t, repo, cfg)
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nif [ \"$1\" = \"has-session\" ]; then exit 0; fi\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	orig := sendAgentNudge
+	defer func() { sendAgentNudge = orig }()
+	var gotTarget, gotEngine string
+	sendAgentNudge = func(target, engine string) error {
+		gotTarget, gotEngine = target, engine
+		return nil
+	}
+
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runSidecarTick: %v", err)
+	}
+
+	wantTarget := goalx.TmuxSessionName(repo, cfg.Name) + ":master"
+	if gotTarget != wantTarget || gotEngine != "codex" {
+		t.Fatalf("sendAgentNudge target=%q engine=%q, want %q codex", gotTarget, gotEngine, wantTarget)
+	}
+
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	if len(deliveries.Items) != 1 {
+		t.Fatalf("deliveries len = %d, want 1", len(deliveries.Items))
+	}
+	if deliveries.Items[0].Status != "sent" || deliveries.Items[0].DedupeKey != "master-wake" {
+		t.Fatalf("unexpected delivery: %+v", deliveries.Items[0])
+	}
+}
+
 func TestStopTerminatesSidecar(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -101,6 +161,81 @@ func TestStopTerminatesSidecar(t *testing.T) {
 	}
 	if gotRunDir != runDir {
 		t.Fatalf("stopRunSidecar runDir = %q, want %q", gotRunDir, runDir)
+	}
+}
+
+func TestStopTerminalizesControlStateWhenRunIsAlreadyInactive(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	if err := RegisterActiveRun(repo, cfg); err != nil {
+		t.Fatalf("RegisterActiveRun: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := RenewControlLease(runDir, "master", "run_demo", 1, time.Minute, "tmux", 123); err != nil {
+		t.Fatalf("RenewControlLease master: %v", err)
+	}
+	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
+		Version: 1,
+		Items: []ControlReminder{
+			{ReminderID: "rem-1", DedupeKey: "master-wake", Reason: "heartbeat", Target: "gx-demo:master"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlReminders: %v", err)
+	}
+	if err := SaveControlDeliveries(ControlDeliveriesPath(runDir), &ControlDeliveries{
+		Version: 1,
+		Items: []ControlDelivery{
+			{DeliveryID: "del-1", DedupeKey: "master-wake", Status: "failed", Target: "gx-demo:master"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlDeliveries: %v", err)
+	}
+
+	origStopSidecar := stopRunSidecar
+	defer func() { stopRunSidecar = origStopSidecar }()
+	stopRunSidecar = func(runDir string) error { return nil }
+
+	if err := Stop(repo, []string{"--run", runName}); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	runState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if runState.LifecycleState != "stopped" {
+		t.Fatalf("lifecycle_state = %q, want stopped", runState.LifecycleState)
+	}
+	masterLease, err := LoadControlLease(ControlLeasePath(runDir, "master"))
+	if err != nil {
+		t.Fatalf("LoadControlLease master: %v", err)
+	}
+	if masterLease.PID != 0 || masterLease.RunID != "" {
+		t.Fatalf("master lease not expired: %+v", masterLease)
+	}
+	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlReminders: %v", err)
+	}
+	if len(reminders.Items) != 1 || !reminders.Items[0].Suppressed {
+		t.Fatalf("unexpected reminders: %+v", reminders.Items)
+	}
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	if len(deliveries.Items) != 1 || deliveries.Items[0].Status != "cancelled" {
+		t.Fatalf("unexpected deliveries: %+v", deliveries.Items)
 	}
 }
 

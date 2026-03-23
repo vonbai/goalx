@@ -84,7 +84,7 @@ func Park(projectRoot string, args []string) error {
 			}
 		}
 		if _, err := AppendMasterInboxMessage(rc.RunDir, "session_parked", "goalx park", fmt.Sprintf("%s was parked for reuse.", sessionName)); err == nil {
-			_ = sendAgentNudge(rc.TmuxSession+":master", rc.Config.Master.Engine)
+			_, _ = DeliverControlNudge(rc.RunDir, "session-parked:"+sessionName, "session-parked:"+sessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudge)
 		}
 	}
 	if err := UpsertSessionRuntimeState(rc.RunDir, snapshot); err != nil {
@@ -238,7 +238,7 @@ func Resume(projectRoot string, args []string) error {
 		return fmt.Errorf("update session runtime state: %w", err)
 	}
 	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_resumed", "goalx resume", fmt.Sprintf("%s was resumed for reuse.", sessionName)); err == nil {
-		_ = sendAgentNudge(rc.TmuxSession+":master", rc.Config.Master.Engine)
+		_, _ = DeliverControlNudge(rc.RunDir, "session-resumed:"+sessionName, "session-resumed:"+sessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudge)
 	}
 
 	fmt.Printf("Resumed %s in run '%s'\n", sessionName, rc.Name)

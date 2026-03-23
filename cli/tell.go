@@ -102,11 +102,13 @@ func deliverTell(projectRoot, runName, target, message string, nudge func(target
 		return "", "", err
 	}
 	if target == "" || target == "master" {
-		if _, err := AppendMasterInboxMessage(rc.RunDir, "tell", "user", message); err != nil {
+		msg, err := AppendMasterInboxMessage(rc.RunDir, "tell", "user", message)
+		if err != nil {
 			return "", "", err
 		}
 		if nudge != nil {
-			if err := nudge(rc.TmuxSession+":master", rc.Config.Master.Engine); err != nil {
+			dedupeKey := fmt.Sprintf("master-inbox:%d", msg.ID)
+			if _, err := DeliverControlNudge(rc.RunDir, dedupeKey, dedupeKey, rc.TmuxSession+":master", rc.Config.Master.Engine, nudge); err != nil {
 				return "", "", err
 			}
 		}
@@ -141,7 +143,12 @@ func deliverTell(projectRoot, runName, target, message string, nudge func(target
 	}
 	effective := goalx.EffectiveSessionConfig(rc.Config, idx-1)
 	if nudge != nil {
-		if err := nudge(rc.TmuxSession+":"+windowName, effective.Engine); err != nil {
+		guidance, err := LoadSessionGuidanceState(SessionGuidanceStatePath(rc.RunDir, target))
+		if err != nil {
+			return "", "", err
+		}
+		messageID := fmt.Sprintf("guidance:%s:%d", target, guidance.Version)
+		if _, err := DeliverControlNudge(rc.RunDir, messageID, messageID, rc.TmuxSession+":"+windowName, effective.Engine, nudge); err != nil {
 			return "", "", err
 		}
 	}

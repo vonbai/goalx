@@ -86,154 +86,40 @@ func TestRecordHeartbeatTickIncrementsSequence(t *testing.T) {
 	}
 }
 
-func TestPlanAgentNudgeForBusyCodexStates(t *testing.T) {
-	pane := strings.Join([]string{
-		"• Working (1m 36s • esc to interrupt)",
-		"",
-		"  tab to queue message",
-	}, "\n")
-
-	plan := planAgentNudge("codex", pane)
-	if !plan.Skip {
-		t.Fatalf("planAgentNudge(codex, absent) = %#v", plan)
-	}
-
-	draftedPane := strings.Join([]string{
-		"• Working (1m 36s • esc to interrupt)",
-		"",
-		"› goalx-hb",
-		"",
-		"  tab to queue message",
-	}, "\n")
-	plan = planAgentNudge("codex", draftedPane)
-	if plan.Keys != "" || plan.SubmitKey != "Enter" || plan.Skip {
-		t.Fatalf("planAgentNudge(codex, drafted) = %#v, want submit existing draft", plan)
-	}
-
-	queuedPane := strings.Join([]string{
-		"• Working (1m 36s • esc to interrupt)",
-		"",
-		"› goalx-hb",
-		"  goalx-hb",
-		"  goalx-hb",
-		"",
-		"  tab to queue message",
-	}, "\n")
-	plan = planAgentNudge("codex", queuedPane)
-	if plan.Keys != "" || plan.SubmitKey != "Enter" || plan.Skip {
-		t.Fatalf("planAgentNudge(codex, queued) = %#v, want submit queued wake", plan)
-	}
-
-	readyDraftPane := strings.Join([]string{
-		"› goalx-hb",
-		"",
-		"Ready for input",
-	}, "\n")
-	plan = planAgentNudge("codex", readyDraftPane)
-	if plan.Keys != "" || plan.SubmitKey != "Enter" || plan.Skip {
-		t.Fatalf("planAgentNudge(codex, ready drafted) = %#v", plan)
-	}
-
-	plan = planAgentNudge("claude-code", draftedPane)
-	if plan.Keys != masterWakeMessage || plan.SubmitKey != "Enter" || plan.Skip {
-		t.Fatalf("planAgentNudge(claude-code, busy pane) = %#v", plan)
-	}
-}
-
-func TestSendAgentNudgeSubmitsQueuedBusyCodexWake(t *testing.T) {
-	origCapture := captureAgentPane
+func TestSendAgentNudgeAlwaysUsesExplicitWakePayload(t *testing.T) {
 	origSend := sendAgentKeys
-	defer func() {
-		captureAgentPane = origCapture
-		sendAgentKeys = origSend
-	}()
+	defer func() { sendAgentKeys = origSend }()
 
-	captureAgentPane = func(target string) (string, error) {
-		return strings.Join([]string{
-			"• Working (5m 59s • esc to interrupt)",
-			"",
-			"› goalx-hb",
-			"  goalx-hb",
-			"  goalx-hb",
-			"",
-			"  tab to queue message",
-		}, "\n"), nil
-	}
-	var gotKeys, gotSubmit string
-	sendAgentKeys = func(target, keys, submitKey string) error {
-		gotKeys, gotSubmit = keys, submitKey
-		return nil
+	tests := []struct {
+		name   string
+		engine string
+	}{
+		{name: "codex", engine: "codex"},
+		{name: "claude", engine: "claude-code"},
 	}
 
-	if err := SendAgentNudge("gx-demo:master", "codex"); err != nil {
-		t.Fatalf("SendAgentNudge: %v", err)
-	}
-	if gotKeys != "" || gotSubmit != "Enter" {
-		t.Fatalf("SendAgentNudge used keys=%q submit=%q, want empty keys + Enter for queued busy codex", gotKeys, gotSubmit)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotTarget, gotKeys, gotSubmit string
+			sendAgentKeys = func(target, keys, submitKey string) error {
+				gotTarget, gotKeys, gotSubmit = target, keys, submitKey
+				return nil
+			}
+
+			if err := SendAgentNudge("gx-demo:master", tt.engine); err != nil {
+				t.Fatalf("SendAgentNudge: %v", err)
+			}
+			if gotTarget != "gx-demo:master" {
+				t.Fatalf("target = %q, want gx-demo:master", gotTarget)
+			}
+			if gotKeys != masterWakeMessage || gotSubmit != "Enter" {
+				t.Fatalf("SendAgentNudge used keys=%q submit=%q, want explicit wake payload + Enter", gotKeys, gotSubmit)
+			}
+		})
 	}
 }
 
-func TestSendAgentNudgeSubmitsBusyCodexDraft(t *testing.T) {
-	origCapture := captureAgentPane
-	origSend := sendAgentKeys
-	defer func() {
-		captureAgentPane = origCapture
-		sendAgentKeys = origSend
-	}()
-
-	captureAgentPane = func(target string) (string, error) {
-		return strings.Join([]string{
-			"• Working (5m 59s • esc to interrupt)",
-			"",
-			"› goalx-hb",
-			"",
-			"  tab to queue message",
-		}, "\n"), nil
-	}
-	var gotKeys, gotSubmit string
-	sendAgentKeys = func(target, keys, submitKey string) error {
-		gotKeys, gotSubmit = keys, submitKey
-		return nil
-	}
-
-	if err := SendAgentNudge("gx-demo:master", "codex"); err != nil {
-		t.Fatalf("SendAgentNudge: %v", err)
-	}
-	if gotKeys != "" || gotSubmit != "Enter" {
-		t.Fatalf("SendAgentNudge used keys=%q submit=%q, want empty keys + Enter for drafted busy codex", gotKeys, gotSubmit)
-	}
-}
-
-func TestSendAgentNudgeSubmitsExistingDraftForReadyCodex(t *testing.T) {
-	origCapture := captureAgentPane
-	origSend := sendAgentKeys
-	defer func() {
-		captureAgentPane = origCapture
-		sendAgentKeys = origSend
-	}()
-
-	captureAgentPane = func(target string) (string, error) {
-		return strings.Join([]string{
-			"› goalx-hb",
-			"",
-			"Ready for input",
-		}, "\n"), nil
-	}
-	var gotKeys, gotSubmit string
-	sendAgentKeys = func(target, keys, submitKey string) error {
-		gotKeys, gotSubmit = keys, submitKey
-		return nil
-	}
-
-	if err := SendAgentNudge("gx-demo:master", "codex"); err != nil {
-		t.Fatalf("SendAgentNudge: %v", err)
-	}
-	if gotKeys != "" || gotSubmit != "Enter" {
-		t.Fatalf("SendAgentNudge used keys=%q submit=%q, want empty keys + Enter", gotKeys, gotSubmit)
-	}
-}
-
-func TestPulseRecordsHeartbeatAndUsesControlNudge(t *testing.T) {
+func TestPulseRecordsHeartbeatAndSchedulesMasterWakeReminder(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -263,10 +149,10 @@ func TestPulseRecordsHeartbeatAndUsesControlNudge(t *testing.T) {
 		t.Fatalf("EnsureMasterControl: %v", err)
 	}
 
-	var gotTarget, gotEngine string
+	called := false
 	orig := sendAgentNudge
 	sendAgentNudge = func(target, engine string) error {
-		gotTarget, gotEngine = target, engine
+		called = true
 		return nil
 	}
 	defer func() { sendAgentNudge = orig }()
@@ -289,8 +175,18 @@ func TestPulseRecordsHeartbeatAndUsesControlNudge(t *testing.T) {
 	if string(gotRunState) != string(runStateBefore) {
 		t.Fatalf("run state changed:\nwant %s\ngot  %s", string(runStateBefore), string(gotRunState))
 	}
-	if gotTarget == "" || gotEngine != "codex" {
-		t.Fatalf("nudge target=%q engine=%q, want codex target", gotTarget, gotEngine)
+	if called {
+		t.Fatal("Pulse should not deliver wake directly")
+	}
+	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlReminders: %v", err)
+	}
+	if len(reminders.Items) != 1 {
+		t.Fatalf("reminders len = %d, want 1", len(reminders.Items))
+	}
+	if reminders.Items[0].DedupeKey != "master-wake" || reminders.Items[0].Reason != "heartbeat" {
+		t.Fatalf("unexpected reminder: %+v", reminders.Items[0])
 	}
 }
 
