@@ -127,6 +127,24 @@ func TestRunCommandDispatchesSidecar(t *testing.T) {
 	}
 }
 
+func TestRunCommandDispatchesLeaseLoop(t *testing.T) {
+	oldLeaseLoop := mainLeaseLoop
+	defer func() { mainLeaseLoop = oldLeaseLoop }()
+
+	called := false
+	mainLeaseLoop = func(string, []string) error {
+		called = true
+		return nil
+	}
+
+	if err := runCommand(t.TempDir(), "lease-loop", []string{"--run", "demo", "--holder", "master", "--run-id", "run_demo", "--epoch", "1", "--ttl-seconds", "30", "--transport", "tmux", "--pid", "123"}); err != nil {
+		t.Fatalf("runCommand lease-loop: %v", err)
+	}
+	if !called {
+		t.Fatal("lease-loop command was not dispatched")
+	}
+}
+
 func TestUsageDocumentsExplicitCrossProjectSelectors(t *testing.T) {
 	if !strings.Contains(usage, "project-id/run") {
 		t.Fatalf("usage missing project-id/run selector guidance:\n%s", usage)

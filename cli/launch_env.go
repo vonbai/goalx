@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"sort"
 	"strings"
+	"time"
 )
 
 var launchEnvKeys = map[string]struct{}{
@@ -40,6 +42,32 @@ var launchEnvPrefixes = []string{
 }
 
 func buildEngineLaunchCommand(engineCmd, prompt string) string {
+	parts := []string{buildLaunchEnvPrefix(), buildEngineExecCommand(engineCmd, prompt)}
+	return strings.Join(parts, " ")
+}
+
+func buildMasterLaunchCommand(goalxBin, runName, runID string, epoch int, ttl time.Duration, engineCmd, prompt string) string {
+	ttlSeconds := int(ttl.Seconds())
+	if ttlSeconds <= 0 {
+		ttlSeconds = 30
+	}
+	script := fmt.Sprintf(
+		"%s lease-loop --run %s --holder master --run-id %s --epoch %d --ttl-seconds %d --transport tmux --pid $$ >/dev/null 2>&1 & exec %s",
+		shellQuote(goalxBin),
+		shellQuote(runName),
+		shellQuote(runID),
+		epoch,
+		ttlSeconds,
+		buildEngineExecCommand(engineCmd, prompt),
+	)
+	return buildLaunchEnvPrefix() + " /bin/bash -c " + shellQuote(script)
+}
+
+func buildEngineExecCommand(engineCmd, prompt string) string {
+	return engineCmd + " " + shellQuote(prompt)
+}
+
+func buildLaunchEnvPrefix() string {
 	parts := []string{"env"}
 	env := currentLaunchEnv()
 	keys := make([]string, 0, len(env))
@@ -50,7 +78,6 @@ func buildEngineLaunchCommand(engineCmd, prompt string) string {
 	for _, key := range keys {
 		parts = append(parts, key+"="+shellQuote(env[key]))
 	}
-	parts = append(parts, engineCmd, shellQuote(prompt))
 	return strings.Join(parts, " ")
 }
 

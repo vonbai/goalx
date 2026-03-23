@@ -61,6 +61,7 @@ var (
 	mainAuto             = cli.Auto
 	mainStop             = cli.Stop
 	mainSidecar          = cli.Sidecar
+	mainLeaseLoop        = cli.LeaseLoop
 	notifySignalsContext = signal.NotifyContext
 )
 
@@ -166,6 +167,8 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.Next(cwd, args)
 	case "sidecar":
 		return mainSidecar(cwd, args)
+	case "lease-loop":
+		return mainLeaseLoop(cwd, args)
 	default:
 		return errUnknownCommand
 	}

@@ -497,6 +497,9 @@ esac
 	logText := string(logData)
 	for _, want := range []string{
 		"send-keys -t " + goalx.TmuxSessionName(repo, cfg.Name) + ":master env ",
+		"/bin/bash -c ",
+		"lease-loop --run",
+		"--holder master",
 		"HOME='" + home + "'",
 		"PATH='" + binDir + ":/tmp/goalx-bin:/usr/bin'",
 		"OPENAI_API_KEY='sk-goalx'",

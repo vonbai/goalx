@@ -238,17 +238,23 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		return fmt.Errorf("set master cwd: %w", err)
 	}
 
+	checkSec, warning := normalizeSidecarInterval(cfg.Master.CheckInterval)
+	if warning != "" {
+		fmt.Fprint(os.Stderr, warning)
+	}
+
 	// Launch master
-	masterLaunch := buildEngineLaunchCommand(masterCmd, masterPrompt)
+	goalxBin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve goalx executable: %w", err)
+	}
+	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
+	masterLaunch := buildMasterLaunchCommand(goalxBin, cfg.Name, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
 	if err := SendKeys(tmuxSess+":master", masterLaunch); err != nil {
 		return fmt.Errorf("launch master: %w", err)
 	}
 
 	// Launch the run-scoped sidecar for lease renewal and supervision.
-	checkSec, warning := normalizeSidecarInterval(cfg.Master.CheckInterval)
-	if warning != "" {
-		fmt.Fprint(os.Stderr, warning)
-	}
 	if err := launchRunSidecar(projectRoot, cfg.Name, time.Duration(checkSec)*time.Second); err != nil {
 		return fmt.Errorf("launch sidecar: %w", err)
 	}
