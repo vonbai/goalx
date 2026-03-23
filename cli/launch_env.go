@@ -46,15 +46,21 @@ func buildEngineLaunchCommand(engineCmd, prompt string) string {
 	return strings.Join(parts, " ")
 }
 
-func buildMasterLaunchCommand(goalxBin, runName, runID string, epoch int, ttl time.Duration, engineCmd, prompt string) string {
+func buildMasterLaunchCommand(goalxBin, runName, runDir, runID string, epoch int, ttl time.Duration, engineCmd, prompt string) string {
+	return buildLeaseWrappedLaunchCommand(goalxBin, runName, runDir, "master", runID, epoch, ttl, engineCmd, prompt)
+}
+
+func buildLeaseWrappedLaunchCommand(goalxBin, runName, runDir, holder, runID string, epoch int, ttl time.Duration, engineCmd, prompt string) string {
 	ttlSeconds := int(ttl.Seconds())
 	if ttlSeconds <= 0 {
 		ttlSeconds = 30
 	}
 	script := fmt.Sprintf(
-		"%s lease-loop --run %s --holder master --run-id %s --epoch %d --ttl-seconds %d --transport tmux --pid $$ >/dev/null 2>&1 & exec %s",
+		"%s lease-loop --run %s --run-dir %s --holder %s --run-id %s --epoch %d --ttl-seconds %d --transport tmux --pid $$ >/dev/null 2>&1 & exec %s",
 		shellQuote(goalxBin),
 		shellQuote(runName),
+		shellQuote(runDir),
+		shellQuote(holder),
 		shellQuote(runID),
 		epoch,
 		ttlSeconds,

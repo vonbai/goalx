@@ -11,92 +11,101 @@ import (
 	"time"
 )
 
-const leaseLoopUsage = "usage: goalx lease-loop --run RUN --holder HOLDER --run-id RUN_ID --epoch N --ttl-seconds N --transport NAME --pid PID"
+const leaseLoopUsage = "usage: goalx lease-loop (--run RUN | --run-dir PATH) --holder HOLDER --run-id RUN_ID --epoch N --ttl-seconds N --transport NAME --pid PID"
 
 var errLeaseLoopStale = errors.New("lease loop is stale")
 var errLeaseTargetExited = errors.New("lease target exited")
 
 func LeaseLoop(projectRoot string, args []string) error {
-	runName, holder, runID, epoch, ttl, transport, pid, err := parseLeaseLoopArgs(args)
+	runName, runDir, holder, runID, epoch, ttl, transport, pid, err := parseLeaseLoopArgs(args)
 	if err != nil {
 		return err
 	}
-	rc, err := ResolveRun(projectRoot, runName)
-	if err != nil {
-		return err
+	if runDir == "" {
+		rc, err := ResolveRun(projectRoot, runName)
+		if err != nil {
+			return err
+		}
+		runDir = rc.RunDir
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return runLeaseLoop(ctx, rc.RunDir, holder, runID, epoch, ttl, transport, pid)
+	return runLeaseLoop(ctx, runDir, holder, runID, epoch, ttl, transport, pid)
 }
 
-func parseLeaseLoopArgs(args []string) (string, string, string, int, time.Duration, string, int, error) {
+func parseLeaseLoopArgs(args []string) (string, string, string, string, int, time.Duration, string, int, error) {
 	runName, rest, err := extractRunFlag(args)
 	if err != nil {
-		return "", "", "", 0, 0, "", 0, err
+		return "", "", "", "", 0, 0, "", 0, err
 	}
 
-	var holder, runID, transport string
+	var runDir, holder, runID, transport string
 	var epoch, ttlSeconds, pid int
 	for i := 0; i < len(rest); i++ {
 		switch rest[i] {
 		case "--help", "-h":
-			return "", "", "", 0, 0, "", 0, fmt.Errorf(leaseLoopUsage)
+			return "", "", "", "", 0, 0, "", 0, fmt.Errorf(leaseLoopUsage)
+		case "--run-dir":
+			if i+1 >= len(rest) {
+				return "", "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --run-dir")
+			}
+			i++
+			runDir = rest[i]
 		case "--holder":
 			if i+1 >= len(rest) {
-				return "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --holder")
+				return "", "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --holder")
 			}
 			i++
 			holder = rest[i]
 		case "--run-id":
 			if i+1 >= len(rest) {
-				return "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --run-id")
+				return "", "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --run-id")
 			}
 			i++
 			runID = rest[i]
 		case "--epoch":
 			if i+1 >= len(rest) {
-				return "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --epoch")
+				return "", "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --epoch")
 			}
 			i++
 			epoch, err = strconv.Atoi(rest[i])
 			if err != nil || epoch <= 0 {
-				return "", "", "", 0, 0, "", 0, fmt.Errorf("invalid --epoch %q", rest[i])
+				return "", "", "", "", 0, 0, "", 0, fmt.Errorf("invalid --epoch %q", rest[i])
 			}
 		case "--ttl-seconds":
 			if i+1 >= len(rest) {
-				return "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --ttl-seconds")
+				return "", "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --ttl-seconds")
 			}
 			i++
 			ttlSeconds, err = strconv.Atoi(rest[i])
 			if err != nil || ttlSeconds <= 0 {
-				return "", "", "", 0, 0, "", 0, fmt.Errorf("invalid --ttl-seconds %q", rest[i])
+				return "", "", "", "", 0, 0, "", 0, fmt.Errorf("invalid --ttl-seconds %q", rest[i])
 			}
 		case "--transport":
 			if i+1 >= len(rest) {
-				return "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --transport")
+				return "", "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --transport")
 			}
 			i++
 			transport = rest[i]
 		case "--pid":
 			if i+1 >= len(rest) {
-				return "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --pid")
+				return "", "", "", "", 0, 0, "", 0, fmt.Errorf("missing value for --pid")
 			}
 			i++
 			pid, err = strconv.Atoi(rest[i])
 			if err != nil || pid <= 0 {
-				return "", "", "", 0, 0, "", 0, fmt.Errorf("invalid --pid %q", rest[i])
+				return "", "", "", "", 0, 0, "", 0, fmt.Errorf("invalid --pid %q", rest[i])
 			}
 		default:
-			return "", "", "", 0, 0, "", 0, fmt.Errorf(leaseLoopUsage)
+			return "", "", "", "", 0, 0, "", 0, fmt.Errorf(leaseLoopUsage)
 		}
 	}
 
-	if runName == "" || holder == "" || runID == "" || epoch <= 0 || ttlSeconds <= 0 || transport == "" || pid <= 0 {
-		return "", "", "", 0, 0, "", 0, fmt.Errorf(leaseLoopUsage)
+	if (runName == "" && runDir == "") || holder == "" || runID == "" || epoch <= 0 || ttlSeconds <= 0 || transport == "" || pid <= 0 {
+		return "", "", "", "", 0, 0, "", 0, fmt.Errorf(leaseLoopUsage)
 	}
-	return runName, holder, runID, epoch, time.Duration(ttlSeconds) * time.Second, transport, pid, nil
+	return runName, runDir, holder, runID, epoch, time.Duration(ttlSeconds) * time.Second, transport, pid, nil
 }
 
 func runLeaseLoop(ctx context.Context, runDir, holder, runID string, epoch int, ttl time.Duration, transport string, pid int) error {

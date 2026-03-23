@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	goalx "github.com/vonbai/goalx"
 	"gopkg.in/yaml.v3"
@@ -152,6 +153,11 @@ func TestResumeRelaunchesParkedSessionAndMarksActive(t *testing.T) {
 	if !strings.Contains(logText, "send-keys -t "+wantSession+":session-1") {
 		t.Fatalf("tmux log missing launch send-keys:\n%s", logText)
 	}
+	for _, want := range []string{"/bin/bash -c ", "lease-loop --run", "--holder", "session-1"} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("tmux log missing %q:\n%s", want, logText)
+		}
+	}
 }
 
 func TestStatusShowsParkedSessionStateFromCoordination(t *testing.T) {
@@ -190,6 +196,32 @@ func TestStatusShowsParkedSessionStateFromCoordination(t *testing.T) {
 	}
 	if !strings.Contains(out, "parked: db race triage") {
 		t.Fatalf("status output missing parked summary:\n%s", out)
+	}
+}
+
+func TestParkExpiresSessionLease(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	installFakeTmux(t, "master session-1")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	if err := RenewControlLease(runDir, "session-1", "run_demo", 1, time.Minute, "tmux", 2345); err != nil {
+		t.Fatalf("RenewControlLease session-1: %v", err)
+	}
+
+	if err := Park(repo, []string{"--run", runName, "session-1"}); err != nil {
+		t.Fatalf("Park: %v", err)
+	}
+
+	lease, err := LoadControlLease(ControlLeasePath(runDir, "session-1"))
+	if err != nil {
+		t.Fatalf("LoadControlLease: %v", err)
+	}
+	if lease.RunID != "" || lease.PID != 0 {
+		t.Fatalf("session lease not expired: %+v", lease)
 	}
 }
 

@@ -87,6 +87,7 @@ func Park(projectRoot string, args []string) error {
 			_, _ = DeliverControlNudge(rc.RunDir, "session-parked:"+sessionName, "session-parked:"+sessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudge)
 		}
 	}
+	_ = ExpireControlLease(rc.RunDir, sessionName)
 	if err := UpsertSessionRuntimeState(rc.RunDir, snapshot); err != nil {
 		return fmt.Errorf("update session runtime state: %w", err)
 	}
@@ -198,11 +199,21 @@ func Resume(projectRoot string, args []string) error {
 	}
 	protocolPath := filepath.Join(rc.RunDir, sessionNameToProgramFile(idx))
 	prompt := goalx.ResolvePrompt(engines, effective.Engine, protocolPath)
+	meta, err := EnsureRunMetadata(rc.RunDir, rc.ProjectRoot, rc.Config.Objective)
+	if err != nil {
+		return fmt.Errorf("load run metadata: %w", err)
+	}
+	goalxBin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve goalx executable: %w", err)
+	}
+	checkSec, _ := normalizeSidecarInterval(rc.Config.Master.CheckInterval)
+	sessionLeaseTTL := time.Duration(checkSec) * time.Second * 2
 
 	if err := NewWindow(rc.TmuxSession, windowName, wtPath); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
-	launchCmd := buildEngineLaunchCommand(engineCmd, prompt)
+	launchCmd := buildLeaseWrappedLaunchCommand(goalxBin, rc.Name, rc.RunDir, sessionName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
 	if err := SendKeys(rc.TmuxSession+":"+windowName, launchCmd); err != nil {
 		return fmt.Errorf("launch subagent: %w", err)
 	}

@@ -249,7 +249,7 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		return fmt.Errorf("resolve goalx executable: %w", err)
 	}
 	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
-	masterLaunch := buildMasterLaunchCommand(goalxBin, cfg.Name, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
+	masterLaunch := buildMasterLaunchCommand(goalxBin, cfg.Name, runDir, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
 	if err := SendKeys(tmuxSess+":master", masterLaunch); err != nil {
 		return fmt.Errorf("launch master: %w", err)
 	}

@@ -1,6 +1,10 @@
 package cli
 
-import "time"
+import (
+	"os"
+	"strings"
+	"time"
+)
 
 func FinalizeControlRun(runDir, lifecycle string) error {
 	if err := EnsureControlState(runDir); err != nil {
@@ -19,10 +23,7 @@ func FinalizeControlRun(runDir, lifecycle string) error {
 		return err
 	}
 
-	if err := ExpireControlLease(runDir, "master"); err != nil {
-		return err
-	}
-	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
+	if err := expireAllControlLeases(runDir); err != nil {
 		return err
 	}
 
@@ -52,4 +53,33 @@ func FinalizeControlRun(runDir, lifecycle string) error {
 		}
 	}
 	return SaveControlDeliveries(ControlDeliveriesPath(runDir), deliveries)
+}
+
+func expireAllControlLeases(runDir string) error {
+	if err := ExpireControlLease(runDir, "master"); err != nil {
+		return err
+	}
+	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(ControlLeasesDir(runDir))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		holder := strings.TrimSuffix(entry.Name(), ".json")
+		if holder == "" || holder == "master" || holder == "sidecar" {
+			continue
+		}
+		if err := ExpireControlLease(runDir, holder); err != nil {
+			return err
+		}
+	}
+	return nil
 }

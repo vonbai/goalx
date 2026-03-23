@@ -137,7 +137,7 @@ func TestRunCommandDispatchesLeaseLoop(t *testing.T) {
 		return nil
 	}
 
-	if err := runCommand(t.TempDir(), "lease-loop", []string{"--run", "demo", "--holder", "master", "--run-id", "run_demo", "--epoch", "1", "--ttl-seconds", "30", "--transport", "tmux", "--pid", "123"}); err != nil {
+	if err := runCommand(t.TempDir(), "lease-loop", []string{"--run", "demo", "--run-dir", "/tmp/run", "--holder", "master", "--run-id", "run_demo", "--epoch", "1", "--ttl-seconds", "30", "--transport", "tmux", "--pid", "123"}); err != nil {
 		t.Fatalf("runCommand lease-loop: %v", err)
 	}
 	if !called {

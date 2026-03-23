@@ -30,7 +30,7 @@ func Status(projectRoot string, args []string) error {
 	printStatusControlSummary(rc)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "SESSION\tLAST_ROUND\tSTATUS\tSUMMARY")
+	fmt.Fprintln(w, "SESSION\tLAST_ROUND\tSTATUS\tLEASE\tSUMMARY")
 	coord, _ := LoadCoordinationState(CoordinationPath(rc.RunDir))
 	sessionState, _ := EnsureSessionsRuntimeState(rc.RunDir)
 
@@ -123,14 +123,14 @@ func Status(projectRoot string, args []string) error {
 		if sess.LastTestSummary != "" {
 			summary += " | " + sess.LastTestSummary
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", sName, lastRound, status, summary)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", sName, lastRound, status, actorLeaseSummary(rc.RunDir, sName, "-"), summary)
 	}
 
 	// Master journal
 	masterPath := filepath.Join(rc.RunDir, "master.jsonl")
 	masterEntries, _ := goalx.LoadJournal(masterPath)
 	masterSummary := goalx.Summary(masterEntries)
-	fmt.Fprintf(w, "master\t-\t-\t%s\n", masterSummary)
+	fmt.Fprintf(w, "master\t-\t-\t%s\t%s\n", actorLeaseSummary(rc.RunDir, "master", "missing"), masterSummary)
 
 	return w.Flush()
 }
@@ -195,10 +195,10 @@ func controlQueueSummary(runDir string) (int, int) {
 	return remindersDue, deliveriesFailed
 }
 
-func controlLeaseSummary(runDir, holder string) string {
+func actorLeaseSummary(runDir, holder, missing string) string {
 	lease, err := LoadControlLease(ControlLeasePath(runDir, holder))
 	if err != nil || lease == nil || lease.ExpiresAt == "" {
-		return "missing"
+		return missing
 	}
 	expiresAt, err := time.Parse(time.RFC3339, lease.ExpiresAt)
 	if err != nil {
@@ -208,4 +208,8 @@ func controlLeaseSummary(runDir, holder string) string {
 		return "healthy"
 	}
 	return "expired"
+}
+
+func controlLeaseSummary(runDir, holder string) string {
+	return actorLeaseSummary(runDir, holder, "missing")
 }

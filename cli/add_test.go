@@ -374,6 +374,10 @@ harness:
 	logText := string(logData)
 	for _, want := range []string{
 		"send-keys -t " + goalx.TmuxSessionName(repo, runName) + ":session-2 env ",
+		"/bin/bash -c ",
+		"lease-loop --run",
+		"--holder",
+		"session-2",
 		"HOME='" + home + "'",
 		"PATH='" + fakeBin + ":/tmp/goalx-bin:/usr/bin'",
 		"ANTHROPIC_API_KEY='anthropic-test'",

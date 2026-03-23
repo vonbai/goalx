@@ -180,6 +180,9 @@ func TestStopTerminalizesControlStateWhenRunIsAlreadyInactive(t *testing.T) {
 	if err := RenewControlLease(runDir, "master", "run_demo", 1, time.Minute, "tmux", 123); err != nil {
 		t.Fatalf("RenewControlLease master: %v", err)
 	}
+	if err := RenewControlLease(runDir, "session-1", "run_demo", 1, time.Minute, "tmux", 456); err != nil {
+		t.Fatalf("RenewControlLease session-1: %v", err)
+	}
 	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
 		Version: 1,
 		Items: []ControlReminder{
@@ -218,6 +221,13 @@ func TestStopTerminalizesControlStateWhenRunIsAlreadyInactive(t *testing.T) {
 	}
 	if masterLease.PID != 0 || masterLease.RunID != "" {
 		t.Fatalf("master lease not expired: %+v", masterLease)
+	}
+	sessionLease, err := LoadControlLease(ControlLeasePath(runDir, "session-1"))
+	if err != nil {
+		t.Fatalf("LoadControlLease session-1: %v", err)
+	}
+	if sessionLease.PID != 0 || sessionLease.RunID != "" {
+		t.Fatalf("session lease not expired: %+v", sessionLease)
 	}
 	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
 	if err != nil {

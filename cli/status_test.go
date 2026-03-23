@@ -69,6 +69,16 @@ func TestStatusShowsControlQueueAndLeaseSummary(t *testing.T) {
 	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
 		t.Fatalf("ExpireControlLease sidecar: %v", err)
 	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-1",
+		State: "active",
+		Mode:  string(goalx.ModeDevelop),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+	if err := RenewControlLease(runDir, "session-1", "run_status", 1, time.Minute, "tmux", 2222); err != nil {
+		t.Fatalf("RenewControlLease session-1: %v", err)
+	}
 	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
 		Version: 1,
 		Items: []ControlReminder{
@@ -103,6 +113,9 @@ func TestStatusShowsControlQueueAndLeaseSummary(t *testing.T) {
 		"sidecar_lease=expired",
 		"reminders_due=1",
 		"deliveries_failed=1",
+		"LEASE",
+		"session-1",
+		"healthy",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status output missing %q:\n%s", want, out)
