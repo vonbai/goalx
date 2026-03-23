@@ -34,9 +34,6 @@ func Stop(projectRoot string, args []string) error {
 		_ = MarkRunInactive(rc.ProjectRoot, rc.Name)
 		if state, err := LoadRunRuntimeState(RunRuntimeStatePath(rc.RunDir)); err == nil && state != nil {
 			state.Active = false
-			state.MasterWakePending = false
-			state.MasterStale = false
-			state.MasterStaleSince = ""
 			state.StoppedAt = time.Now().UTC().Format(time.RFC3339)
 			state.UpdatedAt = state.StoppedAt
 			_ = SaveRunRuntimeState(RunRuntimeStatePath(rc.RunDir), state)
@@ -52,9 +49,6 @@ func Stop(projectRoot string, args []string) error {
 	}
 	if state, err := LoadRunRuntimeState(RunRuntimeStatePath(rc.RunDir)); err == nil && state != nil {
 		state.Active = false
-		state.MasterWakePending = false
-		state.MasterStale = false
-		state.MasterStaleSince = ""
 		state.StoppedAt = time.Now().UTC().Format(time.RFC3339)
 		state.UpdatedAt = state.StoppedAt
 		_ = SaveRunRuntimeState(RunRuntimeStatePath(rc.RunDir), state)

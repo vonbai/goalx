@@ -36,7 +36,7 @@ func Sidecar(projectRoot string, args []string) error {
 		return err
 	}
 	if interval <= 0 {
-		checkSec, _ := normalizeHeartbeatInterval(rc.Config.Master.CheckInterval)
+		checkSec, _ := normalizeSidecarInterval(rc.Config.Master.CheckInterval)
 		interval = time.Duration(checkSec) * time.Second
 	}
 

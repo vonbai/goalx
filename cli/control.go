@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const masterWakeMessage = "goalx-hb"
+const masterWakeMessage = "goalx-wake"
 
 type MasterInboxMessage struct {
 	ID        int64  `json:"id"`
@@ -20,24 +20,13 @@ type MasterInboxMessage struct {
 	CreatedAt string `json:"created_at"`
 }
 
-type MasterState struct {
-	LastSeenID       int64  `json:"last_seen_id"`
-	LastHeartbeatSeq int64  `json:"last_heartbeat_seq"`
-	HeartbeatLag     int64  `json:"heartbeat_lag,omitempty"`
-	WakePending      bool   `json:"wake_pending,omitempty"`
-	StaleSince       string `json:"stale_since,omitempty"`
-	UpdatedAt        string `json:"updated_at,omitempty"`
-}
-
-type HeartbeatState struct {
-	Seq       int64  `json:"seq"`
-	UpdatedAt string `json:"updated_at,omitempty"`
+type MasterCursorState struct {
+	LastSeenID int64  `json:"last_seen_id"`
+	UpdatedAt  string `json:"updated_at,omitempty"`
 }
 
 var sendAgentNudge = SendAgentNudge
 var sendAgentKeys = sendKeysWithSubmit
-
-const heartbeatLagStaleThreshold = 3
 
 func ControlDir(runDir string) string {
 	return filepath.Join(runDir, "control")
@@ -47,12 +36,8 @@ func MasterInboxPath(runDir string) string {
 	return ControlInboxPath(runDir, "master")
 }
 
-func MasterStatePath(runDir string) string {
-	return filepath.Join(ControlDir(runDir), "master-state.json")
-}
-
-func HeartbeatStatePath(runDir string) string {
-	return filepath.Join(ControlDir(runDir), "heartbeat.json")
+func MasterCursorPath(runDir string) string {
+	return filepath.Join(ControlDir(runDir), "master-cursor.json")
 }
 
 func EnsureMasterControl(runDir string) error {
@@ -62,19 +47,11 @@ func EnsureMasterControl(runDir string) error {
 	if err := ensureEmptyFile(MasterInboxPath(runDir)); err != nil {
 		return err
 	}
-	if _, err := LoadMasterState(MasterStatePath(runDir)); err != nil {
+	if _, err := LoadMasterCursorState(MasterCursorPath(runDir)); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		if err := SaveMasterState(MasterStatePath(runDir), &MasterState{}); err != nil {
-			return err
-		}
-	}
-	if _, err := LoadHeartbeatState(HeartbeatStatePath(runDir)); err != nil {
-		if !os.IsNotExist(err) {
-			return err
-		}
-		if err := SaveHeartbeatState(HeartbeatStatePath(runDir), &HeartbeatState{}); err != nil {
+		if err := SaveMasterCursorState(MasterCursorPath(runDir), &MasterCursorState{}); err != nil {
 			return err
 		}
 	}
@@ -157,139 +134,41 @@ func nextMasterInboxID(path string) (int64, error) {
 	return lastID + 1, nil
 }
 
-func LoadMasterState(path string) (*MasterState, error) {
+func LoadMasterCursorState(path string) (*MasterCursorState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var state MasterState
+	var state MasterCursorState
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return &state, nil
 	}
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("parse master state: %w", err)
+		return nil, fmt.Errorf("parse master cursor state: %w", err)
 	}
 	return &state, nil
 }
 
-func SaveMasterState(path string, state *MasterState) error {
+func SaveMasterCursorState(path string, state *MasterCursorState) error {
+	if state == nil {
+		return fmt.Errorf("master cursor state is nil")
+	}
+	if state.UpdatedAt == "" {
+		state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal master state: %w", err)
+		return fmt.Errorf("marshal master cursor state: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write master state: %w", err)
+		return fmt.Errorf("write master cursor state: %w", err)
 	}
 	return nil
-}
-
-func LoadHeartbeatState(path string) (*HeartbeatState, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var state HeartbeatState
-	if len(strings.TrimSpace(string(data))) == 0 {
-		return &state, nil
-	}
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("parse heartbeat state: %w", err)
-	}
-	return &state, nil
-}
-
-func SaveHeartbeatState(path string, state *HeartbeatState) error {
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal heartbeat state: %w", err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write heartbeat state: %w", err)
-	}
-	return nil
-}
-
-func RecordHeartbeatTick(runDir string) (*HeartbeatState, error) {
-	if err := EnsureMasterControl(runDir); err != nil {
-		return nil, err
-	}
-	state, err := LoadHeartbeatState(HeartbeatStatePath(runDir))
-	if err != nil {
-		return nil, err
-	}
-	state.Seq++
-	state.UpdatedAt = time.Now().Format(time.RFC3339)
-	if err := SaveHeartbeatState(HeartbeatStatePath(runDir), state); err != nil {
-		return nil, err
-	}
-	return state, nil
 }
 
 func SendAgentNudge(target, engine string) error {
 	return sendAgentKeys(target, masterWakeMessage, "Enter")
-}
-
-func RefreshMasterHeartbeatState(runDir string) (*MasterState, *HeartbeatState, error) {
-	if err := EnsureMasterControl(runDir); err != nil {
-		return nil, nil, err
-	}
-	heartbeat, err := LoadHeartbeatState(HeartbeatStatePath(runDir))
-	if err != nil {
-		return nil, nil, err
-	}
-	state, err := LoadMasterState(MasterStatePath(runDir))
-	if err != nil {
-		return nil, nil, err
-	}
-	lag := heartbeat.Seq - state.LastHeartbeatSeq
-	if lag < 0 {
-		lag = 0
-	}
-	state.HeartbeatLag = lag
-	state.WakePending = lag > 0
-	now := time.Now().Format(time.RFC3339)
-	if lag >= heartbeatLagStaleThreshold {
-		if state.StaleSince == "" {
-			state.StaleSince = now
-		}
-	} else {
-		state.StaleSince = ""
-	}
-	state.UpdatedAt = now
-	if err := SaveMasterState(MasterStatePath(runDir), state); err != nil {
-		return nil, nil, err
-	}
-	return state, heartbeat, nil
-}
-
-func updateStatusWithHeartbeat(statusPath string, state *MasterState, heartbeat *HeartbeatState) error {
-	if state == nil || heartbeat == nil {
-		return fmt.Errorf("heartbeat status update requires state and heartbeat")
-	}
-
-	payload := map[string]any{}
-	if data, err := os.ReadFile(statusPath); err == nil && len(data) > 0 {
-		if err := json.Unmarshal(data, &payload); err != nil {
-			return fmt.Errorf("parse status %s: %w", statusPath, err)
-		}
-	} else if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	payload["heartbeat_seq"] = heartbeat.Seq
-	payload["heartbeat_lag"] = state.HeartbeatLag
-	payload["master_wake_pending"] = state.WakePending
-	payload["master_stale"] = state.StaleSince != ""
-	if state.StaleSince != "" {
-		payload["master_stale_since"] = state.StaleSince
-	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(statusPath), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(statusPath, data, 0o644)
 }

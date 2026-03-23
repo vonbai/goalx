@@ -64,12 +64,8 @@ func TestRunSidecarTickRenewsLease(t *testing.T) {
 	if lease.RenewedAt == "" || lease.ExpiresAt == "" {
 		t.Fatalf("lease timestamps missing: %+v", lease)
 	}
-	heartbeat, err := LoadHeartbeatState(HeartbeatStatePath(runDir))
-	if err != nil {
-		t.Fatalf("LoadHeartbeatState: %v", err)
-	}
-	if heartbeat.Seq != 1 {
-		t.Fatalf("heartbeat seq = %d, want 1", heartbeat.Seq)
+	if _, err := os.Stat(filepath.Join(ControlDir(runDir), "heartbeat.json")); !os.IsNotExist(err) {
+		t.Fatalf("legacy heartbeat state should not exist, stat err = %v", err)
 	}
 }
 
@@ -187,7 +183,7 @@ func TestStopTerminalizesControlStateWhenRunIsAlreadyInactive(t *testing.T) {
 	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
 		Version: 1,
 		Items: []ControlReminder{
-			{ReminderID: "rem-1", DedupeKey: "master-wake", Reason: "heartbeat", Target: "gx-demo:master"},
+			{ReminderID: "rem-1", DedupeKey: "master-wake", Reason: "control-cycle", Target: "gx-demo:master"},
 		},
 	}); err != nil {
 		t.Fatalf("SaveControlReminders: %v", err)

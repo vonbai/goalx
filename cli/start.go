@@ -156,7 +156,7 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		RunMetadataPath:        RunMetadataPath(runDir),
 		CoordinationPath:       CoordinationPath(runDir),
 		MasterInboxPath:        MasterInboxPath(runDir),
-		MasterCursorPath:       MasterStatePath(runDir),
+		MasterCursorPath:       MasterCursorPath(runDir),
 		ControlRunIdentityPath: ControlRunIdentityPath(runDir),
 		ControlRunStatePath:    ControlRunStatePath(runDir),
 		ControlEventsPath:      ControlEventsPath(runDir),
@@ -164,8 +164,6 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		SidecarLeasePath:       ControlLeasePath(runDir, "sidecar"),
 		ControlRemindersPath:   ControlRemindersPath(runDir),
 		ControlDeliveriesPath:  ControlDeliveriesPath(runDir),
-		MasterStatePath:        MasterStatePath(runDir),
-		HeartbeatStatePath:     HeartbeatStatePath(runDir),
 		MasterJournalPath:      filepath.Join(runDir, "master.jsonl"),
 		StatusPath:             statusPath,
 		EngineCommand:          masterCmd,
@@ -249,7 +247,7 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	}
 
 	// Launch the run-scoped sidecar for lease renewal and supervision.
-	checkSec, warning := normalizeHeartbeatInterval(cfg.Master.CheckInterval)
+	checkSec, warning := normalizeSidecarInterval(cfg.Master.CheckInterval)
 	if warning != "" {
 		fmt.Fprint(os.Stderr, warning)
 	}

@@ -60,8 +60,8 @@ func TestStatusShowsControlQueueAndLeaseSummary(t *testing.T) {
 			t.Fatalf("AppendMasterInboxMessage: %v", err)
 		}
 	}
-	if err := SaveMasterState(MasterStatePath(runDir), &MasterState{LastSeenID: 1}); err != nil {
-		t.Fatalf("SaveMasterState: %v", err)
+	if err := SaveMasterCursorState(MasterCursorPath(runDir), &MasterCursorState{LastSeenID: 1}); err != nil {
+		t.Fatalf("SaveMasterCursorState: %v", err)
 	}
 	if err := RenewControlLease(runDir, "master", "run_status", 1, time.Minute, "tmux", 1234); err != nil {
 		t.Fatalf("RenewControlLease master: %v", err)
@@ -72,8 +72,8 @@ func TestStatusShowsControlQueueAndLeaseSummary(t *testing.T) {
 	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
 		Version: 1,
 		Items: []ControlReminder{
-			{ReminderID: "rem-1", DedupeKey: "master-wake", Reason: "heartbeat", Target: "gx-demo:master"},
-			{ReminderID: "rem-2", DedupeKey: "acked", Reason: "heartbeat", Target: "gx-demo:master", AckedAt: "2026-03-23T00:00:00Z"},
+			{ReminderID: "rem-1", DedupeKey: "master-wake", Reason: "control-cycle", Target: "gx-demo:master"},
+			{ReminderID: "rem-2", DedupeKey: "acked", Reason: "control-cycle", Target: "gx-demo:master", AckedAt: "2026-03-23T00:00:00Z"},
 		},
 	}); err != nil {
 		t.Fatalf("SaveControlReminders: %v", err)

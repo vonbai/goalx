@@ -2,10 +2,9 @@ package cli
 
 import (
 	"fmt"
-	"time"
 )
 
-// Pulse records a durable heartbeat tick, then nudges the master to read control files.
+// Pulse schedules a durable master wake reminder through the control plane.
 func Pulse(projectRoot string, args []string) error {
 	runName, rest, err := extractRunFlag(args)
 	if err != nil {
@@ -19,32 +18,13 @@ func Pulse(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := RecordHeartbeatTick(rc.RunDir); err != nil {
-		return fmt.Errorf("record heartbeat tick: %w", err)
-	}
-	state, heartbeat, err := RefreshMasterHeartbeatState(rc.RunDir)
-	if err != nil {
-		return fmt.Errorf("refresh heartbeat state: %w", err)
-	}
-	runState, err := EnsureRuntimeState(rc.RunDir, rc.Config)
-	if err != nil {
-		return fmt.Errorf("load runtime state: %w", err)
-	}
-	derived := *runState
-	derived.Active = true
-	derived.HeartbeatSeq = heartbeat.Seq
-	derived.HeartbeatLag = state.HeartbeatLag
-	derived.MasterWakePending = state.WakePending
-	derived.MasterStale = state.StaleSince != ""
-	derived.MasterStaleSince = state.StaleSince
-	derived.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	if err := syncProjectStatusCache(rc.ProjectRoot, &derived); err != nil {
-		return fmt.Errorf("update project status cache: %w", err)
+	if err := EnsureMasterControl(rc.RunDir); err != nil {
+		return fmt.Errorf("ensure master control: %w", err)
 	}
 	if !SessionExists(rc.TmuxSession) {
 		return nil
 	}
-	if _, err := QueueControlReminder(rc.RunDir, "master-wake", "heartbeat", rc.TmuxSession+":master"); err != nil {
+	if _, err := QueueControlReminder(rc.RunDir, "master-wake", "control-cycle", rc.TmuxSession+":master"); err != nil {
 		return fmt.Errorf("queue master wake reminder: %w", err)
 	}
 	return nil

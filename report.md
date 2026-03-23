@@ -6,8 +6,8 @@
 - **Evidence**:
   - `cli/start.go:236-253` populates `ProtocolData` for each subagent with **only individual fields**: Objective, Mode, Target, Harness, Context, Budget, SessionName, JournalPath, GuidancePath, WorktreePath, DiversityHint
   - **Missing from ProtocolData** (not populated for subagents): Sessions list, TmuxSession, ProjectRoot, AcceptancePath, SummaryPath, MasterJournalPath, StatusPath — all zeroed out (`cli/start.go:237-253` vs `cli/start.go:214-231` for master)
-  - Master must complete 4-5 "Before First Heartbeat" steps (`master.md.tmpl:32-44`) before writing first guidance — including scope assessment, dimension/ownership planning, acceptance checklist creation
-  - Default heartbeat interval: `2 * time.Minute` (`config.go:170`), minimum enforced: 30s (`cli/start.go` normalizeHeartbeatInterval)
+  - Master must complete 4-5 initial control-cycle steps before writing first guidance — including scope assessment, dimension/ownership planning, acceptance checklist creation
+  - Default sidecar interval: `2 * time.Minute` (`config.go:170`), minimum enforced: 30s (`cli/start.go` normalizeSidecarInterval)
   - Guidance files initialized as empty (`cli/start.go:175-177`: `os.WriteFile(guidancePath, nil, 0644)`)
   - Subagents only check guidance after commits (`program.md.tmpl:181`), creating additional latency
 - **Counter-evidence**: Subagents DO have the objective and diversity_hint, so they can start meaningful work immediately on research tasks. The gap matters more for develop mode (where file ownership conflicts are destructive) than research mode (where redundant exploration is merely wasteful).
@@ -114,7 +114,7 @@
   - Acceptance.md already exists at `{runDir}/acceptance.md` — just needs to be referenced in subagent protocol
 
   **Cons**:
-  - Requires master to write these files (more "Before First Heartbeat" work, potentially worsening the gap)
+  - Requires master to write these files during early control setup, potentially worsening the gap
   - Framework must generate roster.md at launch time (before master starts)
   - Read latency — subagent must `cat` files vs. having them in-protocol
   - More complex Resume logic in program.md.tmpl
@@ -180,7 +180,7 @@
 - **Confidence**: HIGH
 - **Evidence**:
   - `cli/start.go:203,263-264`: `acceptancePath := filepath.Join(runDir, "acceptance.md")` is created and initialized as empty
-  - `master.md.tmpl:37,43`: Master writes acceptance criteria to this file as step 4 of "Before First Heartbeat"
+  - `master.md.tmpl:37,43`: Master writes acceptance criteria to this file during early control setup
   - BUT `program.md.tmpl` never references `acceptancePath` — subagents don't know it exists
   - Similarly, `summary.md` exists (`start.go:226`) but is master-only
   - The minimal fix is adding `AcceptancePath` to subagent `ProtocolData` and referencing it in the template

@@ -8,11 +8,11 @@ func TestQueueControlReminderDedupesByKey(t *testing.T) {
 		t.Fatalf("EnsureControlState: %v", err)
 	}
 
-	first, err := QueueControlReminder(runDir, "master-wake", "heartbeat", "gx-demo:master")
+	first, err := QueueControlReminder(runDir, "master-wake", "control-cycle", "gx-demo:master")
 	if err != nil {
 		t.Fatalf("QueueControlReminder first: %v", err)
 	}
-	second, err := QueueControlReminder(runDir, "master-wake", "heartbeat", "gx-demo:master")
+	second, err := QueueControlReminder(runDir, "master-wake", "control-cycle", "gx-demo:master")
 	if err != nil {
 		t.Fatalf("QueueControlReminder second: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestDeliverDueControlRemindersRespectsCooldownAndCreatesDelivery(t *testing
 	if err := EnsureControlState(runDir); err != nil {
 		t.Fatalf("EnsureControlState: %v", err)
 	}
-	if _, err := QueueControlReminder(runDir, "master-wake", "heartbeat", "gx-demo:master"); err != nil {
+	if _, err := QueueControlReminder(runDir, "master-wake", "control-cycle", "gx-demo:master"); err != nil {
 		t.Fatalf("QueueControlReminder: %v", err)
 	}
 

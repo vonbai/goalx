@@ -146,8 +146,8 @@ func printStatusControlSummary(rc *RunContext) {
 	if rc == nil {
 		return
 	}
-	masterState, _ := LoadMasterState(MasterStatePath(rc.RunDir))
-	unread := unreadMasterInboxCount(rc.RunDir, masterState)
+	masterCursor, _ := LoadMasterCursorState(MasterCursorPath(rc.RunDir))
+	unread := unreadMasterInboxCount(rc.RunDir, masterCursor)
 	masterLease := controlLeaseSummary(rc.RunDir, "master")
 	sidecarLease := controlLeaseSummary(rc.RunDir, "sidecar")
 	runStatus := "unknown"
@@ -159,7 +159,7 @@ func printStatusControlSummary(rc *RunContext) {
 	fmt.Println()
 }
 
-func unreadMasterInboxCount(runDir string, state *MasterState) int {
+func unreadMasterInboxCount(runDir string, state *MasterCursorState) int {
 	f, err := os.ReadFile(MasterInboxPath(runDir))
 	if err != nil {
 		return 0

@@ -18,7 +18,7 @@ func TestParkMarksSessionParkedAndStopsWindow(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "base.txt", "base", "base commit")
 
-	logPath := installFakeTmux(t, "master heartbeat session-1")
+	logPath := installFakeTmux(t, "master session-1")
 	runName, runDir := writeLifecycleRunFixture(t, repo)
 	if err := os.WriteFile(JournalPath(runDir, "session-1"), []byte(`{"round":4,"desc":"db race triage","status":"stuck","owner_scope":"db race triage","blocked_by":"postgres lock timeout"}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write session journal: %v", err)
@@ -73,7 +73,7 @@ func TestParkSnapshotsDirtyWorktreeBeforeWindowTermination(t *testing.T) {
 		t.Fatalf("modify tracked file: %v", err)
 	}
 
-	logPath := installFakeTmuxWithKillAction(t, "master heartbeat session-1", fmt.Sprintf("rm -rf %q", wtPath))
+	logPath := installFakeTmuxWithKillAction(t, "master session-1", fmt.Sprintf("rm -rf %q", wtPath))
 	if err := Park(repo, []string{"--run", runName, "session-1"}); err != nil {
 		t.Fatalf("Park: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestResumeRelaunchesParkedSessionAndMarksActive(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "base.txt", "base", "base commit")
 
-	logPath := installFakeTmux(t, "master heartbeat")
+	logPath := installFakeTmux(t, "master")
 	runName, runDir := writeLifecycleRunFixture(t, repo)
 	coord, err := EnsureCoordinationState(runDir, "fix pipeline")
 	if err != nil {

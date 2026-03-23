@@ -18,8 +18,7 @@ func TestEnsureMasterControlCreatesFiles(t *testing.T) {
 
 	for _, path := range []string{
 		MasterInboxPath(runDir),
-		MasterStatePath(runDir),
-		HeartbeatStatePath(runDir),
+		MasterCursorPath(runDir),
 		ControlRunIdentityPath(runDir),
 		ControlRunStatePath(runDir),
 		ControlEventsPath(runDir),
@@ -41,7 +40,7 @@ func TestAppendMasterInboxMessageAssignsMonotonicIDs(t *testing.T) {
 		t.Fatalf("EnsureMasterControl: %v", err)
 	}
 
-	first, err := AppendMasterInboxMessage(runDir, "heartbeat", "system", "tick")
+	first, err := AppendMasterInboxMessage(runDir, "control-cycle", "system", "tick")
 	if err != nil {
 		t.Fatalf("AppendMasterInboxMessage first: %v", err)
 	}
@@ -59,30 +58,10 @@ func TestAppendMasterInboxMessageAssignsMonotonicIDs(t *testing.T) {
 		t.Fatalf("read inbox: %v", err)
 	}
 	text := string(data)
-	for _, want := range []string{`"type":"heartbeat"`, `"type":"tell"`, `"source":"user"`, `"body":"focus on e2e"`} {
+	for _, want := range []string{`"type":"control-cycle"`, `"type":"tell"`, `"source":"user"`, `"body":"focus on e2e"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("inbox missing %q:\n%s", want, text)
 		}
-	}
-}
-
-func TestRecordHeartbeatTickIncrementsSequence(t *testing.T) {
-	runDir := t.TempDir()
-	if err := EnsureMasterControl(runDir); err != nil {
-		t.Fatalf("EnsureMasterControl: %v", err)
-	}
-
-	first, err := RecordHeartbeatTick(runDir)
-	if err != nil {
-		t.Fatalf("RecordHeartbeatTick first: %v", err)
-	}
-	second, err := RecordHeartbeatTick(runDir)
-	if err != nil {
-		t.Fatalf("RecordHeartbeatTick second: %v", err)
-	}
-
-	if second.Seq != first.Seq+1 {
-		t.Fatalf("second.Seq = %d, want %d", second.Seq, first.Seq+1)
 	}
 }
 
@@ -119,7 +98,7 @@ func TestSendAgentNudgeAlwaysUsesExplicitWakePayload(t *testing.T) {
 	}
 }
 
-func TestPulseRecordsHeartbeatAndSchedulesMasterWakeReminder(t *testing.T) {
+func TestPulseQueuesMasterWakeReminderWithoutLegacyHeartbeatState(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -161,12 +140,8 @@ func TestPulseRecordsHeartbeatAndSchedulesMasterWakeReminder(t *testing.T) {
 		t.Fatalf("Pulse: %v", err)
 	}
 
-	state, err := LoadHeartbeatState(HeartbeatStatePath(runDir))
-	if err != nil {
-		t.Fatalf("LoadHeartbeatState: %v", err)
-	}
-	if state.Seq != 1 {
-		t.Fatalf("heartbeat seq = %d, want 1", state.Seq)
+	if _, err := os.Stat(filepath.Join(ControlDir(runDir), "heartbeat.json")); !os.IsNotExist(err) {
+		t.Fatalf("legacy heartbeat state should not exist, stat err = %v", err)
 	}
 	gotRunState, err := os.ReadFile(RunRuntimeStatePath(runDir))
 	if err != nil {
@@ -185,12 +160,12 @@ func TestPulseRecordsHeartbeatAndSchedulesMasterWakeReminder(t *testing.T) {
 	if len(reminders.Items) != 1 {
 		t.Fatalf("reminders len = %d, want 1", len(reminders.Items))
 	}
-	if reminders.Items[0].DedupeKey != "master-wake" || reminders.Items[0].Reason != "heartbeat" {
+	if reminders.Items[0].DedupeKey != "master-wake" || reminders.Items[0].Reason != "control-cycle" {
 		t.Fatalf("unexpected reminder: %+v", reminders.Items[0])
 	}
 }
 
-func TestPulseTracksHeartbeatLagAndStaleState(t *testing.T) {
+func TestPulseDedupesMasterWakeReminderAcrossRepeatedCycles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -228,24 +203,18 @@ func TestPulseTracksHeartbeatLagAndStaleState(t *testing.T) {
 	sendAgentNudge = func(target, engine string) error { return nil }
 	defer func() { sendAgentNudge = orig }()
 
-	for i := 0; i < heartbeatLagStaleThreshold; i++ {
+	for i := 0; i < 3; i++ {
 		if err := Pulse(repo, []string{"--run", runName}); err != nil {
 			t.Fatalf("Pulse #%d: %v", i+1, err)
 		}
 	}
 
-	state, err := LoadMasterState(MasterStatePath(runDir))
+	cursor, err := LoadMasterCursorState(MasterCursorPath(runDir))
 	if err != nil {
-		t.Fatalf("LoadMasterState: %v", err)
+		t.Fatalf("LoadMasterCursorState: %v", err)
 	}
-	if state.HeartbeatLag != heartbeatLagStaleThreshold {
-		t.Fatalf("heartbeat lag = %d, want %d", state.HeartbeatLag, heartbeatLagStaleThreshold)
-	}
-	if !state.WakePending {
-		t.Fatalf("wake pending = false, want true")
-	}
-	if state.StaleSince == "" {
-		t.Fatalf("stale since empty, want value")
+	if cursor.LastSeenID != 0 {
+		t.Fatalf("cursor last_seen_id = %d, want 0", cursor.LastSeenID)
 	}
 	gotRunState, err := os.ReadFile(RunRuntimeStatePath(runDir))
 	if err != nil {
@@ -255,18 +224,14 @@ func TestPulseTracksHeartbeatLagAndStaleState(t *testing.T) {
 		t.Fatalf("run state changed:\nwant %s\ngot  %s", string(runStateBefore), string(gotRunState))
 	}
 
-	statusData, err := os.ReadFile(ProjectStatusCachePath(repo))
+	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
 	if err != nil {
-		t.Fatalf("read status.json: %v", err)
+		t.Fatalf("LoadControlReminders: %v", err)
 	}
-	statusText := string(statusData)
-	for _, want := range []string{
-		`"heartbeat_lag":3`,
-		`"master_wake_pending":true`,
-		`"master_stale":true`,
-	} {
-		if !strings.Contains(statusText, want) {
-			t.Fatalf("status.json missing %q:\n%s", want, statusText)
-		}
+	if len(reminders.Items) != 1 {
+		t.Fatalf("reminders len = %d, want 1", len(reminders.Items))
+	}
+	if reminders.Items[0].Reason != "control-cycle" {
+		t.Fatalf("reminder reason = %q, want control-cycle", reminders.Items[0].Reason)
 	}
 }

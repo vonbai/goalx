@@ -235,8 +235,7 @@ esac
 		filepath.Join(runDir, "artifacts.json"),
 		filepath.Join(runDir, "coordination.json"),
 		MasterInboxPath(runDir),
-		MasterStatePath(runDir),
-		HeartbeatStatePath(runDir),
+		MasterCursorPath(runDir),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
@@ -258,7 +257,7 @@ esac
 	}
 	logText := string(logData)
 	if strings.Contains(logText, "heartbeat") {
-		t.Fatalf("start should not create heartbeat window:\n%s", logText)
+		t.Fatalf("start should not create legacy heartbeat window:\n%s", logText)
 	}
 	if !strings.Contains(logText, "new-session -d -s "+goalx.TmuxSessionName(repo, cfg.Name)+" -n master") {
 		t.Fatalf("start log missing master session creation:\n%s", logText)

@@ -47,8 +47,6 @@ type ProtocolData struct {
 	SidecarLeasePath       string
 	ControlRemindersPath   string
 	ControlDeliveriesPath  string
-	MasterStatePath        string
-	HeartbeatStatePath     string
 	MasterJournalPath      string
 	StatusPath             string // user-scoped status cache for external progress reporting
 	EngineCommand          string // resolved master engine command

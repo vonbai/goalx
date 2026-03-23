@@ -22,12 +22,6 @@ type RunRuntimeState struct {
 	Active                 bool   `json:"active"`
 	Phase                  string `json:"phase,omitempty"`
 	Recommendation         string `json:"recommendation,omitempty"`
-	Heartbeat              int64  `json:"heartbeat,omitempty"`
-	HeartbeatSeq           int64  `json:"heartbeat_seq,omitempty"`
-	HeartbeatLag           int64  `json:"heartbeat_lag,omitempty"`
-	MasterWakePending      bool   `json:"master_wake_pending,omitempty"`
-	MasterStale            bool   `json:"master_stale,omitempty"`
-	MasterStaleSince       string `json:"master_stale_since,omitempty"`
 	AcceptanceMet          bool   `json:"acceptance_met,omitempty"`
 	AcceptanceStatus       string `json:"acceptance_status,omitempty"`
 	AcceptanceCheckedAt    string `json:"acceptance_checked_at,omitempty"`
@@ -363,12 +357,6 @@ func deriveProjectStatusFromRun(state *RunRuntimeState) []byte {
 		"run":                      state.Run,
 		"phase":                    state.Phase,
 		"recommendation":           state.Recommendation,
-		"heartbeat":                state.Heartbeat,
-		"heartbeat_seq":            state.HeartbeatSeq,
-		"heartbeat_lag":            state.HeartbeatLag,
-		"master_wake_pending":      state.MasterWakePending,
-		"master_stale":             state.MasterStale,
-		"master_stale_since":       state.MasterStaleSince,
 		"acceptance_met":           state.AcceptanceMet,
 		"acceptance_status":        state.AcceptanceStatus,
 		"acceptance_checked_at":    state.AcceptanceCheckedAt,

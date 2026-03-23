@@ -510,22 +510,25 @@ func TestRenderMasterProtocolIncludesOptimizerDoctrine(t *testing.T) {
 func TestRenderMasterProtocolDefinesGenericLastMileAutonomy(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective:           "ship it",
-		RunName:             "demo",
-		Mode:                goalx.ModeDevelop,
-		Master:              goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
-		TmuxSession:         "ar-demo",
-		SummaryPath:         "/tmp/summary.md",
-		AcceptancePath:      "/tmp/acceptance.md",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalContractPath:    "/tmp/goal-contract.json",
-		RunStatePath:        "/tmp/state/run.json",
-		SessionsStatePath:   "/tmp/state/sessions.json",
-		MasterInboxPath:     "/tmp/control/master-inbox.jsonl",
-		MasterStatePath:     "/tmp/control/master-state.json",
-		HeartbeatStatePath:  "/tmp/control/heartbeat.json",
-		StatusPath:          "/tmp/status.json",
-		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
+		Objective:             "ship it",
+		RunName:               "demo",
+		Mode:                  goalx.ModeDevelop,
+		Master:                goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		TmuxSession:           "ar-demo",
+		SummaryPath:           "/tmp/summary.md",
+		AcceptancePath:        "/tmp/acceptance.md",
+		AcceptanceStatePath:   "/tmp/acceptance.json",
+		GoalContractPath:      "/tmp/goal-contract.json",
+		RunStatePath:          "/tmp/state/run.json",
+		SessionsStatePath:     "/tmp/state/sessions.json",
+		MasterInboxPath:       "/tmp/control/master-inbox.jsonl",
+		MasterCursorPath:      "/tmp/control/master-cursor.json",
+		ControlRunStatePath:   "/tmp/control/run-state.json",
+		ControlEventsPath:     "/tmp/control/events.jsonl",
+		ControlRemindersPath:  "/tmp/control/reminders.json",
+		ControlDeliveriesPath: "/tmp/control/deliveries.json",
+		StatusPath:            "/tmp/status.json",
+		EngineCommand:         "claude --model claude-opus-4-6 --permission-mode auto",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -755,7 +758,7 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		StatusPath:            "/tmp/status.json",
 		CoordinationPath:      "/tmp/coordination.json",
 		MasterInboxPath:       "/tmp/control/inbox/master.jsonl",
-		MasterCursorPath:      "/tmp/control/master-state.json",
+		MasterCursorPath:      "/tmp/control/master-cursor.json",
 		ControlRunStatePath:   "/tmp/control/run-state.json",
 		ControlEventsPath:     "/tmp/control/events.jsonl",
 		ControlRemindersPath:  "/tmp/control/reminders.json",
@@ -776,7 +779,7 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 	for _, want := range []string{
 		"coordination.json",
 		"inbox/master.jsonl",
-		"master-state.json",
+		"master-cursor.json",
 		"run-state.json",
 		"events.jsonl",
 		"reminders.json",
@@ -815,7 +818,7 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 	}
 }
 
-func TestRenderMasterProtocolOmitsOldSyncOnlyHeartbeatGuidance(t *testing.T) {
+func TestRenderMasterProtocolOmitsOldSyncOnlyLivenessGuidance(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
 		Objective:           "ship it",
