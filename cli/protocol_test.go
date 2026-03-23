@@ -543,7 +543,7 @@ func TestRenderMasterProtocolDefinesGenericLastMileAutonomy(t *testing.T) {
 		"Before marking a required item `waiting_external`, verify that the blocker is truly outside your available permissions, credentials, or reachable environment.",
 		"If a required proof step depends on a long-running local process, confirm that the live process matches current `HEAD`; if it does not, rebuild/restart or relaunch it yourself before evaluating.",
 		"Do not stop at intermediate states such as \"implementation complete\", \"ready for eval\", or \"awaiting external verification\" while an actionable required item remains.",
-		"If the only remaining gap is proof or verification that you can execute yourself, run it now instead of waiting for a nudge.",
+		"If the only remaining gap is proof or verification that you can execute yourself, run it now instead of waiting for another cycle.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
@@ -741,23 +741,27 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective:           "ship it",
-		RunName:             "demo",
-		Mode:                goalx.ModeDevelop,
-		Engines:             goalx.BuiltinEngines,
-		Master:              goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
-		TmuxSession:         "ar-demo",
-		SummaryPath:         "/tmp/summary.md",
-		AcceptancePath:      "/tmp/acceptance.md",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalContractPath:    "/tmp/goal-contract.json",
-		MasterJournalPath:   "/tmp/master.jsonl",
-		StatusPath:          "/tmp/status.json",
-		CoordinationPath:    "/tmp/coordination.json",
-		MasterInboxPath:     "/tmp/control/master-inbox.jsonl",
-		MasterStatePath:     "/tmp/control/master-state.json",
-		HeartbeatStatePath:  "/tmp/control/heartbeat.json",
-		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
+		Objective:             "ship it",
+		RunName:               "demo",
+		Mode:                  goalx.ModeDevelop,
+		Engines:               goalx.BuiltinEngines,
+		Master:                goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		TmuxSession:           "ar-demo",
+		SummaryPath:           "/tmp/summary.md",
+		AcceptancePath:        "/tmp/acceptance.md",
+		AcceptanceStatePath:   "/tmp/acceptance.json",
+		GoalContractPath:      "/tmp/goal-contract.json",
+		MasterJournalPath:     "/tmp/master.jsonl",
+		StatusPath:            "/tmp/status.json",
+		CoordinationPath:      "/tmp/coordination.json",
+		MasterInboxPath:       "/tmp/control/inbox/master.jsonl",
+		MasterCursorPath:      "/tmp/control/master-state.json",
+		ControlRunStatePath:   "/tmp/control/run-state.json",
+		ControlEventsPath:     "/tmp/control/events.jsonl",
+		ControlRemindersPath:  "/tmp/control/reminders.json",
+		ControlDeliveriesPath: "/tmp/control/deliveries.json",
+		CompletionProofPath:   "/tmp/proof/completion.json",
+		EngineCommand:         "claude --model claude-opus-4-6 --permission-mode auto",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -771,9 +775,13 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 	text := string(out)
 	for _, want := range []string{
 		"coordination.json",
-		"master-inbox.jsonl",
+		"inbox/master.jsonl",
 		"master-state.json",
-		"heartbeat.json",
+		"run-state.json",
+		"events.jsonl",
+		"reminders.json",
+		"deliveries.json",
+		"proof/completion.json",
 		"dispatchable_slices",
 		"goalx add --run demo --mode research",
 		"goalx tell --run demo session-N",
@@ -781,7 +789,7 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		"goalx resume --run demo session-N",
 		"temporary research session",
 		"Research-mode sessions produce evidence and reports, not mergeable code changes.",
-		"Check the coordination digest version each heartbeat.",
+		"Check the coordination digest version each control cycle.",
 		"Default to current repo state, control files, runtime state, and latest session outputs.",
 		"Only reread older journal history when the current state is ambiguous",
 		"You may reorder, delegate, or temporarily postpone required work within the current goal",
@@ -797,9 +805,9 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		"if you are running on Claude Code, you may use Claude's native subagents inside the master session",
 		"`goalx add` remains the durable path",
 		"Treat narrowed causes as hypotheses until a failing regression test or decisive counter-evidence confirms them.",
-		"If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated heartbeats.",
+		"If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated control cycles.",
 		"Keep detailed hypotheses, traces, and path comparisons in journals, not the coordination digest.",
-		"Avoid sync-only heartbeat narration.",
+		"Avoid sync-only liveness narration.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)

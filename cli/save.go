@@ -69,7 +69,7 @@ func Save(projectRoot string, args []string) error {
 		return fmt.Errorf("copy run metadata: %w", err)
 	}
 	completionStatePath := CompletionStatePath(rc.RunDir)
-	if err := copyFileIfExists(completionStatePath, filepath.Join(saveDir, "completion.json")); err != nil {
+	if err := copyFileIfExists(completionStatePath, filepath.Join(saveDir, "proof", "completion.json")); err != nil {
 		return fmt.Errorf("copy completion state: %w", err)
 	}
 	acceptPath := filepath.Join(rc.RunDir, "acceptance.md")
@@ -244,6 +244,9 @@ func copyFileIfExists(src, dst string) error {
 	}
 	defer in.Close()
 
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
 	out, err := os.Create(dst)
 	if err != nil {
 		return err

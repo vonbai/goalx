@@ -10,7 +10,7 @@ Autonomous research and development framework. Master/Subagent architecture powe
 goalx auto "investigate authentication system vulnerabilities"
 ```
 
-GoalX creates a run directory and launches a master agent in tmux. The master decides when to call `goalx add`, keeps required goal work covered, spins up temporary research sessions when needed, challenges findings, rescues failed sessions, and synthesizes results.
+GoalX creates a run directory, launches the master transport session, and starts a run-scoped sidecar. The master decides when to call `goalx add`, keeps required goal work covered, spins up temporary research sessions when needed, challenges findings, rescues failed sessions, and synthesizes results. The sidecar renews leases, records reminders/deliveries, and keeps the durable control plane current.
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -18,9 +18,9 @@ GoalX creates a run directory and launches a master agent in tmux. The master de
 │                                                 │
 │  master-led run                                 │
 │                                                 │
-│  tmux session:                                  │
+│  transport session + run-sidecar:                │
 │    master: starts first and reads goalx config   │
-│    master: calls goalx add to launch workers     │
+│    sidecar: renews leases and reminder delivery  │
 │    session-1+: created on demand by the master   │
 └─────────────────────────────────────────────────┘
 ```
@@ -70,7 +70,7 @@ goalx verify
 goalx result
 ```
 
-Default to `goalx auto`. Use `goalx research` / `goalx develop` when you want an explicit phase-specific run with role defaults. Use `goalx debate --from RUN`, `goalx implement --from RUN`, and `goalx explore --from RUN` to continue from saved runs. Only use `goalx init` / `goalx start --config PATH` when you explicitly want config-first or low-level control. Use `goalx focus --run NAME` when a project has multiple active runs and you want to pin the default run. Explicit `--run NAME` resolution is global when the run name is unique; if names collide across projects, use `--run <project-id>/<run>`. `--parallel` is optional: if you omit it, GoalX keeps project/preset defaults; if nothing else sets it, the initial fan-out is `1`. That value is initial planning guidance, not a permanent ceiling on later master dispatch.
+Default to `goalx auto`. Use `goalx research` / `goalx develop` when you want an explicit phase-specific run with role defaults. Use `goalx debate --from RUN`, `goalx implement --from RUN`, and `goalx explore --from RUN` to continue from saved runs. Only use `goalx init` / `goalx start --config PATH` when you explicitly want config-first or low-level control. Use `goalx focus --run NAME` when a project has multiple active runs and you want to pin the default run. Bare `--run NAME` resolution is local-first within the current project; for cross-project targeting, use `--run <project-id>/<run>`. `--parallel` is optional: if you omit it, GoalX keeps project/preset defaults; if nothing else sets it, the initial fan-out is `1`. That value is initial planning guidance, not a permanent ceiling on later master dispatch.
 
 ## Commands
 
@@ -82,8 +82,8 @@ Default to `goalx auto`. Use `goalx research` / `goalx develop` when you want an
 | `goalx auto` | Init and start one master-led run, then exit |
 | `goalx research` | Start a research run directly from CLI flags |
 | `goalx develop` | Start a develop run directly from CLI flags |
-| `goalx observe` | Live tmux capture from all agents plus control-plane summary |
-| `goalx status` | Progress summary plus unread inbox / heartbeat lag / legacy-protocol hints |
+| `goalx observe` | Live transport capture when available plus control-plane summary |
+| `goalx status` | Progress summary plus run status, lease health, unread inbox, reminders, and delivery failures |
 | `goalx focus` | Set the default run used by commands that omit `--run` |
 | `goalx add` | Add a session to a running run (`--mode research` launches a temporary research session) |
 | `goalx tell` | Send a durable instruction to the master or a specific session |
@@ -94,7 +94,7 @@ Default to `goalx auto`. Use `goalx research` / `goalx develop` when you want an
 | `goalx keep` | Merge session branch into main |
 | `goalx archive` | Tag and preserve a session branch |
 | `goalx save` | Save durable artifacts, contract state, provenance, and `artifacts.json` to user-scoped durable storage |
-| `goalx verify` | Run the effective acceptance gate, then validate goal contract completion and completion provenance |
+| `goalx verify` | Run the effective acceptance gate, then validate goal contract completion and the canonical proof manifest |
 | `goalx debate` | Start a debate phase from `--from RUN` |
 | `goalx implement` | Start a develop phase from `--from RUN` |
 | `goalx explore` | Start a follow-up research phase from `--from RUN` |
@@ -129,14 +129,14 @@ Use `goalx init` + `goalx start --config .goalx/goalx.yaml`, direct config edits
 - Project scope is for shared config only: `.goalx/config.yaml`.
 - Active runtime state lives under `~/.goalx/runs/{projectID}/{run}`.
 - Saved runs live under `~/.goalx/runs/{projectID}/saved/{run}` after `goalx save`.
-- Older project-scoped saved runs under `<project>/.goalx/runs/{run}` remain readable as compatibility input, but new saves are user-scoped.
-- Each active run has an immutable `run-spec.yaml` plus mutable `state/run.json`, `state/sessions.json`, and `control/*`.
-- User-scoped `registry.json` and `status.json` under `~/.goalx/runs/{projectID}/` track focus/default resolution and external progress summaries for that project.
+- Each active run has an immutable `run-spec.yaml` plus mutable `state/run.json`, `state/sessions.json`, `control/*`, and `proof/completion.json`.
+- The durable control plane lives in run-scoped files such as `control/run-identity.json`, `control/run-state.json`, `control/events.jsonl`, `control/inbox/master.jsonl`, `control/reminders.json`, and `control/deliveries.json`.
+- User-scoped `registry.json` and `status.json` under `~/.goalx/runs/{projectID}/` are convenience indexes and external progress summaries, not the source of truth.
 - `artifacts.json` is the durable index for saved reports and other research outputs consumed by `result`, `debate`, `implement`, and `explore`.
 - `run-metadata.json` tracks phase lineage, including `phase_kind`, `source_run`, and `parent_run`, so each run can inherit from its own saved input without touching shared project config.
 - GoalX only auto-ignores `.goalx/goalx.yaml`, the advanced/manual scratch config. Shared `.goalx/config.yaml` stays visible to git.
 - When a project has multiple active runs, pass `--run NAME` explicitly for mutating commands. Use `goalx focus --run NAME` to pin the default run for commands that omit `--run`.
-- Explicit `--run NAME` resolution is global when the name is unique. If the same run name exists in multiple projects, disambiguate with `--run <project-id>/<run>`.
+- Bare `--run NAME` resolution is local-first within the current project. For cross-project targeting, use `--run <project-id>/<run>`.
 
 ## Goal Dimensions
 
@@ -185,7 +185,7 @@ goalx/
 ├── cli/                # All CLI commands
 │   ├── auto.go         # Init + start, then exit
 │   ├── start.go        # Session launch + worktree setup
-│   ├── observe.go      # Live tmux capture
+│   ├── observe.go      # Live transport capture + control summary
 │   └── ...
 └── cmd/goalx/main.go   # Entry point
 ```
@@ -194,9 +194,9 @@ goalx/
 
 GoalX is a **protocol scaffolding tool**. The Go code launches the master, exposes worker-management tools, and handles git/worktree mechanics; the orchestration logic lives in the protocol templates:
 
-**Master** (`master.md.tmpl`): Final responsible party and lightweight dispatcher. Maintains a machine-readable `goal-contract.json`, records required-item completion provenance (`preexisting|run_change|mixed`), keeps required items covered or explicitly blocked, dispatches parallel work when independent required slices remain, parks idle sessions for later reuse, resumes parked sessions before creating unnecessary new ones, keeps the acceptance checklist aligned as proof against that contract, rescues dead or stuck sessions, runs verification before `done` / `implement`, and cannot close a run without both passing acceptance and internally consistent completion provenance.
+**Master** (`master.md.tmpl`): Final responsible party and lightweight dispatcher. Maintains a machine-readable `goal-contract.json`, records structured proof for required-item completion, keeps required items covered or explicitly blocked, dispatches parallel work when independent required slices remain, parks idle sessions for later reuse, resumes parked sessions before creating unnecessary new ones, keeps the acceptance checklist aligned as proof against that contract, rescues dead or stuck sessions, runs verification before `done` / `implement`, and cannot close a run without both passing acceptance and a satisfied `proof/completion.json`.
 
-**Subagent** (`program.md.tmpl`): Hypothesis-driven exploration (research) or structured TDD (develop). Executes the current assignment, but the goal contract remains the run-level completion boundary. Communicates via journal files and guidance files, including concise blocker and dependency hints so the master can rebalance work quickly or park/resume the session cleanly.
+**Subagent** (`program.md.tmpl`): Hypothesis-driven exploration (research) or structured TDD (develop). Executes the current assignment, but the goal contract and proof manifest remain the run-level completion boundary. Communicates via journal files and guidance files, including concise blocker and dependency hints so the master can rebalance work quickly or park/resume the session cleanly.
 
 ### Config Model
 

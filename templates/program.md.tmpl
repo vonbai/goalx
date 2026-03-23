@@ -43,6 +43,7 @@ The goal contract defines what must be true before the overall goal can be consi
 
 Master's acceptance checklist: `{{.AcceptancePath}}` (read-only — master evaluates these as proof against the goal contract)
 {{if .AcceptanceStatePath}}Machine-readable acceptance state: `{{.AcceptanceStatePath}}` (read-only — use this to understand the latest contract/check status){{end}}
+{{if .CompletionProofPath}}Canonical completion proof manifest: `{{.CompletionProofPath}}` (read-only — inspect this when you need to understand current closeout coverage or proof gaps){{end}}
 {{end}}
 {{end}}
 

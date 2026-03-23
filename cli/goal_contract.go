@@ -51,6 +51,9 @@ type GoalContractItem struct {
 	Owner             string   `json:"owner,omitempty"`
 	Notes             string   `json:"notes,omitempty"`
 	Evidence          []string `json:"evidence,omitempty"`
+	EvidenceClass     string   `json:"evidence_class,omitempty"`
+	CounterEvidence   []string `json:"counter_evidence,omitempty"`
+	SemanticMatch     string   `json:"semantic_match,omitempty"`
 	UserApproved      bool     `json:"user_approved,omitempty"`
 }
 
@@ -276,8 +279,8 @@ func ValidateGoalContractForCompletion(state *GoalContractState) (GoalContractSu
 		default:
 			return summary, fmt.Errorf("goal contract item %s is done but missing valid satisfaction_basis", item.ID)
 		}
-		if (strings.TrimSpace(item.SatisfactionBasis) == goalSatisfactionRunChange || strings.TrimSpace(item.SatisfactionBasis) == goalSatisfactionMixed) && len(item.Evidence) == 0 {
-			return summary, fmt.Errorf("goal contract item %s claims %s but has no evidence", item.ID, item.SatisfactionBasis)
+		if err := ValidateGoalContractStructuredProof(item); err != nil {
+			return summary, err
 		}
 	}
 	return summary, nil

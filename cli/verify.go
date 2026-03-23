@@ -39,7 +39,7 @@ func Verify(projectRoot string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load goal contract: %w", err)
 	}
-	completion, err := DetectCompletionState(rc.ProjectRoot, rc.RunDir)
+	completion, err := DetectCompletionState(rc.ProjectRoot, rc.RunDir, goalContract, state)
 	if err != nil {
 		return fmt.Errorf("detect completion state: %w", err)
 	}
@@ -82,6 +82,10 @@ func Verify(projectRoot string, args []string) error {
 	if completionErr != nil {
 		output = append(output, []byte("\n[completion]\n"+completionErr.Error()+"\n")...)
 	}
+	proofErr := ValidateCompletionStateForVerification(completion, goalContract, state)
+	if proofErr != nil {
+		output = append(output, []byte("\n[proof]\n"+proofErr.Error()+"\n")...)
+	}
 
 	evidencePath := AcceptanceEvidencePath(rc.RunDir)
 	if err := os.WriteFile(evidencePath, output, 0o644); err != nil {
@@ -93,7 +97,7 @@ func Verify(projectRoot string, args []string) error {
 	state.EvidencePath = evidencePath
 	exitCode := 0
 
-	if runErr != nil || contractErr != nil || acceptanceErr != nil || completionErr != nil {
+	if runErr != nil || contractErr != nil || acceptanceErr != nil || completionErr != nil || proofErr != nil {
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
 			exitCode = exitErr.ExitCode()
@@ -102,7 +106,7 @@ func Verify(projectRoot string, args []string) error {
 		} else if runErr != nil {
 			exitCode = 1
 		}
-		if runErr == nil && (contractErr != nil || acceptanceErr != nil || completionErr != nil) {
+		if runErr == nil && (contractErr != nil || acceptanceErr != nil || completionErr != nil || proofErr != nil) {
 			exitCode = 3
 		}
 		state.LastExitCode = &exitCode
@@ -110,8 +114,14 @@ func Verify(projectRoot string, args []string) error {
 		if err := SaveAcceptanceState(AcceptanceStatePath(rc.RunDir), state); err != nil {
 			return fmt.Errorf("save acceptance state: %w", err)
 		}
-		if err := updateStatusWithAcceptance(ProjectStatusCachePath(rc.ProjectRoot), state, contractSummary, completion); err != nil {
-			return fmt.Errorf("update status: %w", err)
+		completion.AcceptanceStatus = state.Status
+		completion.AcceptanceCheckedAt = state.CheckedAt
+		completion.AcceptanceEvidence = state.EvidencePath
+		if err := SaveCompletionState(CompletionStatePath(rc.RunDir), completion); err != nil {
+			return fmt.Errorf("save completion state: %w", err)
+		}
+		if err := updateRunVerificationState(rc.ProjectRoot, rc.RunDir, rc.Config, state, contractSummary, completion); err != nil {
+			return fmt.Errorf("update run verification state: %w", err)
 		}
 		if runErr != nil {
 			return fmt.Errorf("acceptance command failed (%d): %w", exitCode, runErr)
@@ -122,6 +132,9 @@ func Verify(projectRoot string, args []string) error {
 		if completionErr != nil {
 			return completionErr
 		}
+		if proofErr != nil {
+			return proofErr
+		}
 		return contractErr
 	}
 
@@ -130,8 +143,14 @@ func Verify(projectRoot string, args []string) error {
 	if err := SaveAcceptanceState(AcceptanceStatePath(rc.RunDir), state); err != nil {
 		return fmt.Errorf("save acceptance state: %w", err)
 	}
-	if err := updateStatusWithAcceptance(ProjectStatusCachePath(rc.ProjectRoot), state, contractSummary, completion); err != nil {
-		return fmt.Errorf("update status: %w", err)
+	completion.AcceptanceStatus = state.Status
+	completion.AcceptanceCheckedAt = state.CheckedAt
+	completion.AcceptanceEvidence = state.EvidencePath
+	if err := SaveCompletionState(CompletionStatePath(rc.RunDir), completion); err != nil {
+		return fmt.Errorf("save completion state: %w", err)
+	}
+	if err := updateRunVerificationState(rc.ProjectRoot, rc.RunDir, rc.Config, state, contractSummary, completion); err != nil {
+		return fmt.Errorf("update run verification state: %w", err)
 	}
 
 	fmt.Printf("Acceptance passed for run '%s'\n", rc.Name)

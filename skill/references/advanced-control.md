@@ -26,15 +26,15 @@ goalx explore --from RUN
 ## Manual Run Targeting
 
 - `goalx focus --run NAME` pins the default run for commands that omit `--run`
-- `--run NAME` resolution is global when the run name is unique
+- Bare `--run NAME` resolution is local-first within the current project
 - If names collide across projects, use `--run <project-id>/<run>`
 - Active runs, new saved runs, focus, and status are user-scoped under `~/.goalx/runs/{projectID}/...`
-- Older project-scoped saved runs remain readable for compatibility, but new saves go to user scope
 - `.goalx/config.yaml` is the shared project-scoped config file
+- Canonical closeout proof lives at `~/.goalx/runs/{projectID}/{run}/proof/completion.json`
 
 ## Manual Intervention
 
-Prefer durable GoalX commands over direct tmux input:
+Prefer durable GoalX commands over direct transport input:
 
 - `goalx tell --run NAME "direction"` to redirect the master or a session
 - `goalx add --run NAME "direction"` to create a session manually
@@ -53,4 +53,4 @@ Prefer durable GoalX commands over direct tmux input:
 
 `--parallel` is not a permanent cap. Master may still add or resume more durable sessions later if the goal warrants it.
 
-Only fall back to raw tmux intervention when the user explicitly wants pane-level control or the GoalX durable control path is unavailable.
+Only fall back to raw transport intervention when the user explicitly wants pane-level control or the GoalX durable control path is unavailable.

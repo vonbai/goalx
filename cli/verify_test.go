@@ -47,7 +47,11 @@ acceptance:
       "kind": "user_required",
       "requirement": "ship feature",
       "status": "done",
-      "satisfaction_basis": "preexisting"
+      "satisfaction_basis": "preexisting",
+      "evidence": ["/tmp/e2e.txt"],
+      "evidence_class": "artifact",
+      "counter_evidence": ["checked current HEAD against missing feature path"],
+      "semantic_match": "exact"
     }
   ]
 }`)
@@ -91,7 +95,6 @@ acceptance:
 	statusText := string(statusData)
 	for _, want := range []string{
 		`"acceptance_status":"passed"`,
-		`"acceptance_exit_code":0`,
 		`"completion_mode":"verification_only"`,
 		`"code_changed":false`,
 	} {
@@ -134,7 +137,11 @@ harness:
       "kind": "user_required",
       "requirement": "ship feature",
       "status": "done",
-      "satisfaction_basis": "preexisting"
+      "satisfaction_basis": "preexisting",
+      "evidence": ["/tmp/e2e.txt"],
+      "evidence_class": "artifact",
+      "counter_evidence": ["checked current HEAD against missing feature path"],
+      "semantic_match": "exact"
     }
   ]
 }`)
@@ -205,7 +212,10 @@ harness:
       "requirement": "ship feature",
       "status": "done",
       "satisfaction_basis": "preexisting",
-      "evidence": ["/tmp/e2e.txt"]
+      "evidence": ["/tmp/e2e.txt"],
+      "evidence_class": "artifact",
+      "counter_evidence": ["checked current HEAD against narrowed gate output"],
+      "semantic_match": "exact"
     }
   ]
 }`)
@@ -276,7 +286,10 @@ acceptance:
       "requirement": "ship feature",
       "status": "done",
       "satisfaction_basis": "run_change",
-      "evidence": ["/tmp/e2e.txt"]
+      "evidence": ["/tmp/e2e.txt"],
+      "evidence_class": "artifact",
+      "counter_evidence": ["checked baseline revision for missing feature file"],
+      "semantic_match": "exact"
     }
   ]
 }`)
@@ -305,10 +318,17 @@ acceptance:
 	for _, want := range []string{
 		`"completion_mode":"implementation_and_verification"`,
 		`"code_changed":true`,
-		`"base_revision":"` + baseRevision + `"`,
 	} {
 		if !strings.Contains(statusText, want) {
 			t.Fatalf("status.json missing %q:\n%s", want, statusText)
 		}
+	}
+
+	proofData, err := os.ReadFile(CompletionStatePath(runDir))
+	if err != nil {
+		t.Fatalf("read completion proof: %v", err)
+	}
+	if !strings.Contains(string(proofData), `"base_revision": "`+baseRevision+`"`) {
+		t.Fatalf("completion proof missing base revision:\n%s", proofData)
 	}
 }

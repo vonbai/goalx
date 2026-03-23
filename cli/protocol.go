@@ -13,37 +13,45 @@ import (
 
 // ProtocolData is passed to master.md.tmpl and program.md.tmpl.
 type ProtocolData struct {
-	RunName             string
-	Objective           string
-	Description         string
-	Mode                goalx.Mode
-	Engine              string
-	Engines             map[string]goalx.EngineConfig
-	Sessions            []SessionData
-	Master              goalx.MasterConfig
-	Harness             goalx.HarnessConfig
-	Budget              goalx.BudgetConfig
-	Target              goalx.TargetConfig
-	Context             goalx.ContextConfig
-	Preferences         goalx.PreferencesConfig
-	TmuxSession         string
-	ProjectRoot         string
-	SummaryPath         string
-	GoalContractPath    string
-	AcceptancePath      string
-	AcceptanceStatePath string
-	RunStatePath        string
-	SessionsStatePath   string
-	ProjectRegistryPath string
-	RunMetadataPath     string
-	CompletionStatePath string
-	CoordinationPath    string
-	MasterInboxPath     string
-	MasterStatePath     string
-	HeartbeatStatePath  string
-	MasterJournalPath   string
-	StatusPath          string // user-scoped status cache for external progress reporting
-	EngineCommand       string // resolved master engine command
+	RunName                string
+	Objective              string
+	Description            string
+	Mode                   goalx.Mode
+	Engine                 string
+	Engines                map[string]goalx.EngineConfig
+	Sessions               []SessionData
+	Master                 goalx.MasterConfig
+	Harness                goalx.HarnessConfig
+	Budget                 goalx.BudgetConfig
+	Target                 goalx.TargetConfig
+	Context                goalx.ContextConfig
+	Preferences            goalx.PreferencesConfig
+	TmuxSession            string
+	ProjectRoot            string
+	SummaryPath            string
+	GoalContractPath       string
+	AcceptancePath         string
+	AcceptanceStatePath    string
+	CompletionProofPath    string
+	RunStatePath           string
+	SessionsStatePath      string
+	ProjectRegistryPath    string
+	RunMetadataPath        string
+	CoordinationPath       string
+	MasterInboxPath        string
+	MasterCursorPath       string
+	ControlRunIdentityPath string
+	ControlRunStatePath    string
+	ControlEventsPath      string
+	MasterLeasePath        string
+	SidecarLeasePath       string
+	ControlRemindersPath   string
+	ControlDeliveriesPath  string
+	MasterStatePath        string
+	HeartbeatStatePath     string
+	MasterJournalPath      string
+	StatusPath             string // user-scoped status cache for external progress reporting
+	EngineCommand          string // resolved master engine command
 
 	// Subagent-specific (used in program.md.tmpl)
 	SessionName       string

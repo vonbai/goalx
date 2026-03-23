@@ -5,7 +5,7 @@ description: Use when the user wants to manage GoalX research/develop runs on a 
 
 # GoalX Remote — HTTP API Skill
 
-Manage GoalX runs on a remote server via HTTP API. Browse projects, start research, check progress, change direction, manage configs — all through curl.
+Manage GoalX runs on a remote server via HTTP API. Browse projects, start autonomous work, check progress, redirect runs, verify closeout, and manage configs through curl.
 
 ## Setup
 
@@ -49,12 +49,8 @@ gx_post "$GOALX_URL/projects/Y/goalx/auto" \
 
 ### "Fix X on project Y" / "Implement..."
 ```bash
-gx_post "$GOALX_URL/projects/Y/goalx/init" \
-  -d '{"objective":"X","mode":"develop","parallel":2}' | pj
-# Then configure target files and harness:
-gx_post "$GOALX_URL/projects/Y/goalx/config" \
-  -d '{"target":{"files":["src/"]},"harness":{"command":"make test"}}' | pj
-gx_post "$GOALX_URL/projects/Y/goalx/start" | pj
+gx_post "$GOALX_URL/projects/Y/goalx/develop" \
+  -d '{"objective":"X","parallel":2,"target_files":["src/"],"harness_command":"make test"}' | pj
 ```
 
 ### "Use 2 opus + 1 codex" / Custom agent composition
@@ -72,39 +68,43 @@ Translate user requests like "use opus for thinking, codex for auditing" into th
 
 ### "How's the research going?" / "Check progress"
 ```bash
-gx_get "$GOALX_URL/projects/Y/goalx/observe?run=NAME" | pj
+gx_post "$GOALX_URL/projects/Y/goalx/observe" -d '{"run":"NAME"}' | pj
+gx_post "$GOALX_URL/projects/Y/goalx/status" -d '{"run":"NAME"}' | pj
 ```
 
 ### "Change direction" / "Focus on Z instead"
 ```bash
 gx_post "$GOALX_URL/projects/Y/goalx/tell" \
-  -d '{"message":"Focus on Z instead of current direction"}' | pj
+  -d '{"run":"NAME","message":"Focus on Z instead of current direction"}' | pj
 ```
 
 ### "Add another research angle"
 ```bash
 gx_post "$GOALX_URL/projects/Y/goalx/add" \
-  -d '{"direction":"Investigate from security perspective"}' | pj
+  -d '{"run":"NAME","direction":"Investigate from security perspective"}' | pj
 # With specific engine/model:
 gx_post "$GOALX_URL/projects/Y/goalx/add" \
-  -d '{"direction":"Audit the implementation","engine":"codex","model":"gpt-5.4"}' | pj
+  -d '{"run":"NAME","direction":"Audit the implementation","engine":"codex","model":"gpt-5.4"}' | pj
 ```
 
 ### "Read or modify the config"
 ```bash
-# Read (POST with empty body):
+# Read project config:
 gx_post "$GOALX_URL/projects/Y/goalx/config" -d '{}' | pj
-# Write (POST with content field):
+# Read active run spec:
+gx_post "$GOALX_URL/projects/Y/goalx/config" -d '{"run":"NAME"}' | pj
+# Write shared project config:
 gx_post "$GOALX_URL/projects/Y/goalx/config" \
-  -d '{"content":"name: my-run\nobjective: ...\nmode: research\nparallel: 2"}' | pj
+  -d '{"content":"engines:\n  ..."}' | pj
 ```
 
-### "Save / Stop / Clean up"
+### "Verify / Save / Stop / Clean up"
 ```bash
-gx_post "$GOALX_URL/projects/Y/goalx/save" | pj
-gx_post "$GOALX_URL/projects/Y/goalx/stop" | pj
-gx_post "$GOALX_URL/projects/Y/goalx/keep" -d '{"session":"session-1"}' | pj
-gx_post "$GOALX_URL/projects/Y/goalx/drop" | pj
+gx_post "$GOALX_URL/projects/Y/goalx/verify" -d '{"run":"NAME"}' | pj
+gx_post "$GOALX_URL/projects/Y/goalx/save" -d '{"run":"NAME"}' | pj
+gx_post "$GOALX_URL/projects/Y/goalx/stop" -d '{"run":"NAME"}' | pj
+gx_post "$GOALX_URL/projects/Y/goalx/keep" -d '{"run":"NAME","session":"session-1"}' | pj
+gx_post "$GOALX_URL/projects/Y/goalx/drop" -d '{"run":"NAME"}' | pj
 ```
 
 ### "Remove a workspace"
@@ -118,8 +118,8 @@ After each action, summarize concisely:
 
 ```
 Status: started / in progress / complete / stopped / failed
-Key info: run name, current phase, active sessions
-Next step: observe later / redirect / save / keep / drop
+Key info: run name, lifecycle status, lease health, active sessions
+Next step: observe later / redirect / verify / save / keep / drop
 ```
 
 ## Safety
@@ -127,4 +127,5 @@ Next step: observe later / redirect / save / keep / drop
 - Always include Bearer token
 - `save` before `drop` if results matter
 - Use `tell` to redirect — don't `stop` a healthy run unless asked
-- `observe` before making decisions about a run's direction
+- Use `observe` and `status` before making decisions about a run's direction
+- Run `verify` before calling a develop run complete

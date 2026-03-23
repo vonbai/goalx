@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	goalx "github.com/vonbai/goalx"
 )
@@ -20,7 +21,7 @@ func TestStatusHelpDoesNotResolveRun(t *testing.T) {
 	}
 }
 
-func TestStatusShowsUnreadInboxAndLegacyProtocolDrift(t *testing.T) {
+func TestStatusShowsControlQueueAndLeaseSummary(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -59,11 +60,14 @@ func TestStatusShowsUnreadInboxAndLegacyProtocolDrift(t *testing.T) {
 			t.Fatalf("AppendMasterInboxMessage: %v", err)
 		}
 	}
-	if err := SaveMasterState(MasterStatePath(runDir), &MasterState{LastSeenID: 1, LastHeartbeatSeq: 5, HeartbeatLag: 2, WakePending: true, StaleSince: "2026-03-23T00:00:00Z"}); err != nil {
+	if err := SaveMasterState(MasterStatePath(runDir), &MasterState{LastSeenID: 1}); err != nil {
 		t.Fatalf("SaveMasterState: %v", err)
 	}
-	if err := SaveHeartbeatState(HeartbeatStatePath(runDir), &HeartbeatState{Seq: 7}); err != nil {
-		t.Fatalf("SaveHeartbeatState: %v", err)
+	if err := RenewControlLease(runDir, "master", "run_status", 1, time.Minute, "tmux", 1234); err != nil {
+		t.Fatalf("RenewControlLease master: %v", err)
+	}
+	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
+		t.Fatalf("ExpireControlLease sidecar: %v", err)
 	}
 	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
 		Version: 1,
@@ -93,13 +97,12 @@ func TestStatusShowsUnreadInboxAndLegacyProtocolDrift(t *testing.T) {
 	for _, want := range []string{
 		"Run: status-run",
 		"Control:",
+		"run_status=active",
 		"unread_inbox=2",
-		"heartbeat_lag=2",
-		"wake_pending=true",
-		"stale=true",
+		"master_lease=healthy",
+		"sidecar_lease=expired",
 		"reminders_due=1",
 		"deliveries_failed=1",
-		"legacy protocol",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status output missing %q:\n%s", want, out)

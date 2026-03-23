@@ -157,7 +157,10 @@ acceptance:
       "requirement": "ship the feature end to end",
       "status": "done",
       "satisfaction_basis": "preexisting",
-      "evidence": ["/tmp/e2e.txt"]
+      "evidence": ["/tmp/e2e.txt"],
+      "evidence_class": "artifact",
+      "counter_evidence": ["checked current HEAD for missing end-to-end path"],
+      "semantic_match": "exact"
     },
     {
       "id": "req-2",
@@ -233,7 +236,10 @@ acceptance:
       "kind": "user_required",
       "requirement": "ship the feature end to end",
       "status": "done",
-      "evidence": ["/tmp/e2e.txt"]
+      "evidence": ["/tmp/e2e.txt"],
+      "evidence_class": "artifact",
+      "counter_evidence": ["checked current HEAD for missing end-to-end path"],
+      "semantic_match": "exact"
     }
   ]
 }`)

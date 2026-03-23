@@ -44,7 +44,7 @@ func ControlDir(runDir string) string {
 }
 
 func MasterInboxPath(runDir string) string {
-	return filepath.Join(ControlDir(runDir), "master-inbox.jsonl")
+	return ControlInboxPath(runDir, "master")
 }
 
 func MasterStatePath(runDir string) string {
@@ -89,6 +89,9 @@ func ensureEmptyFile(path string) error {
 		return nil
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
 	}
 	if err := os.WriteFile(path, nil, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)

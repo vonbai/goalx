@@ -238,3 +238,32 @@ func updateStatusWithAcceptance(statusPath string, state *AcceptanceState, contr
 	}
 	return os.WriteFile(statusPath, data, 0o644)
 }
+
+func updateRunVerificationState(projectRoot, runDir string, cfg *goalx.Config, state *AcceptanceState, contractSummary GoalContractSummary, completion *CompletionState) error {
+	runtimeState, err := EnsureRuntimeState(runDir, cfg)
+	if err != nil {
+		return err
+	}
+	runtimeState.AcceptanceMet = state != nil && state.Status == acceptanceStatusPassed
+	if state != nil {
+		runtimeState.AcceptanceStatus = state.Status
+		runtimeState.AcceptanceCheckedAt = state.CheckedAt
+		runtimeState.AcceptanceEvidencePath = state.EvidencePath
+	}
+	runtimeState.GoalContractStatus = contractSummary.Status
+	runtimeState.GoalRequiredTotal = contractSummary.RequiredTotal
+	runtimeState.GoalRequiredDone = contractSummary.RequiredDone
+	runtimeState.GoalRequiredRemain = contractSummary.RequiredRemaining
+	runtimeState.GoalEnhancementOpen = contractSummary.EnhancementOpen
+	if completion != nil {
+		runtimeState.CompletionMode = completion.CompletionMode
+		runtimeState.CodeChanged = completion.CodeChanged
+		runtimeState.BaseRevision = completion.BaseRevision
+		runtimeState.HeadRevision = completion.HeadRevision
+	}
+	runtimeState.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), runtimeState); err != nil {
+		return err
+	}
+	return syncProjectStatusCache(projectRoot, runtimeState)
+}

@@ -65,15 +65,18 @@ func TestGenerateAdapterQuotesGuidancePath(t *testing.T) {
 
 func TestGenerateMasterAdapterRequiresVerifiedCompletionForDone(t *testing.T) {
 	projectRoot := t.TempDir()
-	statusPath := filepath.Join(projectRoot, ".goalx", "status.json")
-	if err := os.MkdirAll(filepath.Dir(statusPath), 0o755); err != nil {
-		t.Fatalf("mkdir status dir: %v", err)
+	runStatePath := filepath.Join(projectRoot, ".goalx", "runs", "demo", "state", "run.json")
+	proofPath := filepath.Join(projectRoot, ".goalx", "runs", "demo", "proof", "completion.json")
+	for _, path := range []string{runStatePath, proofPath} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir dir for %s: %v", path, err)
+		}
 	}
 
-	if err := GenerateMasterAdapter("claude-code", projectRoot, statusPath); err != nil {
+	if err := GenerateMasterAdapter("claude-code", projectRoot, runStatePath, proofPath); err != nil {
 		t.Fatalf("GenerateMasterAdapter first: %v", err)
 	}
-	if err := GenerateMasterAdapter("claude-code", projectRoot, statusPath); err != nil {
+	if err := GenerateMasterAdapter("claude-code", projectRoot, runStatePath, proofPath); err != nil {
 		t.Fatalf("GenerateMasterAdapter second: %v", err)
 	}
 
@@ -108,11 +111,11 @@ func TestGenerateMasterAdapterRequiresVerifiedCompletionForDone(t *testing.T) {
 	if exitErr.ExitCode() != 2 {
 		t.Fatalf("missing status exit code = %d, want 2", exitErr.ExitCode())
 	}
-	if !strings.Contains(out, statusPath) {
-		t.Fatalf("missing status output = %q, want path %q", out, statusPath)
+	if !strings.Contains(out, runStatePath) {
+		t.Fatalf("missing status output = %q, want path %q", out, runStatePath)
 	}
 
-	if err := os.WriteFile(statusPath, []byte(`{"phase":"running"}`), 0o644); err != nil {
+	if err := os.WriteFile(runStatePath, []byte(`{"phase":"running"}`), 0o644); err != nil {
 		t.Fatalf("write running status: %v", err)
 	}
 	out, err = runHook()
@@ -123,31 +126,37 @@ func TestGenerateMasterAdapterRequiresVerifiedCompletionForDone(t *testing.T) {
 		t.Fatalf("running status exit code = %d, want 2", exitErr.ExitCode())
 	}
 
-	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete","recommendation":"done","acceptance_status":"pending","goal_contract_status":"pending","goal_required_remaining":1}`), 0o644); err != nil {
-		t.Fatalf("write unverified done status: %v", err)
+	if err := os.WriteFile(runStatePath, []byte(`{"phase":"complete","recommendation":"done"}`), 0o644); err != nil {
+		t.Fatalf("write done run state: %v", err)
+	}
+	if err := os.WriteFile(proofPath, []byte(`{"acceptance_status":"pending","goal_contract_status":"pending","goal_required_remaining":1}`), 0o644); err != nil {
+		t.Fatalf("write incomplete proof: %v", err)
 	}
 	out, err = runHook()
 	if !errors.As(err, &exitErr) {
 		t.Fatalf("unverified done should block stop, err=%v out=%q", err, out)
 	}
 
-	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete","recommendation":"more-research","acceptance_status":"failed"}`), 0o644); err != nil {
+	if err := os.WriteFile(runStatePath, []byte(`{"phase":"complete","recommendation":"more-research"}`), 0o644); err != nil {
 		t.Fatalf("write more-research status: %v", err)
 	}
 	if out, err = runHook(); err != nil {
 		t.Fatalf("more-research completion should allow stop, err=%v out=%q", err, out)
 	}
 
-	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete","recommendation":"done","acceptance_status":"passed","goal_contract_status":"satisfied","goal_required_remaining":0}`), 0o644); err != nil {
-		t.Fatalf("write incomplete provenance status: %v", err)
+	if err := os.WriteFile(runStatePath, []byte(`{"phase":"complete","recommendation":"done"}`), 0o644); err != nil {
+		t.Fatalf("write done run state: %v", err)
+	}
+	if err := os.WriteFile(proofPath, []byte(`{"acceptance_status":"passed","goal_contract_status":"satisfied","goal_required_remaining":0}`), 0o644); err != nil {
+		t.Fatalf("write incomplete provenance proof: %v", err)
 	}
 	out, err = runHook()
 	if !errors.As(err, &exitErr) {
 		t.Fatalf("done without completion provenance should block stop, err=%v out=%q", err, out)
 	}
 
-	if err := os.WriteFile(statusPath, []byte(`{"phase":"complete","recommendation":"done","acceptance_status":"passed","goal_contract_status":"satisfied","goal_required_remaining":0,"completion_mode":"verification_only","code_changed":false}`), 0o644); err != nil {
-		t.Fatalf("write verified done status: %v", err)
+	if err := os.WriteFile(proofPath, []byte(`{"acceptance_status":"passed","goal_contract_status":"satisfied","goal_required_remaining":0,"completion_mode":"verification_only","code_changed":false}`), 0o644); err != nil {
+		t.Fatalf("write verified done proof: %v", err)
 	}
 	if out, err = runHook(); err != nil {
 		t.Fatalf("verified done should allow stop, err=%v out=%q", err, out)

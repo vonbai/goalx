@@ -15,30 +15,35 @@ import (
 )
 
 type RunRuntimeState struct {
-	Version            int    `json:"version"`
-	Run                string `json:"run"`
-	Mode               string `json:"mode,omitempty"`
-	Objective          string `json:"objective,omitempty"`
-	Active             bool   `json:"active"`
-	Phase              string `json:"phase,omitempty"`
-	Recommendation     string `json:"recommendation,omitempty"`
-	Heartbeat          int64  `json:"heartbeat,omitempty"`
-	HeartbeatSeq       int64  `json:"heartbeat_seq,omitempty"`
-	HeartbeatLag       int64  `json:"heartbeat_lag,omitempty"`
-	MasterWakePending  bool   `json:"master_wake_pending,omitempty"`
-	MasterStale        bool   `json:"master_stale,omitempty"`
-	MasterStaleSince   string `json:"master_stale_since,omitempty"`
-	AcceptanceMet      bool   `json:"acceptance_met,omitempty"`
-	AcceptanceStatus   string `json:"acceptance_status,omitempty"`
-	GoalContractStatus string `json:"goal_contract_status,omitempty"`
-	GoalRequiredTotal  int    `json:"goal_required_total,omitempty"`
-	GoalRequiredDone   int    `json:"goal_required_done,omitempty"`
-	GoalRequiredRemain int    `json:"goal_required_remaining,omitempty"`
-	CodeChanged        bool   `json:"code_changed,omitempty"`
-	CompletionMode     string `json:"completion_mode,omitempty"`
-	StartedAt          string `json:"started_at,omitempty"`
-	StoppedAt          string `json:"stopped_at,omitempty"`
-	UpdatedAt          string `json:"updated_at,omitempty"`
+	Version                int    `json:"version"`
+	Run                    string `json:"run"`
+	Mode                   string `json:"mode,omitempty"`
+	Objective              string `json:"objective,omitempty"`
+	Active                 bool   `json:"active"`
+	Phase                  string `json:"phase,omitempty"`
+	Recommendation         string `json:"recommendation,omitempty"`
+	Heartbeat              int64  `json:"heartbeat,omitempty"`
+	HeartbeatSeq           int64  `json:"heartbeat_seq,omitempty"`
+	HeartbeatLag           int64  `json:"heartbeat_lag,omitempty"`
+	MasterWakePending      bool   `json:"master_wake_pending,omitempty"`
+	MasterStale            bool   `json:"master_stale,omitempty"`
+	MasterStaleSince       string `json:"master_stale_since,omitempty"`
+	AcceptanceMet          bool   `json:"acceptance_met,omitempty"`
+	AcceptanceStatus       string `json:"acceptance_status,omitempty"`
+	AcceptanceCheckedAt    string `json:"acceptance_checked_at,omitempty"`
+	AcceptanceEvidencePath string `json:"acceptance_evidence_path,omitempty"`
+	GoalContractStatus     string `json:"goal_contract_status,omitempty"`
+	GoalRequiredTotal      int    `json:"goal_required_total,omitempty"`
+	GoalRequiredDone       int    `json:"goal_required_done,omitempty"`
+	GoalRequiredRemain     int    `json:"goal_required_remaining,omitempty"`
+	GoalEnhancementOpen    int    `json:"goal_enhancement_open,omitempty"`
+	CodeChanged            bool   `json:"code_changed,omitempty"`
+	CompletionMode         string `json:"completion_mode,omitempty"`
+	BaseRevision           string `json:"base_revision,omitempty"`
+	HeadRevision           string `json:"head_revision,omitempty"`
+	StartedAt              string `json:"started_at,omitempty"`
+	StoppedAt              string `json:"stopped_at,omitempty"`
+	UpdatedAt              string `json:"updated_at,omitempty"`
 }
 
 type SessionRuntimeState struct {
@@ -355,24 +360,29 @@ func deriveProjectStatusFromRun(state *RunRuntimeState) []byte {
 		return nil
 	}
 	payload := map[string]any{
-		"run":                     state.Run,
-		"phase":                   state.Phase,
-		"recommendation":          state.Recommendation,
-		"heartbeat":               state.Heartbeat,
-		"heartbeat_seq":           state.HeartbeatSeq,
-		"heartbeat_lag":           state.HeartbeatLag,
-		"master_wake_pending":     state.MasterWakePending,
-		"master_stale":            state.MasterStale,
-		"master_stale_since":      state.MasterStaleSince,
-		"acceptance_met":          state.AcceptanceMet,
-		"acceptance_status":       state.AcceptanceStatus,
-		"goal_contract_status":    state.GoalContractStatus,
-		"goal_required_total":     state.GoalRequiredTotal,
-		"goal_required_done":      state.GoalRequiredDone,
-		"goal_required_remaining": state.GoalRequiredRemain,
-		"completion_mode":         state.CompletionMode,
-		"code_changed":            state.CodeChanged,
-		"active":                  state.Active,
+		"run":                      state.Run,
+		"phase":                    state.Phase,
+		"recommendation":           state.Recommendation,
+		"heartbeat":                state.Heartbeat,
+		"heartbeat_seq":            state.HeartbeatSeq,
+		"heartbeat_lag":            state.HeartbeatLag,
+		"master_wake_pending":      state.MasterWakePending,
+		"master_stale":             state.MasterStale,
+		"master_stale_since":       state.MasterStaleSince,
+		"acceptance_met":           state.AcceptanceMet,
+		"acceptance_status":        state.AcceptanceStatus,
+		"acceptance_checked_at":    state.AcceptanceCheckedAt,
+		"acceptance_evidence_path": state.AcceptanceEvidencePath,
+		"goal_contract_status":     state.GoalContractStatus,
+		"goal_required_total":      state.GoalRequiredTotal,
+		"goal_required_done":       state.GoalRequiredDone,
+		"goal_required_remaining":  state.GoalRequiredRemain,
+		"goal_enhancement_open":    state.GoalEnhancementOpen,
+		"completion_mode":          state.CompletionMode,
+		"code_changed":             state.CodeChanged,
+		"base_revision":            state.BaseRevision,
+		"head_revision":            state.HeadRevision,
+		"active":                   state.Active,
 	}
 	data, _ := json.Marshal(payload)
 	return data

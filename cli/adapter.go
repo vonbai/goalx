@@ -28,20 +28,21 @@ func GenerateAdapter(engine, worktreePath, guidancePath string) error {
 }
 
 // GenerateMasterAdapter configures a project-level Stop hook for the master
-// agent so it does not exit before the status cache reaches phase=complete.
-func GenerateMasterAdapter(engine, projectRoot, statusPath string) error {
+// agent so it does not exit before the run reaches a verified completion state.
+func GenerateMasterAdapter(engine, projectRoot, runStatePath, proofPath string) error {
 	if engine != "claude-code" {
 		return nil
 	}
 
-	quotedStatusPath := shellQuote(statusPath)
-	quotedMessage := shellQuote("RUN INCOMPLETE: keep waiting until " + statusPath + ` reports "phase":"complete"`)
-	quotedVerifyMessage := shellQuote("RUN NOT VERIFIED: done/implement require acceptance_status=passed in " + statusPath)
-	quotedContractMessage := shellQuote("RUN CONTRACT INCOMPLETE: done/implement require goal_contract_status=satisfied and goal_required_remaining=0 in " + statusPath)
-	quotedCompletionMessage := shellQuote("RUN COMPLETION PROVENANCE MISSING: done/implement require completion_mode and code_changed in " + statusPath)
+	quotedRunStatePath := shellQuote(runStatePath)
+	quotedProofPath := shellQuote(proofPath)
+	quotedRunStateMessage := shellQuote("RUN INCOMPLETE: keep waiting until " + runStatePath + ` reports "phase":"complete"`)
+	quotedVerifyMessage := shellQuote("RUN NOT VERIFIED: done/implement require acceptance_status=passed in " + proofPath)
+	quotedContractMessage := shellQuote("RUN CONTRACT INCOMPLETE: done/implement require goal_contract_status=satisfied and goal_required_remaining=0 in " + proofPath)
+	quotedCompletionMessage := shellQuote("RUN COMPLETION PROVENANCE MISSING: done/implement require completion_mode and code_changed in " + proofPath)
 	stopCmd := fmt.Sprintf(
-		`if [ ! -f %s ] || ! grep -Eq '"phase"[[:space:]]*:[[:space:]]*"complete"' %s; then printf '%%s\n' %s >&2; exit 2; fi; if grep -Eq '"recommendation"[[:space:]]*:[[:space:]]*"(done|implement)"' %s && ! grep -Eq '"acceptance_status"[[:space:]]*:[[:space:]]*"passed"' %s; then printf '%%s\n' %s >&2; exit 2; fi; if grep -Eq '"recommendation"[[:space:]]*:[[:space:]]*"(done|implement)"' %s && { ! grep -Eq '"goal_contract_status"[[:space:]]*:[[:space:]]*"satisfied"' %s || ! grep -Eq '"goal_required_remaining"[[:space:]]*:[[:space:]]*0([[:space:]]*[,}])' %s; }; then printf '%%s\n' %s >&2; exit 2; fi; if grep -Eq '"recommendation"[[:space:]]*:[[:space:]]*"(done|implement)"' %s && { ! grep -Eq '"completion_mode"[[:space:]]*:[[:space:]]*"(verification_only|implementation_and_verification)"' %s || ! grep -Eq '"code_changed"[[:space:]]*:[[:space:]]*(true|false)([[:space:]]*[,}])' %s; }; then printf '%%s\n' %s >&2; exit 2; fi`,
-		quotedStatusPath, quotedStatusPath, quotedMessage, quotedStatusPath, quotedStatusPath, quotedVerifyMessage, quotedStatusPath, quotedStatusPath, quotedStatusPath, quotedContractMessage, quotedStatusPath, quotedStatusPath, quotedStatusPath, quotedCompletionMessage,
+		`if [ ! -f %s ] || ! grep -Eq '"phase"[[:space:]]*:[[:space:]]*"complete"' %s; then printf '%%s\n' %s >&2; exit 2; fi; if grep -Eq '"recommendation"[[:space:]]*:[[:space:]]*"(done|implement)"' %s && { [ ! -f %s ] || ! grep -Eq '"acceptance_status"[[:space:]]*:[[:space:]]*"passed"' %s; }; then printf '%%s\n' %s >&2; exit 2; fi; if grep -Eq '"recommendation"[[:space:]]*:[[:space:]]*"(done|implement)"' %s && { [ ! -f %s ] || ! grep -Eq '"goal_contract_status"[[:space:]]*:[[:space:]]*"satisfied"' %s || ! grep -Eq '"goal_required_remaining"[[:space:]]*:[[:space:]]*0([[:space:]]*[,}])' %s; }; then printf '%%s\n' %s >&2; exit 2; fi; if grep -Eq '"recommendation"[[:space:]]*:[[:space:]]*"(done|implement)"' %s && { [ ! -f %s ] || ! grep -Eq '"completion_mode"[[:space:]]*:[[:space:]]*"(verification_only|implementation_and_verification)"' %s || ! grep -Eq '"code_changed"[[:space:]]*:[[:space:]]*(true|false)([[:space:]]*[,}])' %s; }; then printf '%%s\n' %s >&2; exit 2; fi`,
+		quotedRunStatePath, quotedRunStatePath, quotedRunStateMessage, quotedRunStatePath, quotedProofPath, quotedProofPath, quotedVerifyMessage, quotedRunStatePath, quotedProofPath, quotedProofPath, quotedProofPath, quotedContractMessage, quotedRunStatePath, quotedProofPath, quotedProofPath, quotedProofPath, quotedCompletionMessage,
 	)
 	return appendClaudeHook(projectRoot, map[string]string{
 		"event":   "Stop",

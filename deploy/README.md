@@ -21,9 +21,10 @@ cp deploy/config.example.yaml ~/.goalx/config.yaml
 
 ```bash
 cd /your/project
-goalx init "objective" --research --parallel 2
-goalx start
+goalx auto "objective" --parallel 2
 goalx observe
+goalx status
+goalx verify --run your-run
 ```
 
 ## 4. Run as HTTP Server (remote management)
@@ -58,10 +59,12 @@ cp -r skill/openclaw-skill /path/to/openclaw/workspace/skills/goalx
 
 The skill teaches the OpenClaw agent to:
 - Browse projects: `GET /projects`
-- Start research: `POST /projects/:name/goalx/start`
-- Check progress: `GET /projects/:name/goalx/observe`
+- Start autonomous work: `POST /projects/:name/goalx/auto`
+- Start explicit research/develop phases: `POST /projects/:name/goalx/research|develop`
+- Check progress: `POST /projects/:name/goalx/observe` and `POST /projects/:name/goalx/status`
 - Change direction: `POST /projects/:name/goalx/tell`
-- Modify config: `PUT /projects/:name/goalx/config`
+- Verify closeout: `POST /projects/:name/goalx/verify`
+- Modify config or inspect run specs: `POST /projects/:name/goalx/config`
 - Add workspaces: `POST /workspaces`
 
 ### Network Requirements:

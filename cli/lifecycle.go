@@ -186,6 +186,7 @@ func Resume(projectRoot string, args []string) error {
 		GoalContractPath:    GoalContractPath(rc.RunDir),
 		AcceptancePath:      AcceptanceChecklistPath(rc.RunDir),
 		AcceptanceStatePath: AcceptanceStatePath(rc.RunDir),
+		CompletionProofPath: CompletionStatePath(rc.RunDir),
 		RunStatePath:        RunRuntimeStatePath(rc.RunDir),
 		SessionsStatePath:   SessionsRuntimeStatePath(rc.RunDir),
 		ProjectRegistryPath: ProjectRegistryPath(rc.ProjectRoot),

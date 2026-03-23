@@ -147,29 +147,15 @@ func printStatusControlSummary(rc *RunContext) {
 		return
 	}
 	masterState, _ := LoadMasterState(MasterStatePath(rc.RunDir))
-	heartbeatState, _ := LoadHeartbeatState(HeartbeatStatePath(rc.RunDir))
 	unread := unreadMasterInboxCount(rc.RunDir, masterState)
-	heartbeatLag := int64(0)
-	wakePending := false
-	stale := false
-	if masterState != nil {
-		heartbeatLag = masterState.HeartbeatLag
-		wakePending = masterState.WakePending
-		stale = masterState.StaleSince != ""
-	}
-	if heartbeatLag == 0 && masterState != nil && heartbeatState != nil && heartbeatState.Seq >= masterState.LastHeartbeatSeq {
-		heartbeatLag = heartbeatState.Seq - masterState.LastHeartbeatSeq
-		if heartbeatLag > 0 {
-			wakePending = true
-		}
+	masterLease := controlLeaseSummary(rc.RunDir, "master")
+	sidecarLease := controlLeaseSummary(rc.RunDir, "sidecar")
+	runStatus := "unknown"
+	if derived, err := loadDerivedRunState(rc.ProjectRoot, rc.RunDir); err == nil && derived != nil && derived.Status != "" {
+		runStatus = derived.Status
 	}
 	remindersDue, deliveriesFailed := controlQueueSummary(rc.RunDir)
-	fmt.Printf("Control: unread_inbox=%d heartbeat_lag=%d wake_pending=%t stale=%t reminders_due=%d deliveries_failed=%d\n", unread, heartbeatLag, wakePending, stale, remindersDue, deliveriesFailed)
-
-	meta, _ := LoadRunMetadata(RunMetadataPath(rc.RunDir))
-	if meta == nil || meta.ProtocolVersion < currentProtocolVersion {
-		fmt.Printf("Protocol: legacy protocol (run predates current control/autonomy contract)\n")
-	}
+	fmt.Printf("Control: run_status=%s unread_inbox=%d master_lease=%s sidecar_lease=%s reminders_due=%d deliveries_failed=%d\n", runStatus, unread, masterLease, sidecarLease, remindersDue, deliveriesFailed)
 	fmt.Println()
 }
 
@@ -236,4 +222,19 @@ func controlQueueSummary(runDir string) (int, int) {
 		}
 	}
 	return remindersDue, deliveriesFailed
+}
+
+func controlLeaseSummary(runDir, holder string) string {
+	lease, err := LoadControlLease(ControlLeasePath(runDir, holder))
+	if err != nil || lease == nil || lease.ExpiresAt == "" {
+		return "missing"
+	}
+	expiresAt, err := time.Parse(time.RFC3339, lease.ExpiresAt)
+	if err != nil {
+		return "invalid"
+	}
+	if expiresAt.After(time.Now().UTC()) {
+		return "healthy"
+	}
+	return "expired"
 }
