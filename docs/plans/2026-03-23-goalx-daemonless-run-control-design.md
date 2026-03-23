@@ -35,6 +35,7 @@ These faults create the symptoms seen in the investigation:
 - Make `status` and `observe` derive from durable control state first, tmux second.
 - Introduce a canonical proof manifest for completion.
 - Preserve local, daemonless operation for the primary architecture.
+- Roll out the protocol across every `ResolveRun` consumer and every user-facing read-model so no command silently keeps v1 selector or tmux-first semantics.
 
 ## Non-Goals
 
@@ -214,6 +215,17 @@ Lease expiration degrades the run or session; it does not auto-complete or auto-
 Heartbeat no longer implies reminder delivery. Reminder delivery is a separate state machine driven by dedupe and cooldown rules.
 
 ## Command Semantics
+
+### Explicit Rollout Surface
+
+The v2 rollout is not complete unless all of these surfaces move together:
+
+- selector consumers: `status`, `attach`, `drop`, `diff`, `stop`, `review`, `save`, `tell`, `keep`, `archive`, `lifecycle`, `verify`, `add`, `observe`, `pulse`, `report`, `serve`
+- read-model commands: `list`, `next`, `status`, `observe`, `serve /runs`
+- transport-specific commands: `attach`, `stop`, `drop`
+- protocol assets: master/program templates, generated adapter hooks, shipped skills, README and deploy docs
+
+The rule is simple: no command may continue to imply that tmux session presence is the source of truth for run identity, liveness, or completion.
 
 ### `goalx start`
 

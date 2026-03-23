@@ -57,9 +57,14 @@ git commit -m "refactor: introduce goalx protocol v2 metadata identity"
 - Modify: `cli/runctx.go`
 - Modify: `cli/global_run_registry.go`
 - Modify: `cli/project_registry.go`
+- Modify: `cli/focus.go`
 - Modify: `cli/serve.go`
+- Modify: `cmd/goalx/main.go`
 - Test: `cli/runctx_test.go`
 - Test: `cli/focus_test.go`
+- Test: `cmd/goalx/main_test.go`
+- Regression sweep: `cli/status.go`, `cli/attach.go`, `cli/drop.go`, `cli/diff.go`, `cli/stop.go`, `cli/review.go`, `cli/save.go`, `cli/tell.go`, `cli/keep.go`, `cli/archive.go`, `cli/lifecycle.go`, `cli/verify.go`, `cli/add.go`, `cli/observe.go`, `cli/pulse.go`, `cli/report.go`
+- Regression tests: `cli/tell_test.go`, `cli/read_only_test.go`, `cli/save_test.go`, `cli/review_test.go`, `cli/verify_test.go`, `cli/git_test.go`
 
 **Step 1: Write failing tests for selector behavior**
 
@@ -67,10 +72,13 @@ Cover:
 - bare `--run NAME` resolves local project first
 - cross-project same-name run requires `project-id/run` or `run_id`
 - mutating commands reject ambiguous global lookup
+- CLI, HTTP, and shipped skill examples agree on the same selector contract
+- `focus` normalizes or rejects non-local selectors consistently
+- top-level `goalx --help` and run-listing output expose a discoverable canonical selector form
 
 **Step 2: Run the selector tests**
 
-Run: `go test ./cli -run 'TestResolveRun|TestFocus' -count=1`
+Run: `go test ./cli -run 'TestResolveRun|TestFocus|TestTell' -count=1 && go test ./cmd/goalx -run 'TestMain' -count=1`
 
 Expected: FAIL on local-first behavior and explicit cross-project selector rules.
 
@@ -81,17 +89,20 @@ Implement:
 - explicit global selector path
 - `run_id` lookup helpers in registry code
 - shared resolver path for CLI and serve
+- reject any remaining implicit global selector path in every `ResolveRun` consumer listed above
+- keep help-only code paths read-only while they share the same resolver entry points
+- teach `focus` and top-level help text the same selector vocabulary
 
 **Step 4: Re-run tests**
 
-Run: `go test ./cli -run 'TestResolveRun|TestFocus' -count=1`
+Run: `go test ./cli -run 'TestResolveRun|TestFocus|TestTell' -count=1 && go test ./cmd/goalx -run 'TestMain' -count=1`
 
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add cli/runctx.go cli/global_run_registry.go cli/project_registry.go cli/serve.go cli/runctx_test.go cli/focus_test.go
+git add cli/runctx.go cli/global_run_registry.go cli/project_registry.go cli/focus.go cli/serve.go cmd/goalx/main.go cli/runctx_test.go cli/focus_test.go cli/tell_test.go cmd/goalx/main_test.go
 git commit -m "refactor: make goalx run resolution local-first"
 ```
 
@@ -153,8 +164,12 @@ git commit -m "refactor: add goalx control v2 durable objects"
 - Modify: `cmd/goalx/main.go`
 - Modify: `cli/start.go`
 - Modify: `cli/stop.go`
+- Modify: `cli/drop.go`
 - Test: `cli/start_test.go`
 - Test: `cli/lifecycle_test.go`
+- Test: `cli/manual_config_test.go`
+- Test: `cli/git_test.go`
+- Test: `cmd/goalx/main_test.go`
 
 **Step 1: Write failing tests for sidecar lifecycle**
 
@@ -162,10 +177,13 @@ Cover:
 - `start` launches sidecar instead of heartbeat window
 - sidecar writes and renews its own lease
 - `stop` terminates sidecar and marks terminal run state
+- park/resume and session inventory flows no longer assume a dedicated heartbeat window
+- `drop` tears down sidecar and leases before removing the run dir
+- manual-config start paths and top-level CLI dispatch cover the new sidecar entrypoint
 
 **Step 2: Run the sidecar lifecycle tests**
 
-Run: `go test ./cli -run 'TestStart|TestLifecycle|TestSidecar' -count=1`
+Run: `go test ./cli -run 'TestStart|TestLifecycle|TestSidecar|TestDrop|TestManualConfig' -count=1 && go test ./cmd/goalx -run 'TestMain' -count=1`
 
 Expected: FAIL because sidecar command and lifecycle do not exist.
 
@@ -181,16 +199,18 @@ Implement a run-scoped loop that:
 
 Replace heartbeat tmux-window startup with sidecar startup and stop-sidecar cleanup.
 
+Update `drop` and related lifecycle helpers so daemonless teardown does not depend on tmux-session destruction alone.
+
 **Step 5: Re-run tests**
 
-Run: `go test ./cli -run 'TestStart|TestLifecycle|TestSidecar' -count=1`
+Run: `go test ./cli -run 'TestStart|TestLifecycle|TestSidecar|TestDrop|TestManualConfig' -count=1 && go test ./cmd/goalx -run 'TestMain' -count=1`
 
 Expected: PASS.
 
 **Step 6: Commit**
 
 ```bash
-git add cli/sidecar.go cli/sidecar_test.go cmd/goalx/main.go cli/start.go cli/stop.go cli/start_test.go cli/lifecycle_test.go
+git add cli/sidecar.go cli/sidecar_test.go cmd/goalx/main.go cli/start.go cli/stop.go cli/drop.go cli/start_test.go cli/lifecycle_test.go cli/manual_config_test.go cli/git_test.go cmd/goalx/main_test.go
 git commit -m "refactor: add run-scoped goalx sidecar"
 ```
 
@@ -243,11 +263,15 @@ git commit -m "refactor: decouple goalx heartbeat from wake delivery"
 - Create: `cli/reminder.go`
 - Create: `cli/delivery_test.go`
 - Create: `cli/reminder_test.go`
+- Modify: `cli/adapter.go`
 - Modify: `cli/tell.go`
 - Modify: `cli/guidance_state.go`
 - Modify: `cli/add.go`
 - Modify: `cli/lifecycle.go`
 - Modify: `cli/tmux.go`
+- Test: `cli/adapter_test.go`
+- Test: `cli/tell_test.go`
+- Test: `cli/serve_test.go`
 
 **Step 1: Write failing tests for durable delivery**
 
@@ -260,7 +284,7 @@ Cover:
 
 **Step 2: Run delivery and reminder tests**
 
-Run: `go test ./cli -run 'TestTell|TestDelivery|TestReminder|TestAdd|TestLifecycle' -count=1`
+Run: `go test ./cli -run 'TestTell|TestDelivery|TestReminder|TestAdd|TestLifecycle|TestServeHandlerTell|TestGenerate' -count=1`
 
 Expected: FAIL because durable delivery state does not exist.
 
@@ -271,19 +295,20 @@ Add:
 - delivery records
 - reminder scheduler
 - explicit transport adapter result updates
+- adapter hook semantics that respect durable inbox/delivery state instead of immediate wake delivery
 
 Keep session guidance durable, but route delivery through inbox and delivery state rather than immediate `send-keys`.
 
 **Step 4: Re-run tests**
 
-Run: `go test ./cli -run 'TestTell|TestDelivery|TestReminder|TestAdd|TestLifecycle' -count=1`
+Run: `go test ./cli -run 'TestTell|TestDelivery|TestReminder|TestAdd|TestLifecycle|TestServeHandlerTell|TestGenerate' -count=1`
 
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add cli/delivery.go cli/reminder.go cli/delivery_test.go cli/reminder_test.go cli/tell.go cli/guidance_state.go cli/add.go cli/lifecycle.go cli/tmux.go
+git add cli/delivery.go cli/reminder.go cli/delivery_test.go cli/reminder_test.go cli/adapter.go cli/tell.go cli/guidance_state.go cli/add.go cli/lifecycle.go cli/tmux.go cli/adapter_test.go cli/tell_test.go cli/serve_test.go
 git commit -m "refactor: add durable goalx reminder and delivery state"
 ```
 
@@ -294,9 +319,15 @@ git commit -m "refactor: add durable goalx reminder and delivery state"
 - Modify: `cli/status.go`
 - Modify: `cli/project_registry.go`
 - Modify: `cli/global_run_registry.go`
+- Modify: `cli/list.go`
+- Modify: `cli/next.go`
+- Modify: `cmd/goalx/main.go`
+- Create: `cli/list_test.go`
 - Test: `cli/status_test.go`
 - Test: `cli/storage_model_test.go`
 - Test: `cli/read_only_test.go`
+- Test: `cli/next_test.go`
+- Test: `cmd/goalx/main_test.go`
 
 **Step 1: Write failing tests for derived-status discipline**
 
@@ -304,10 +335,12 @@ Cover:
 - inactive/stopped runs do not show stale wake state
 - `status.json` is derived-only
 - no reverse sync from project status cache into run state
+- v2 `status` output derives from leases/deliveries/events, while legacy heartbeat fields remain compatibility-only when reading v1 data
+- `list` surfaces a canonical selector or `run_id` so explicit targeting remains discoverable
 
 **Step 2: Run the status tests**
 
-Run: `go test ./cli -run 'TestStatus|TestStorageModel|TestReadOnly' -count=1`
+Run: `go test ./cli -run 'TestStatus|TestStorageModel|TestReadOnly|TestNext|TestList' -count=1`
 
 Expected: FAIL because `syncRunStateFromProjectStatus()` still backwrites run state.
 
@@ -318,17 +351,18 @@ Implement:
 - no reverse sync into run runtime state
 - lease/event-based control summary
 - terminal-state rendering for stopped runs
+- `list` and `next` deriving activity/completion from run state plus leases rather than tmux-session existence
 
 **Step 4: Re-run tests**
 
-Run: `go test ./cli -run 'TestStatus|TestStorageModel|TestReadOnly' -count=1`
+Run: `go test ./cli -run 'TestStatus|TestStorageModel|TestReadOnly|TestNext|TestList' -count=1 && go test ./cmd/goalx -run 'TestMain' -count=1`
 
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add cli/runtime_state.go cli/status.go cli/project_registry.go cli/global_run_registry.go cli/status_test.go cli/storage_model_test.go cli/read_only_test.go
+git add cli/runtime_state.go cli/status.go cli/project_registry.go cli/global_run_registry.go cli/list.go cli/next.go cmd/goalx/main.go cli/list_test.go cli/status_test.go cli/storage_model_test.go cli/read_only_test.go cli/next_test.go cmd/goalx/main_test.go
 git commit -m "refactor: make goalx status cache derived-only"
 ```
 
@@ -337,8 +371,10 @@ git commit -m "refactor: make goalx status cache derived-only"
 **Files:**
 - Modify: `cli/observe.go`
 - Modify: `cli/serve.go`
+- Modify: `cli/attach.go`
 - Test: `cli/serve_test.go`
 - Test: `cli/read_only_test.go`
+- Test: `cli/git_test.go`
 
 **Step 1: Write failing tests for degraded transport**
 
@@ -346,6 +382,8 @@ Cover:
 - `observe` works without tmux by showing control/journal state
 - `serve /runs` derives activity from run state plus leases
 - `serve tell/status/observe` share the same resolver semantics as CLI
+- legacy tmux-first status hints stay isolated to explicit compatibility rendering rather than v2 default output
+- `attach` remains tmux-only, but its error/help text distinguishes degraded transport from stopped run state
 
 **Step 2: Run the transport-agnostic observer tests**
 
@@ -369,7 +407,7 @@ Expected: PASS.
 **Step 5: Commit**
 
 ```bash
-git add cli/observe.go cli/serve.go cli/serve_test.go cli/read_only_test.go
+git add cli/observe.go cli/serve.go cli/attach.go cli/serve_test.go cli/read_only_test.go cli/git_test.go
 git commit -m "refactor: make goalx observe and serve control-first"
 ```
 
@@ -378,10 +416,12 @@ git commit -m "refactor: make goalx observe and serve control-first"
 **Files:**
 - Create: `cli/proof.go`
 - Create: `cli/proof_test.go`
+- Modify: `cli/adapter.go`
 - Modify: `cli/completion.go`
 - Modify: `cli/goal_contract.go`
 - Modify: `cli/acceptance.go`
 - Modify: `cli/verify.go`
+- Test: `cli/adapter_test.go`
 - Test: `cli/goal_contract_test.go`
 - Test: `cli/verify_test.go`
 
@@ -394,7 +434,7 @@ Cover:
 
 **Step 2: Run proof tests**
 
-Run: `go test ./cli -run 'TestGoalContract|TestVerify|TestProof' -count=1`
+Run: `go test ./cli -run 'TestGoalContract|TestVerify|TestProof|TestGenerate' -count=1`
 
 Expected: FAIL because no proof manifest exists.
 
@@ -404,17 +444,18 @@ Add:
 - proof manifest schema
 - mapper from contract + acceptance + completion into proof checks
 - semantic evidence enforcement in `verify`
+- master adapter stop-hook checks aligned with control-v2 derived state and proof-manifest closeout rules
 
 **Step 4: Re-run tests**
 
-Run: `go test ./cli -run 'TestGoalContract|TestVerify|TestProof' -count=1`
+Run: `go test ./cli -run 'TestGoalContract|TestVerify|TestProof|TestGenerate' -count=1`
 
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add cli/proof.go cli/proof_test.go cli/completion.go cli/goal_contract.go cli/acceptance.go cli/verify.go cli/goal_contract_test.go cli/verify_test.go
+git add cli/proof.go cli/proof_test.go cli/adapter.go cli/completion.go cli/goal_contract.go cli/acceptance.go cli/verify.go cli/adapter_test.go cli/goal_contract_test.go cli/verify_test.go
 git commit -m "refactor: add canonical goalx completion proof manifest"
 ```
 
@@ -432,6 +473,7 @@ Cover:
 - protocol text references leases/events/inbox/delivery state
 - no `goalx-hb` or heartbeat-as-wake instructions remain
 - completion instructions require proof manifest semantics
+- no `HeartbeatStatePath`, heartbeat status-contract field, or tmux-window-as-control-plane narration remains in v2 templates
 
 **Step 2: Run protocol tests**
 
@@ -445,6 +487,7 @@ Implement:
 - new control object paths in protocol data
 - new sidecar/reminder/proof instructions
 - removal of stale wake-message narration
+- replacement of heartbeat/tmux session wording with lease/event/reminder terminology in templates and protocol fixtures
 
 **Step 4: Re-run tests**
 
@@ -464,6 +507,7 @@ git commit -m "refactor: align goalx agent protocols with control v2"
 **Files:**
 - Modify: `README.md`
 - Modify: `deploy/README.md`
+- Modify: `docs/test-findings.md`
 - Modify: `skill/SKILL.md`
 - Modify: `skill/references/advanced-control.md`
 - Modify: `skill/openclaw-skill/SKILL.md`
@@ -504,6 +548,7 @@ Rewrite `README.md` and `deploy/README.md` so they describe:
 - local-first run selection
 - transport-degraded but observable runs
 - HTTP API reading derived run state instead of tmux-centric state
+- either update `docs/test-findings.md` to match v2 or mark it explicitly historical so it does not contradict shipped guidance
 
 **Step 4: Update local and remote skills**
 
@@ -532,7 +577,7 @@ Expected: only intentional legacy/compatibility mentions remain.
 **Step 6: Commit**
 
 ```bash
-git add README.md deploy/README.md skill/SKILL.md skill/references/advanced-control.md skill/openclaw-skill/SKILL.md skill/agents/openai.yaml
+git add README.md deploy/README.md docs/test-findings.md skill/SKILL.md skill/references/advanced-control.md skill/openclaw-skill/SKILL.md skill/agents/openai.yaml
 git commit -m "docs: sync goalx docs and skills with control v2"
 ```
 
@@ -546,18 +591,24 @@ git commit -m "docs: sync goalx docs and skills with control v2"
 - Modify: `cli/verify.go`
 - Modify: `cli/save.go`
 - Modify: `cli/report.go`
+- Modify: `cli/review.go`
+- Modify: `cli/list.go`
+- Modify: `cli/next.go`
 - Test: `cli/read_only_test.go`
+- Test: `cli/review_test.go`
+- Test: `cli/next_test.go`
 
 **Step 1: Write failing tests for legacy compatibility**
 
 Cover:
 - v1 runs remain observable in read-only mode
 - no implicit migration during `status`, `observe`, `save`, `report`, `verify`
+- no implicit migration during `review`, `list`, `next`
 - explicit migration command or helper, if added, is the only writer
 
 **Step 2: Run compatibility tests**
 
-Run: `go test ./cli -run 'TestReadOnly|TestMigrate|TestSave|TestReport|TestVerify' -count=1`
+Run: `go test ./cli -run 'TestReadOnly|TestMigrate|TestSave|TestReport|TestReview|TestVerify|TestNext' -count=1`
 
 Expected: FAIL because v2 compatibility boundaries are not enforced.
 
@@ -571,14 +622,14 @@ Implement:
 
 **Step 4: Re-run tests**
 
-Run: `go test ./cli -run 'TestReadOnly|TestMigrate|TestSave|TestReport|TestVerify' -count=1`
+Run: `go test ./cli -run 'TestReadOnly|TestMigrate|TestSave|TestReport|TestReview|TestVerify|TestNext' -count=1`
 
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add cli/migrate.go cli/migrate_test.go cli/status.go cli/observe.go cli/verify.go cli/save.go cli/report.go cli/read_only_test.go
+git add cli/migrate.go cli/migrate_test.go cli/status.go cli/observe.go cli/verify.go cli/save.go cli/report.go cli/review.go cli/list.go cli/next.go cli/read_only_test.go cli/review_test.go cli/next_test.go
 git commit -m "refactor: add goalx legacy compatibility guardrails"
 ```
 
@@ -598,6 +649,9 @@ Cover:
 - no stale control summary after stop
 - no unsafe Codex wake transport
 - local-first resolution documented and tested
+- every `ResolveRun` consumer either uses the shared local-first selector or intentionally remains transport-only
+- `list` / `next` do not infer truth from tmux-session existence alone
+- protocol templates and adapter hooks contain no `goalx-hb` or heartbeat-as-wake guidance
 
 **Step 2: Run focused CLI regression**
 
@@ -637,11 +691,12 @@ Expected: PASS.
 **Step 2: Spot-check command semantics**
 
 Run:
+- `goalx --help`
 - `goalx status --help`
 - `goalx observe --help`
 - `goalx tell --help`
 
-Expected: commands render usage and no legacy heartbeat guidance remains in docs or output.
+Expected: commands render usage, selector wording is consistent, and no legacy heartbeat guidance remains in docs or output.
 
 **Step 3: Review git diff for dead compatibility leftovers**
 
@@ -659,14 +714,17 @@ git commit -m "test: verify goalx control v2 rollout"
 ## Cross-Cutting Review Checklist
 
 - Every mutating command now resolves runs local-first.
+- Every read-only `ResolveRun` consumer now resolves runs local-first or explicitly requires `project-id/run` or `run_id`.
 - Every observer command is transport-agnostic.
 - Every active run has identity, state, lease, inbox, reminder, and delivery objects.
 - Sidecar is per-run and stoppable; no hidden global daemon exists.
 - `status.json` is derived-only.
+- `list` and `next` use derived run state instead of tmux-session heuristics.
 - README, deploy docs, and shipped skills match control-v2 semantics.
 - Legacy v1 runs are readable without implicit migration.
 - Proof manifest is the canonical closeout gate.
 - Protocol templates and Go implementation ship in the same batch.
+- Generated adapter hooks and stop-guard logic match proof-manifest and control-v2 semantics.
 
 ## Risks To Reject During Implementation
 
