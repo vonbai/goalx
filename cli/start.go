@@ -234,12 +234,12 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	tmuxCreated = true
 
 	// Set master working directory to project root
-	if err := SendKeys(tmuxSess+":master", "cd "+absProjectRoot); err != nil {
+	if err := SendKeys(tmuxSess+":master", "cd "+shellQuote(absProjectRoot)); err != nil {
 		return fmt.Errorf("set master cwd: %w", err)
 	}
 
 	// Launch master
-	masterLaunch := fmt.Sprintf("%s %q", masterCmd, masterPrompt)
+	masterLaunch := buildEngineLaunchCommand(masterCmd, masterPrompt)
 	if err := SendKeys(tmuxSess+":master", masterLaunch); err != nil {
 		return fmt.Errorf("launch master: %w", err)
 	}

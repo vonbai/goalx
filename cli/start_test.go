@@ -398,3 +398,112 @@ esac
 		}
 	}
 }
+
+func TestStartLaunchesMasterWithRuntimeEnv(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	goalxDir := filepath.Join(repo, ".goalx")
+	if err := os.MkdirAll(goalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	cfg := goalx.Config{
+		Name:      "demo",
+		Mode:      goalx.ModeResearch,
+		Objective: "audit auth flow",
+		Engine:    "codex",
+		Model:     "codex",
+		Target: goalx.TargetConfig{
+			Files: []string{"README.md"},
+		},
+		Harness: goalx.HarnessConfig{Command: "test -f README.md"},
+		Master: goalx.MasterConfig{
+			Engine: "codex",
+			Model:  "codex",
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(goalxDir, "goalx.yaml"), data, 0o644); err != nil {
+		t.Fatalf("write goalx.yaml: %v", err)
+	}
+
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	tmuxPath := filepath.Join(binDir, "tmux")
+	script := `#!/bin/sh
+set -eu
+state="${GOALX_FAKE_TMUX_STATE:?}"
+mkdir -p "$state"
+log="$state/log"
+cmd="$1"
+shift
+echo "$cmd $*" >> "$log"
+case "$cmd" in
+  has-session)
+    target="$2"
+    if [ -f "$state/session_$target" ]; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  new-session)
+    name=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "-s" ]; then
+        shift
+        name="$1"
+        break
+      fi
+      shift
+    done
+    : > "$state/session_$name"
+    exit 0
+    ;;
+  kill-session)
+    target="$2"
+    rm -f "$state/session_$target"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", binDir+":"+"/tmp/goalx-bin:/usr/bin")
+	t.Setenv("OPENAI_API_KEY", "sk-goalx")
+	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
+
+	origLaunchSidecar := launchRunSidecar
+	defer func() { launchRunSidecar = origLaunchSidecar }()
+	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+
+	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	logData, err := os.ReadFile(filepath.Join(stateDir, "log"))
+	if err != nil {
+		t.Fatalf("read fake tmux log: %v", err)
+	}
+	logText := string(logData)
+	for _, want := range []string{
+		"send-keys -t " + goalx.TmuxSessionName(repo, cfg.Name) + ":master env ",
+		"HOME='" + home + "'",
+		"PATH='" + binDir + ":/tmp/goalx-bin:/usr/bin'",
+		"OPENAI_API_KEY='sk-goalx'",
+		"codex -m gpt-5.4 -a never -s danger-full-access",
+	} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("start launch log missing %q:\n%s", want, logText)
+		}
+	}
+}

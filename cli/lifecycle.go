@@ -202,7 +202,7 @@ func Resume(projectRoot string, args []string) error {
 	if err := NewWindow(rc.TmuxSession, windowName, wtPath); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
-	launchCmd := fmt.Sprintf("%s %q", engineCmd, prompt)
+	launchCmd := buildEngineLaunchCommand(engineCmd, prompt)
 	if err := SendKeys(rc.TmuxSession+":"+windowName, launchCmd); err != nil {
 		return fmt.Errorf("launch subagent: %w", err)
 	}

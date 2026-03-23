@@ -296,6 +296,95 @@ acceptance:
 	}
 }
 
+func TestAddLaunchesSessionWithRuntimeEnv(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	logPath := filepath.Join(fakeBin, "tmux.log")
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := `#!/bin/sh
+echo "$@" >> "$TMUX_LOG"
+case "$1" in
+  has-session)
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("TMUX_LOG", logPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+"/tmp/goalx-bin:/usr/bin")
+	t.Setenv("ANTHROPIC_API_KEY", "anthropic-test")
+
+	runName := "add-run"
+	runDir := goalx.RunDir(repo, runName)
+	for _, dir := range []string{
+		runDir,
+		filepath.Join(runDir, "journals"),
+		filepath.Join(runDir, "worktrees"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+engine: codex
+model: codex
+roles:
+  research:
+    engine: claude-code
+    model: opus
+parallel: 1
+sessions:
+  - hint: first
+target:
+  files: ["."]
+harness:
+  command: "go test ./..."
+`)
+	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
+	}
+	if err := EnsureMasterControl(runDir); err != nil {
+		t.Fatalf("EnsureMasterControl: %v", err)
+	}
+
+	if err := Add(repo, []string{"--run", runName, "--mode", "research", "audit root cause"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	logText := string(logData)
+	for _, want := range []string{
+		"send-keys -t " + goalx.TmuxSessionName(repo, runName) + ":session-2 env ",
+		"HOME='" + home + "'",
+		"PATH='" + fakeBin + ":/tmp/goalx-bin:/usr/bin'",
+		"ANTHROPIC_API_KEY='anthropic-test'",
+		"claude --model claude-opus-4-6 --permission-mode auto --disable-slash-commands",
+	} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("add launch log missing %q:\n%s", want, logText)
+		}
+	}
+}
+
 func TestAddNotifiesMasterViaInbox(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
