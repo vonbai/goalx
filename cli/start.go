@@ -93,7 +93,6 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	dirs := []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "guidance"),
 		filepath.Join(runDir, "worktrees"),
 		filepath.Join(projectRoot, ".goalx"),
 	}
@@ -159,7 +158,6 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		MasterCursorPath:       MasterCursorPath(runDir),
 		ControlRunIdentityPath: ControlRunIdentityPath(runDir),
 		ControlRunStatePath:    ControlRunStatePath(runDir),
-		ControlEventsPath:      ControlEventsPath(runDir),
 		MasterLeasePath:        ControlLeasePath(runDir, "master"),
 		SidecarLeasePath:       ControlLeasePath(runDir, "sidecar"),
 		ControlRemindersPath:   ControlRemindersPath(runDir),

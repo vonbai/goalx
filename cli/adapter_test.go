@@ -10,22 +10,23 @@ import (
 	"testing"
 )
 
-func TestGenerateAdapterQuotesGuidancePath(t *testing.T) {
+func TestGenerateAdapterBlocksOnUnreadSessionInbox(t *testing.T) {
 	worktree := filepath.Join(t.TempDir(), "worktree")
 	if err := os.MkdirAll(worktree, 0o755); err != nil {
 		t.Fatalf("mkdir worktree: %v", err)
 	}
 
-	guidanceDir := filepath.Join(t.TempDir(), "guidance with 'quote'")
-	if err := os.MkdirAll(guidanceDir, 0o755); err != nil {
-		t.Fatalf("mkdir guidance dir: %v", err)
+	controlDir := filepath.Join(t.TempDir(), "control with 'quote'")
+	if err := os.MkdirAll(filepath.Join(controlDir, "inbox"), 0o755); err != nil {
+		t.Fatalf("mkdir control dir: %v", err)
 	}
-	guidancePath := filepath.Join(guidanceDir, "session 1.md")
-	if err := os.WriteFile(guidancePath, []byte("pending\n"), 0o644); err != nil {
-		t.Fatalf("write guidance file: %v", err)
+	inboxPath := filepath.Join(controlDir, "inbox", "session 1.jsonl")
+	cursorPath := filepath.Join(controlDir, "session 1-cursor.json")
+	if err := os.WriteFile(inboxPath, []byte(`{"id":1,"type":"tell","source":"user","body":"pending","created_at":"2026-03-24T00:00:00Z"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write inbox file: %v", err)
 	}
 
-	if err := GenerateAdapter("claude-code", worktree, guidancePath); err != nil {
+	if err := GenerateAdapter("claude-code", worktree, inboxPath, cursorPath); err != nil {
 		t.Fatalf("GenerateAdapter: %v", err)
 	}
 
@@ -55,11 +56,11 @@ func TestGenerateAdapterQuotesGuidancePath(t *testing.T) {
 	if exitErr.ExitCode() != 2 {
 		t.Fatalf("exit code = %d, want 2", exitErr.ExitCode())
 	}
-	if !strings.Contains(string(out), "GUIDANCE PENDING") {
-		t.Fatalf("hook output = %q, want guidance warning", string(out))
+	if !strings.Contains(string(out), "INBOX PENDING") {
+		t.Fatalf("hook output = %q, want inbox warning", string(out))
 	}
-	if !strings.Contains(string(out), guidancePath) {
-		t.Fatalf("hook output = %q, want path %q", string(out), guidancePath)
+	if !strings.Contains(string(out), inboxPath) {
+		t.Fatalf("hook output = %q, want path %q", string(out), inboxPath)
 	}
 }
 

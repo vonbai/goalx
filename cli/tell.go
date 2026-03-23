@@ -33,14 +33,14 @@ func Tell(projectRoot string, args []string) error {
 	return nil
 }
 
-// AckGuidance marks the current session guidance version as observed by the subagent.
-func AckGuidance(projectRoot string, args []string) error {
+// AckSession marks the current session inbox as observed by the subagent.
+func AckSession(projectRoot string, args []string) error {
 	runName, rest, err := extractRunFlag(args)
 	if err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: goalx ack-guidance [--run NAME] <session-name>")
+		return fmt.Errorf("usage: goalx ack-session [--run NAME] <session-name>")
 	}
 	sessionName := rest[0]
 
@@ -59,18 +59,10 @@ func AckGuidance(projectRoot string, args []string) error {
 	if !ok {
 		return fmt.Errorf("session %q out of range for run %q", sessionName, rc.Name)
 	}
-	if err := AckSessionGuidance(rc.RunDir, sessionName); err != nil {
+	if _, err := AckControlInbox(rc.RunDir, sessionName); err != nil {
 		return err
 	}
-	if guidance, err := LoadSessionGuidanceState(SessionGuidanceStatePath(rc.RunDir, sessionName)); err == nil && guidance != nil {
-		_ = UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
-			Name:            sessionName,
-			GuidanceVersion: guidance.Version,
-			GuidancePending: guidance.Pending,
-			LastAckVersion:  guidance.LastAckVersion,
-		})
-	}
-	fmt.Printf("Acknowledged guidance for %s in run '%s'\n", sessionName, rc.Name)
+	fmt.Printf("Acknowledged session inbox for %s in run '%s'\n", sessionName, rc.Name)
 	return nil
 }
 
@@ -126,16 +118,9 @@ func deliverTell(projectRoot, runName, target, message string, nudge func(target
 	if !ok {
 		return "", "", fmt.Errorf("session %q out of range for run %q", target, rc.Name)
 	}
-	if err := WriteSessionGuidance(rc.RunDir, target, message); err != nil {
+	msg, err := AppendControlInboxMessage(rc.RunDir, target, "tell", "user", message)
+	if err != nil {
 		return "", "", err
-	}
-	if guidance, err := LoadSessionGuidanceState(SessionGuidanceStatePath(rc.RunDir, target)); err == nil && guidance != nil {
-		_ = UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
-			Name:            target,
-			GuidanceVersion: guidance.Version,
-			GuidancePending: guidance.Pending,
-			LastAckVersion:  guidance.LastAckVersion,
-		})
 	}
 	windowName, err := resolveWindowName(rc.Name, target)
 	if err != nil {
@@ -143,11 +128,7 @@ func deliverTell(projectRoot, runName, target, message string, nudge func(target
 	}
 	effective := goalx.EffectiveSessionConfig(rc.Config, idx-1)
 	if nudge != nil {
-		guidance, err := LoadSessionGuidanceState(SessionGuidanceStatePath(rc.RunDir, target))
-		if err != nil {
-			return "", "", err
-		}
-		messageID := fmt.Sprintf("guidance:%s:%d", target, guidance.Version)
+		messageID := fmt.Sprintf("session-inbox:%s:%d", target, msg.ID)
 		if _, err := DeliverControlNudge(rc.RunDir, messageID, messageID, rc.TmuxSession+":"+windowName, effective.Engine, nudge); err != nil {
 			return "", "", err
 		}

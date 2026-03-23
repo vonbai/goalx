@@ -82,7 +82,7 @@ func Verify(projectRoot string, args []string) error {
 	if completionErr != nil {
 		output = append(output, []byte("\n[completion]\n"+completionErr.Error()+"\n")...)
 	}
-	proofErr := ValidateCompletionStateForVerification(completion, goalContract, state)
+	proofErr := ValidateCompletionStateForVerification(rc.ProjectRoot, completion, goalContract, state)
 	if proofErr != nil {
 		output = append(output, []byte("\n[proof]\n"+proofErr.Error()+"\n")...)
 	}

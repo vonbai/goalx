@@ -15,6 +15,7 @@ func TestVerifyUsesAcceptanceCommandAndWritesState(t *testing.T) {
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	ensureSharedProofEvidence(t)
 
 	runName := "verify-run"
 	runDir := goalx.RunDir(repo, runName)
@@ -110,6 +111,7 @@ func TestVerifyFallsBackToHarnessAndRecordsFailure(t *testing.T) {
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	ensureSharedProofEvidence(t)
 
 	runName := "verify-run"
 	runDir := goalx.RunDir(repo, runName)
@@ -183,6 +185,7 @@ func TestVerifyFailsWhenAcceptanceCommandDiffersFromBaselineWithoutScopeMetadata
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	ensureSharedProofEvidence(t)
 
 	runName := "verify-acceptance-scope"
 	runDir := goalx.RunDir(repo, runName)
@@ -257,6 +260,7 @@ func TestVerifyRecordsImplementationAndVerificationWhenRunChangedCode(t *testing
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
 	baseRevision := strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD"))
+	ensureSharedProofEvidence(t)
 
 	runName := "verify-code-changed"
 	runDir := goalx.RunDir(repo, runName)

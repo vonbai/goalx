@@ -48,9 +48,6 @@ type SessionRuntimeState struct {
 	WorktreePath     string `json:"worktree_path,omitempty"`
 	OwnerScope       string `json:"owner_scope,omitempty"`
 	BlockedBy        string `json:"blocked_by,omitempty"`
-	GuidanceVersion  int    `json:"guidance_version,omitempty"`
-	GuidancePending  bool   `json:"guidance_pending,omitempty"`
-	LastAckVersion   int    `json:"last_ack_version,omitempty"`
 	DirtyFiles       int    `json:"dirty_files,omitempty"`
 	DiffStat         string `json:"diff_stat,omitempty"`
 	LastRound        int    `json:"last_round,omitempty"`
@@ -244,11 +241,6 @@ func mergeSessionRuntimeState(dst *SessionRuntimeState, src SessionRuntimeState)
 	if src.BlockedBy != "" || src.State == "blocked" {
 		dst.BlockedBy = src.BlockedBy
 	}
-	if src.GuidanceVersion != 0 || src.GuidancePending || src.LastAckVersion != 0 {
-		dst.GuidanceVersion = src.GuidanceVersion
-		dst.GuidancePending = src.GuidancePending
-		dst.LastAckVersion = src.LastAckVersion
-	}
 	if src.DirtyFiles != 0 || src.DiffStat != "" {
 		dst.DirtyFiles = src.DirtyFiles
 		dst.DiffStat = src.DiffStat
@@ -279,7 +271,6 @@ func SnapshotSessionRuntime(runDir, sessionName, worktreePath string) (SessionRu
 		lastJournalState = last.Status
 		lastTestSummary = summarizeJournalForTest(journalEntries)
 	}
-	guidance, _ := LoadSessionGuidanceState(SessionGuidanceStatePath(runDir, sessionName))
 	snapshot := SessionRuntimeState{
 		Name:             sessionName,
 		WorktreePath:     worktreePath,
@@ -288,11 +279,6 @@ func SnapshotSessionRuntime(runDir, sessionName, worktreePath string) (SessionRu
 		LastRound:        lastRound,
 		LastJournalState: lastJournalState,
 		LastTestSummary:  lastTestSummary,
-	}
-	if guidance != nil {
-		snapshot.GuidanceVersion = guidance.Version
-		snapshot.GuidancePending = guidance.Pending
-		snapshot.LastAckVersion = guidance.LastAckVersion
 	}
 	return snapshot, nil
 }

@@ -40,6 +40,10 @@ func MasterCursorPath(runDir string) string {
 	return filepath.Join(ControlDir(runDir), "master-cursor.json")
 }
 
+func SessionCursorPath(runDir, sessionName string) string {
+	return filepath.Join(ControlDir(runDir), sessionName+"-cursor.json")
+}
+
 func EnsureMasterControl(runDir string) error {
 	if err := os.MkdirAll(ControlDir(runDir), 0o755); err != nil {
 		return fmt.Errorf("mkdir control dir: %w", err)
@@ -61,6 +65,24 @@ func EnsureMasterControl(runDir string) error {
 	return nil
 }
 
+func EnsureSessionControl(runDir, sessionName string) error {
+	if err := EnsureMasterControl(runDir); err != nil {
+		return err
+	}
+	if err := ensureEmptyFile(ControlInboxPath(runDir, sessionName)); err != nil {
+		return err
+	}
+	if _, err := LoadMasterCursorState(SessionCursorPath(runDir, sessionName)); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if err := SaveMasterCursorState(SessionCursorPath(runDir, sessionName), &MasterCursorState{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func ensureEmptyFile(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
@@ -77,10 +99,23 @@ func ensureEmptyFile(path string) error {
 }
 
 func AppendMasterInboxMessage(runDir, typ, source, body string) (MasterInboxMessage, error) {
+	return AppendControlInboxMessage(runDir, "master", typ, source, body)
+}
+
+func AppendControlInboxMessage(runDir, target, typ, source, body string) (MasterInboxMessage, error) {
 	if err := EnsureMasterControl(runDir); err != nil {
 		return MasterInboxMessage{}, err
 	}
-	nextID, err := nextMasterInboxID(MasterInboxPath(runDir))
+	if target != "master" {
+		if err := EnsureSessionControl(runDir, target); err != nil {
+			return MasterInboxMessage{}, err
+		}
+	}
+	inboxPath := MasterInboxPath(runDir)
+	if target != "master" {
+		inboxPath = ControlInboxPath(runDir, target)
+	}
+	nextID, err := nextMasterInboxID(inboxPath)
 	if err != nil {
 		return MasterInboxMessage{}, err
 	}
@@ -91,9 +126,9 @@ func AppendMasterInboxMessage(runDir, typ, source, body string) (MasterInboxMess
 		Body:      body,
 		CreatedAt: time.Now().Format(time.RFC3339),
 	}
-	f, err := os.OpenFile(MasterInboxPath(runDir), os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(inboxPath, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		return MasterInboxMessage{}, fmt.Errorf("open master inbox: %w", err)
+		return MasterInboxMessage{}, fmt.Errorf("open control inbox: %w", err)
 	}
 	defer f.Close()
 	line, err := json.Marshal(msg)
@@ -101,9 +136,59 @@ func AppendMasterInboxMessage(runDir, typ, source, body string) (MasterInboxMess
 		return MasterInboxMessage{}, fmt.Errorf("marshal master inbox message: %w", err)
 	}
 	if _, err := f.Write(append(line, '\n')); err != nil {
-		return MasterInboxMessage{}, fmt.Errorf("append master inbox: %w", err)
+		return MasterInboxMessage{}, fmt.Errorf("append control inbox: %w", err)
 	}
 	return msg, nil
+}
+
+func AckControlInbox(runDir, target string) (*MasterCursorState, error) {
+	inboxPath := MasterInboxPath(runDir)
+	cursorPath := MasterCursorPath(runDir)
+	if target != "master" {
+		if err := EnsureSessionControl(runDir, target); err != nil {
+			return nil, err
+		}
+		inboxPath = ControlInboxPath(runDir, target)
+		cursorPath = SessionCursorPath(runDir, target)
+	} else {
+		if err := EnsureMasterControl(runDir); err != nil {
+			return nil, err
+		}
+	}
+	lastID, err := nextMasterInboxID(inboxPath)
+	if err != nil {
+		return nil, err
+	}
+	cursor := &MasterCursorState{}
+	if lastID > 0 {
+		cursor.LastSeenID = lastID - 1
+	}
+	if err := SaveMasterCursorState(cursorPath, cursor); err != nil {
+		return nil, err
+	}
+	return cursor, nil
+}
+
+func unreadControlInboxCount(inboxPath, cursorPath string) int {
+	cursor, _ := LoadMasterCursorState(cursorPath)
+	f, err := os.ReadFile(inboxPath)
+	if err != nil {
+		return 0
+	}
+	lastID := int64(0)
+	for _, line := range splitNonEmptyLines(string(f)) {
+		var msg MasterInboxMessage
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			continue
+		}
+		if msg.ID > lastID {
+			lastID = msg.ID
+		}
+	}
+	if cursor == nil || lastID <= cursor.LastSeenID {
+		return int(lastID)
+	}
+	return int(lastID - cursor.LastSeenID)
 }
 
 func nextMasterInboxID(path string) (int64, error) {

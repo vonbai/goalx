@@ -9,7 +9,7 @@ import (
 	goalx "github.com/vonbai/goalx"
 )
 
-func TestTellWritesSessionGuidanceStateAndNudges(t *testing.T) {
+func TestTellWritesSessionInboxAndNudges(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -36,20 +36,18 @@ func TestTellWritesSessionGuidanceStateAndNudges(t *testing.T) {
 		t.Fatalf("tell output = %q, want session target", out)
 	}
 
-	guidanceData, err := os.ReadFile(GuidancePath(runDir, "session-1"))
+	inboxData, err := os.ReadFile(ControlInboxPath(runDir, "session-1"))
 	if err != nil {
-		t.Fatalf("read guidance: %v", err)
+		t.Fatalf("read session inbox: %v", err)
 	}
-	if string(guidanceData) != "focus on db race triage\n" {
-		t.Fatalf("guidance = %q", string(guidanceData))
+	text := string(inboxData)
+	for _, want := range []string{`"type":"tell"`, `"source":"user"`, `"body":"focus on db race triage"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("session inbox missing %q:\n%s", want, text)
+		}
 	}
-
-	state, err := LoadSessionGuidanceState(SessionGuidanceStatePath(runDir, "session-1"))
-	if err != nil {
-		t.Fatalf("LoadSessionGuidanceState: %v", err)
-	}
-	if state == nil || state.Version != 1 || !state.Pending {
-		t.Fatalf("guidance state = %#v, want pending version 1", state)
+	if _, err := os.Stat(filepath.Join(runDir, "guidance")); !os.IsNotExist(err) {
+		t.Fatalf("legacy guidance directory should not exist, stat err = %v", err)
 	}
 
 	wantTarget := goalx.TmuxSessionName(repo, runName) + ":" + sessionWindowName(runName, 1)
@@ -149,12 +147,12 @@ func TestTellHelpDoesNotDeliverAnything(t *testing.T) {
 	if called {
 		t.Fatal("Tell --help should not nudge any target")
 	}
-	if _, err := os.Stat(SessionGuidanceStatePath(runDir, "session-1")); !os.IsNotExist(err) {
-		t.Fatalf("guidance state should not be created by help, stat err = %v", err)
+	if _, err := os.Stat(ControlInboxPath(runDir, "session-1")); !os.IsNotExist(err) {
+		t.Fatalf("session inbox should not be created by help, stat err = %v", err)
 	}
 }
 
-func TestAckGuidanceMarksLatestVersionConsumed(t *testing.T) {
+func TestAckSessionMarksLatestInboxEntryConsumed(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -162,33 +160,30 @@ func TestAckGuidanceMarksLatestVersionConsumed(t *testing.T) {
 	writeAndCommit(t, repo, "base.txt", "base", "base commit")
 	runName, runDir := writeLifecycleRunFixture(t, repo)
 
-	if err := WriteSessionGuidance(runDir, "session-1", "focus on db race triage"); err != nil {
-		t.Fatalf("WriteSessionGuidance: %v", err)
+	if _, err := AppendControlInboxMessage(runDir, "session-1", "tell", "user", "focus on db race triage"); err != nil {
+		t.Fatalf("AppendControlInboxMessage: %v", err)
 	}
 
-	if err := AckGuidance(repo, []string{"--run", runName, "session-1"}); err != nil {
-		t.Fatalf("AckGuidance: %v", err)
+	if err := AckSession(repo, []string{"--run", runName, "session-1"}); err != nil {
+		t.Fatalf("AckSession: %v", err)
 	}
 
-	state, err := LoadSessionGuidanceState(SessionGuidanceStatePath(runDir, "session-1"))
+	state, err := LoadMasterCursorState(SessionCursorPath(runDir, "session-1"))
 	if err != nil {
-		t.Fatalf("LoadSessionGuidanceState: %v", err)
+		t.Fatalf("LoadMasterCursorState: %v", err)
 	}
 	if state == nil {
-		t.Fatal("guidance state missing")
+		t.Fatal("session cursor missing")
 	}
-	if state.Pending {
-		t.Fatalf("guidance state pending = true, want false")
+	if state.LastSeenID != 1 {
+		t.Fatalf("last seen id = %d, want 1", state.LastSeenID)
 	}
-	if state.LastAckVersion != state.Version {
-		t.Fatalf("last ack version = %d, want %d", state.LastAckVersion, state.Version)
-	}
-	if state.LastAckAt == "" {
-		t.Fatalf("last ack at empty")
+	if state.UpdatedAt == "" {
+		t.Fatalf("updated at empty")
 	}
 }
 
-func TestStatusShowsGuidancePendingForSession(t *testing.T) {
+func TestStatusShowsInboxPendingForSession(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -199,8 +194,11 @@ func TestStatusShowsGuidancePendingForSession(t *testing.T) {
 	if err := os.WriteFile(JournalPath(runDir, "session-1"), []byte(`{"round":2,"desc":"awaiting master","status":"idle"}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write session journal: %v", err)
 	}
-	if err := WriteSessionGuidance(runDir, "session-1", "focus on db race triage"); err != nil {
-		t.Fatalf("WriteSessionGuidance: %v", err)
+	if err := os.MkdirAll(ControlInboxDir(runDir), 0o755); err != nil {
+		t.Fatalf("mkdir control inbox dir: %v", err)
+	}
+	if err := os.WriteFile(ControlInboxPath(runDir, "session-1"), []byte(`{"id":1,"type":"tell","source":"user","body":"focus on db race triage","created_at":"2026-03-24T00:00:00Z"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write session inbox: %v", err)
 	}
 
 	out := captureStdout(t, func() {
@@ -209,12 +207,12 @@ func TestStatusShowsGuidancePendingForSession(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(out, "guidance-pending") {
-		t.Fatalf("status output missing guidance-pending:\n%s", out)
+	if !strings.Contains(out, "inbox-pending") {
+		t.Fatalf("status output missing inbox-pending:\n%s", out)
 	}
 }
 
-func TestRenderSubagentProtocolIncludesGuidanceStateAckPath(t *testing.T) {
+func TestRenderSubagentProtocolIncludesSessionInboxAckPath(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
 		RunName:           "demo",
@@ -222,8 +220,8 @@ func TestRenderSubagentProtocolIncludesGuidanceStateAckPath(t *testing.T) {
 		Mode:              goalx.ModeDevelop,
 		ProjectRoot:       "/tmp/project",
 		SessionName:       "session-1",
-		GuidancePath:      "/tmp/guidance/session-1.md",
-		GuidanceStatePath: "/tmp/control/session-1-guidance.json",
+		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath: "/tmp/control/session-1-cursor.json",
 		JournalPath:       "/tmp/journals/session-1.jsonl",
 		Target:            goalx.TargetConfig{Files: []string{"."}},
 		Harness:           goalx.HarnessConfig{Command: "go test ./..."},
@@ -239,9 +237,10 @@ func TestRenderSubagentProtocolIncludesGuidanceStateAckPath(t *testing.T) {
 	}
 	text := string(out)
 	for _, want := range []string{
-		"/tmp/control/session-1-guidance.json",
-		"goalx ack-guidance --run demo session-1",
-		"cd /tmp/project && goalx ack-guidance --run demo session-1",
+		"/tmp/control/inbox/session-1.jsonl",
+		"/tmp/control/session-1-cursor.json",
+		"goalx ack-session --run demo session-1",
+		"cd /tmp/project && goalx ack-session --run demo session-1",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered subagent protocol missing %q:\n%s", want, text)

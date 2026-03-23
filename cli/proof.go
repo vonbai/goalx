@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -59,7 +61,7 @@ func ValidateGoalContractStructuredProof(item GoalContractItem) error {
 	return nil
 }
 
-func ValidateCompletionStateForVerification(completion *CompletionState, contract *GoalContractState, acceptance *AcceptanceState) error {
+func ValidateCompletionStateForVerification(projectRoot string, completion *CompletionState, contract *GoalContractState, acceptance *AcceptanceState) error {
 	if completion == nil {
 		return fmt.Errorf("completion proof manifest is missing")
 	}
@@ -95,16 +97,45 @@ func ValidateCompletionStateForVerification(completion *CompletionState, contrac
 			if err := ValidateGoalContractStructuredProof(item); err != nil {
 				return err
 			}
+			if err := validateStructuredProofEvidence(projectRoot, item); err != nil {
+				return err
+			}
 			if strings.TrimSpace(proof.SatisfactionBasis) != strings.TrimSpace(item.SatisfactionBasis) {
 				return fmt.Errorf("completion proof requirement %s has satisfaction_basis=%q but goal contract says %q", item.ID, proof.SatisfactionBasis, item.SatisfactionBasis)
 			}
 			if strings.TrimSpace(proof.EvidenceClass) == "" || len(proof.EvidencePaths) == 0 || len(proof.CounterEvidence) == 0 || strings.TrimSpace(proof.SemanticMatch) == "" {
 				return fmt.Errorf("completion proof requirement %s is missing structured proof fields", item.ID)
 			}
+			if strings.TrimSpace(proof.SemanticMatch) != "exact" {
+				return fmt.Errorf("completion proof requirement %s must use semantic_match=exact for done items", item.ID)
+			}
 		case goalContractStatusWaived:
 			if !item.UserApproved || !proof.UserApproved {
 				return fmt.Errorf("completion proof requirement %s is waived without explicit user approval", item.ID)
 			}
+		}
+	}
+	return nil
+}
+
+func validateStructuredProofEvidence(projectRoot string, item GoalContractItem) error {
+	if strings.TrimSpace(item.SemanticMatch) != "exact" {
+		return fmt.Errorf("goal contract item %s is done but semantic_match=%q; done items require semantic_match=exact", item.ID, item.SemanticMatch)
+	}
+	for _, evidencePath := range item.Evidence {
+		evidencePath = strings.TrimSpace(evidencePath)
+		if evidencePath == "" {
+			return fmt.Errorf("goal contract item %s has empty evidence path", item.ID)
+		}
+		resolved := evidencePath
+		if !filepath.IsAbs(resolved) {
+			resolved = filepath.Join(projectRoot, resolved)
+		}
+		if _, err := os.Stat(resolved); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("goal contract item %s evidence path %s does not exist", item.ID, evidencePath)
+			}
+			return fmt.Errorf("goal contract item %s evidence path %s: %w", item.ID, evidencePath, err)
 		}
 	}
 	return nil

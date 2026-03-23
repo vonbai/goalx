@@ -16,6 +16,7 @@ func TestObserveLeavesRunAndStatusStateUntouched(t *testing.T) {
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	ensureSharedProofEvidence(t)
 	logPath := installFakeTmux(t, "master")
 
 	runName, runDir, runStateBefore, statusBefore := writeReadOnlyRunFixture(t, repo)

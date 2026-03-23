@@ -21,11 +21,16 @@ func Pulse(projectRoot string, args []string) error {
 	if err := EnsureMasterControl(rc.RunDir); err != nil {
 		return fmt.Errorf("ensure master control: %w", err)
 	}
-	if !SessionExists(rc.TmuxSession) {
-		return nil
-	}
-	if _, err := QueueControlReminder(rc.RunDir, "master-wake", "control-cycle", rc.TmuxSession+":master"); err != nil {
+	if err := queueMasterWakeReminder(rc.RunDir, rc.TmuxSession); err != nil {
 		return fmt.Errorf("queue master wake reminder: %w", err)
 	}
 	return nil
+}
+
+func queueMasterWakeReminder(runDir, tmuxSession string) error {
+	if !SessionExists(tmuxSession) {
+		return nil
+	}
+	_, err := QueueControlReminder(runDir, "master-wake", "control-cycle", tmuxSession+":master")
+	return err
 }

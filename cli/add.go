@@ -93,7 +93,6 @@ func Add(projectRoot string, args []string) error {
 	sName := SessionName(newNum)
 	wtPath := WorktreePath(rc.RunDir, rc.Config.Name, newNum)
 	journalPath := JournalPath(rc.RunDir, sName)
-	guidancePath := GuidancePath(rc.RunDir, sName)
 	branch := fmt.Sprintf("goalx/%s/%d", rc.Config.Name, newNum)
 	windowName := sessionWindowName(rc.Config.Name, newNum)
 
@@ -147,19 +146,16 @@ func Add(projectRoot string, args []string) error {
 		return fmt.Errorf("create worktree: %w", err)
 	}
 
-	// Create journal + guidance files
+	// Create journal + session control files
 	if err := os.WriteFile(journalPath, nil, 0644); err != nil {
 		return fmt.Errorf("init journal: %w", err)
 	}
-	if err := os.WriteFile(guidancePath, nil, 0644); err != nil {
-		return fmt.Errorf("init guidance: %w", err)
-	}
-	if _, err := EnsureSessionGuidanceState(rc.RunDir, sName); err != nil {
-		return fmt.Errorf("init guidance state: %w", err)
+	if err := EnsureSessionControl(rc.RunDir, sName); err != nil {
+		return fmt.Errorf("init session control: %w", err)
 	}
 
 	// Generate adapter
-	if err := GenerateAdapter(engine, wtPath, guidancePath); err != nil {
+	if err := GenerateAdapter(engine, wtPath, ControlInboxPath(rc.RunDir, sName), SessionCursorPath(rc.RunDir, sName)); err != nil {
 		return fmt.Errorf("generate adapter: %w", err)
 	}
 	if err := EnsureEngineTrusted(engine, wtPath); err != nil {
@@ -203,8 +199,8 @@ func Add(projectRoot string, args []string) error {
 		SessionName:         sName,
 		SessionIndex:        newNum - 1,
 		JournalPath:         journalPath,
-		GuidancePath:        guidancePath,
-		GuidanceStatePath:   SessionGuidanceStatePath(rc.RunDir, sName),
+		SessionInboxPath:    ControlInboxPath(rc.RunDir, sName),
+		SessionCursorPath:   SessionCursorPath(rc.RunDir, sName),
 		WorktreePath:        wtPath,
 		GoalContractPath:    GoalContractPath(rc.RunDir),
 		AcceptancePath:      AcceptanceChecklistPath(rc.RunDir),
@@ -247,8 +243,8 @@ func Add(projectRoot string, args []string) error {
 	}
 	// Notify master through durable inbox, then best-effort tmux nudge.
 	masterMsg := fmt.Sprintf(
-		"New %s added to your run. Window: %s, Worktree: %s, Journal: %s, Guidance: %s. Direction: %s. Add it to your check cycle.",
-		sName, windowName, wtPath, journalPath, guidancePath, hint,
+		"New %s added to your run. Window: %s, Worktree: %s, Journal: %s, Inbox: %s. Direction: %s. Add it to your check cycle.",
+		sName, windowName, wtPath, journalPath, ControlInboxPath(rc.RunDir, sName), hint,
 	)
 	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_added", "goalx add", masterMsg); err != nil {
 		return fmt.Errorf("notify master inbox: %w", err)
@@ -285,8 +281,8 @@ func buildSessionDataList(runDir string, cfg *goalx.Config, engines map[string]g
 			WindowName:        sessionWindowName(cfg.Name, num),
 			WorktreePath:      WorktreePath(runDir, cfg.Name, num),
 			JournalPath:       JournalPath(runDir, sName),
-			GuidancePath:      GuidancePath(runDir, sName),
-			GuidanceStatePath: SessionGuidanceStatePath(runDir, sName),
+			SessionInboxPath:  ControlInboxPath(runDir, sName),
+			SessionCursorPath: SessionCursorPath(runDir, sName),
 			Engine:            engine,
 			Model:             model,
 			Mode:              effective.Mode,

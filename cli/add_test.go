@@ -28,7 +28,6 @@ func TestAddExtendsExplicitSessionsSnapshot(t *testing.T) {
 	for _, dir := range []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "guidance"),
 		filepath.Join(runDir, "worktrees"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -102,7 +101,6 @@ func TestAddUsesBuiltinStrategyAsHint(t *testing.T) {
 	for _, dir := range []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "guidance"),
 		filepath.Join(runDir, "worktrees"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -167,7 +165,6 @@ func TestAddPropagatesEngineToRenderedProtocol(t *testing.T) {
 	for _, dir := range []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "guidance"),
 		filepath.Join(runDir, "worktrees"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -234,7 +231,6 @@ func TestAddRendersAcceptanceContractAndTeamContext(t *testing.T) {
 	for _, dir := range []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "guidance"),
 		filepath.Join(runDir, "worktrees"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -319,7 +315,6 @@ func TestAddNotifiesMasterViaInbox(t *testing.T) {
 	for _, dir := range []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "guidance"),
 		filepath.Join(runDir, "worktrees"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -392,7 +387,6 @@ func TestAddStartsNumberingFromExistingRunArtifacts(t *testing.T) {
 	for _, dir := range []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "guidance"),
 		filepath.Join(runDir, "worktrees"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -461,7 +455,6 @@ func TestAddSupportsResearchModeOverride(t *testing.T) {
 	for _, dir := range []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "guidance"),
 		filepath.Join(runDir, "worktrees"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -548,7 +541,6 @@ func TestAddHelpDoesNotCreateSession(t *testing.T) {
 	for _, dir := range []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "guidance"),
 		filepath.Join(runDir, "worktrees"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -588,7 +580,8 @@ harness:
 	for _, path := range []string{
 		filepath.Join(runDir, "program-2.md"),
 		filepath.Join(runDir, "journals", "session-2.jsonl"),
-		filepath.Join(runDir, "guidance", "session-2.md"),
+		ControlInboxPath(runDir, "session-2"),
+		SessionCursorPath(runDir, "session-2"),
 	} {
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 			t.Fatalf("expected %s to be absent after --help, stat err = %v", path, statErr)

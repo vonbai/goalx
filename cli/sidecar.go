@@ -135,14 +135,14 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 	if err := RenewControlLease(runDir, "sidecar", runID, epoch, ttl, "process", pid); err != nil {
 		return err
 	}
-	if err := Pulse(projectRoot, []string{"--run", runName}); err != nil {
+	if err := queueMasterWakeReminder(runDir, goalx.TmuxSessionName(projectRoot, runName)); err != nil {
 		return err
 	}
 	cfg, err := LoadRunSpec(runDir)
 	if err != nil {
 		return err
 	}
-	return DeliverDueControlReminders(runDir, cfg.Master.Engine, sendAgentNudge)
+	return DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudge)
 }
 
 func defaultLaunchRunSidecar(projectRoot, runName string, interval time.Duration) error {

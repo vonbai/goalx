@@ -36,6 +36,7 @@ func TestVerifyFailsWhenGoalContractHasUnfinishedRequiredItems(t *testing.T) {
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	ensureSharedProofEvidence(t)
 
 	runName := "verify-contract"
 	runDir := goalx.RunDir(repo, runName)
@@ -126,6 +127,7 @@ func TestVerifyPassesWhenRequiredGoalContractItemsAreResolved(t *testing.T) {
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	ensureSharedProofEvidence(t)
 
 	runName := "verify-contract-pass"
 	runDir := goalx.RunDir(repo, runName)
@@ -208,6 +210,7 @@ func TestVerifyFailsWhenRequiredGoalContractItemLacksSatisfactionBasis(t *testin
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	ensureSharedProofEvidence(t)
 
 	runName := "verify-contract-basis"
 	runDir := goalx.RunDir(repo, runName)

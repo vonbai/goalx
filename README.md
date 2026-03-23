@@ -130,7 +130,7 @@ Use `goalx init` + `goalx start --config .goalx/goalx.yaml`, direct config edits
 - Active runtime state lives under `~/.goalx/runs/{projectID}/{run}`.
 - Saved runs live under `~/.goalx/runs/{projectID}/saved/{run}` after `goalx save`.
 - Each active run has an immutable `run-spec.yaml` plus mutable `state/run.json`, `state/sessions.json`, `control/*`, and `proof/completion.json`.
-- The durable control plane lives in run-scoped files such as `control/run-identity.json`, `control/run-state.json`, `control/events.jsonl`, `control/inbox/master.jsonl`, `control/reminders.json`, and `control/deliveries.json`.
+- The durable control plane lives in run-scoped files such as `control/run-identity.json`, `control/run-state.json`, `control/inbox/master.jsonl`, `control/reminders.json`, and `control/deliveries.json`.
 - User-scoped `registry.json` and `status.json` under `~/.goalx/runs/{projectID}/` are convenience indexes and external progress summaries, not the source of truth.
 - `artifacts.json` is the durable index for saved reports and other research outputs consumed by `result`, `debate`, `implement`, and `explore`.
 - `run-metadata.json` tracks phase lineage, including `phase_kind`, `source_run`, and `parent_run`, so each run can inherit from its own saved input without touching shared project config.
@@ -196,7 +196,7 @@ GoalX is a **protocol scaffolding tool**. The Go code launches the master, expos
 
 **Master** (`master.md.tmpl`): Final responsible party and lightweight dispatcher. Maintains a machine-readable `goal-contract.json`, records structured proof for required-item completion, keeps required items covered or explicitly blocked, dispatches parallel work when independent required slices remain, parks idle sessions for later reuse, resumes parked sessions before creating unnecessary new ones, keeps the acceptance checklist aligned as proof against that contract, rescues dead or stuck sessions, runs verification before `done` / `implement`, and cannot close a run without both passing acceptance and a satisfied `proof/completion.json`.
 
-**Subagent** (`program.md.tmpl`): Hypothesis-driven exploration (research) or structured TDD (develop). Executes the current assignment, but the goal contract and proof manifest remain the run-level completion boundary. Communicates via journal files and guidance files, including concise blocker and dependency hints so the master can rebalance work quickly or park/resume the session cleanly.
+**Subagent** (`program.md.tmpl`): Hypothesis-driven exploration (research) or structured TDD (develop). Executes the current assignment, but the goal contract and proof manifest remain the run-level completion boundary. Communicates via journal files plus the durable session inbox/cursor pair, including concise blocker and dependency hints so the master can rebalance work quickly or park/resume the session cleanly.
 
 ### Config Model
 

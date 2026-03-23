@@ -42,7 +42,6 @@ type ProtocolData struct {
 	MasterCursorPath       string
 	ControlRunIdentityPath string
 	ControlRunStatePath    string
-	ControlEventsPath      string
 	MasterLeasePath        string
 	SidecarLeasePath       string
 	ControlRemindersPath   string
@@ -55,8 +54,8 @@ type ProtocolData struct {
 	SessionName       string
 	SessionIndex      int // 0-based index of this session in the Sessions slice
 	JournalPath       string
-	GuidancePath      string
-	GuidanceStatePath string
+	SessionInboxPath  string
+	SessionCursorPath string
 	WorktreePath      string
 	DiversityHint     string
 }
@@ -67,8 +66,8 @@ type SessionData struct {
 	WindowName        string
 	WorktreePath      string
 	JournalPath       string
-	GuidancePath      string
-	GuidanceStatePath string
+	SessionInboxPath  string
+	SessionCursorPath string
 	Engine            string
 	Model             string
 	Mode              goalx.Mode

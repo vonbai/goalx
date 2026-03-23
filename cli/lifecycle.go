@@ -143,8 +143,8 @@ func Resume(projectRoot string, args []string) error {
 		}
 		return fmt.Errorf("resume %s requires existing worktree: %w", sessionName, err)
 	}
-	if _, err := EnsureSessionGuidanceState(rc.RunDir, sessionName); err != nil {
-		return fmt.Errorf("init guidance state: %w", err)
+	if err := EnsureSessionControl(rc.RunDir, sessionName); err != nil {
+		return fmt.Errorf("init session control: %w", err)
 	}
 
 	_, engines, err := goalx.LoadConfig(rc.ProjectRoot)
@@ -180,8 +180,8 @@ func Resume(projectRoot string, args []string) error {
 		SessionName:         sessionName,
 		SessionIndex:        idx - 1,
 		JournalPath:         JournalPath(rc.RunDir, sessionName),
-		GuidancePath:        GuidancePath(rc.RunDir, sessionName),
-		GuidanceStatePath:   SessionGuidanceStatePath(rc.RunDir, sessionName),
+		SessionInboxPath:    ControlInboxPath(rc.RunDir, sessionName),
+		SessionCursorPath:   SessionCursorPath(rc.RunDir, sessionName),
 		WorktreePath:        wtPath,
 		GoalContractPath:    GoalContractPath(rc.RunDir),
 		AcceptancePath:      AcceptanceChecklistPath(rc.RunDir),

@@ -242,7 +242,6 @@ func writeRunSpecFixture(t *testing.T, projectRoot string, cfg *goalx.Config) st
 	for _, dir := range []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "guidance"),
 		filepath.Join(runDir, "worktrees"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

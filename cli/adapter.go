@@ -10,16 +10,17 @@ import (
 )
 
 // GenerateAdapter configures engine-specific adapter files in a worktree.
-func GenerateAdapter(engine, worktreePath, guidancePath string) error {
+func GenerateAdapter(engine, worktreePath, inboxPath, cursorPath string) error {
 	if engine != "claude-code" {
 		return nil
 	}
 
-	quotedGuidancePath := shellQuote(guidancePath)
-	quotedGuidanceMessage := shellQuote("GUIDANCE PENDING: read " + guidancePath + " and follow it now")
+	quotedInboxPath := shellQuote(inboxPath)
+	quotedCursorPath := shellQuote(cursorPath)
+	quotedInboxMessage := shellQuote("INBOX PENDING: read " + inboxPath + " and process new session instructions now")
 	stopCmd := fmt.Sprintf(
-		`if cat %s 2>/dev/null | grep -q .; then printf '%%s\n' %s >&2; exit 2; fi`,
-		quotedGuidancePath, quotedGuidanceMessage,
+		`last_id=$(tail -n 1 %s 2>/dev/null | sed -n 's/.*"id":[[:space:]]*\([0-9][0-9]*\).*/\1/p'); seen_id=$(sed -n 's/.*"last_seen_id":[[:space:]]*\([0-9][0-9]*\).*/\1/p' %s 2>/dev/null | tail -n 1); if [ -n "$last_id" ]; then if [ -z "$seen_id" ]; then seen_id=0; fi; if [ "$last_id" -gt "$seen_id" ]; then printf '%%s\n' %s >&2; exit 2; fi; fi`,
+		quotedInboxPath, quotedCursorPath, quotedInboxMessage,
 	)
 	return appendClaudeHook(worktreePath, map[string]string{
 		"event":   "Stop",

@@ -2,8 +2,6 @@ package cli
 
 import "time"
 
-const controlReminderCooldown = 30 * time.Second
-
 func QueueControlReminder(runDir, dedupeKey, reason, target string) (*ControlReminder, error) {
 	if err := EnsureControlState(runDir); err != nil {
 		return nil, err
@@ -33,7 +31,7 @@ func QueueControlReminder(runDir, dedupeKey, reason, target string) (*ControlRem
 	return &copy, nil
 }
 
-func DeliverDueControlReminders(runDir, engine string, deliver func(target, engine string) error) error {
+func DeliverDueControlReminders(runDir, engine string, interval time.Duration, deliver func(target, engine string) error) error {
 	if err := EnsureControlState(runDir); err != nil {
 		return err
 	}
@@ -56,11 +54,18 @@ func DeliverDueControlReminders(runDir, engine string, deliver func(target, engi
 		}
 		_, _ = deliverControlNudge(runDir, item.ReminderID, item.DedupeKey, item.Target, engine, false, deliver)
 		item.Attempts++
-		item.CooldownUntil = now.Add(controlReminderCooldown).Format(time.RFC3339)
+		item.CooldownUntil = now.Add(controlReminderCooldown(interval)).Format(time.RFC3339)
 		changed = true
 	}
 	if !changed {
 		return nil
 	}
 	return SaveControlReminders(ControlRemindersPath(runDir), reminders)
+}
+
+func controlReminderCooldown(interval time.Duration) time.Duration {
+	if interval < time.Minute {
+		return time.Minute
+	}
+	return interval
 }

@@ -1,6 +1,9 @@
 package cli
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestQueueControlReminderDedupesByKey(t *testing.T) {
 	runDir := t.TempDir()
@@ -44,10 +47,11 @@ func TestDeliverDueControlRemindersRespectsCooldownAndCreatesDelivery(t *testing
 		return nil
 	}
 
-	if err := DeliverDueControlReminders(runDir, "codex", send); err != nil {
+	start := time.Now().UTC()
+	if err := DeliverDueControlReminders(runDir, "codex", 5*time.Minute, send); err != nil {
 		t.Fatalf("DeliverDueControlReminders first: %v", err)
 	}
-	if err := DeliverDueControlReminders(runDir, "codex", send); err != nil {
+	if err := DeliverDueControlReminders(runDir, "codex", 5*time.Minute, send); err != nil {
 		t.Fatalf("DeliverDueControlReminders second: %v", err)
 	}
 
@@ -63,6 +67,13 @@ func TestDeliverDueControlRemindersRespectsCooldownAndCreatesDelivery(t *testing
 	}
 	if reminders.Items[0].Attempts != 1 || reminders.Items[0].CooldownUntil == "" {
 		t.Fatalf("unexpected reminder: %+v", reminders.Items[0])
+	}
+	cooldownUntil, err := time.Parse(time.RFC3339, reminders.Items[0].CooldownUntil)
+	if err != nil {
+		t.Fatalf("parse cooldown_until: %v", err)
+	}
+	if cooldownUntil.Before(start.Add(4 * time.Minute)) {
+		t.Fatalf("cooldown_until = %s, want interval-derived cooldown well above 4 minutes", reminders.Items[0].CooldownUntil)
 	}
 	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
 	if err != nil {

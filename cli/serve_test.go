@@ -428,17 +428,15 @@ func TestServeHandlerConfigEndpointCanReadRunSpec(t *testing.T) {
 	}
 }
 
-func TestServeHandlerTellWritesGuidanceAndNudgesSession(t *testing.T) {
+func TestServeHandlerTellWritesSessionInboxAndNudgesSession(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	workspace := t.TempDir()
 	writeRunSnapshot(t, workspace, "auth-audit", goalx.ModeResearch, "audit auth flow")
 	runDir := goalx.RunDir(workspace, "auth-audit")
-	guidanceDir := filepath.Join(runDir, "guidance")
 	for _, dir := range []string{
 		filepath.Join(runDir, "journals"),
-		guidanceDir,
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
@@ -467,23 +465,13 @@ func TestServeHandlerTellWritesGuidanceAndNudgesSession(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	guidancePath := GuidancePath(runDir, "session-1")
-	data, err := os.ReadFile(guidancePath)
+	inboxPath := ControlInboxPath(runDir, "session-1")
+	data, err := os.ReadFile(inboxPath)
 	if err != nil {
-		t.Fatalf("read guidance: %v", err)
+		t.Fatalf("read session inbox: %v", err)
 	}
-	if string(data) != "focus on authz regressions\n" {
-		t.Fatalf("guidance = %q", string(data))
-	}
-	state, err := LoadSessionGuidanceState(SessionGuidanceStatePath(runDir, "session-1"))
-	if err != nil {
-		t.Fatalf("LoadSessionGuidanceState: %v", err)
-	}
-	if state == nil || !state.Pending || state.Version != 1 {
-		t.Fatalf("guidance state = %#v, want pending version 1", state)
-	}
-	if state.LastAckVersion != 0 {
-		t.Fatalf("last ack version = %d, want 0", state.LastAckVersion)
+	if !strings.Contains(string(data), `"body":"focus on authz regressions"`) {
+		t.Fatalf("session inbox = %q", string(data))
 	}
 
 	wantTarget := goalx.TmuxSessionName(workspace, "auth-audit") + ":" + sessionWindowName("auth-audit", 1)

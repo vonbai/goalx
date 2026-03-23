@@ -96,12 +96,6 @@ func discoverSessionIndexesFromFS(runDir string) []int {
 	appendFromDir(filepath.Join(runDir, "journals"), func(name string) string {
 		return strings.TrimSuffix(name, ".jsonl")
 	})
-	appendFromDir(filepath.Join(runDir, "guidance"), func(name string) string {
-		return strings.TrimSuffix(name, ".md")
-	})
-	appendFromDir(ControlDir(runDir), func(name string) string {
-		return strings.TrimSuffix(name, "-guidance.json")
-	})
 	appendFromDir(filepath.Join(runDir, "worktrees"), func(name string) string {
 		if i := strings.LastIndex(name, "-"); i >= 0 {
 			return "session-" + name[i+1:]

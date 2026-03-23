@@ -27,7 +27,6 @@ type ControlRunState struct {
 	Phase              string `json:"phase,omitempty"`
 	Recommendation     string `json:"recommendation,omitempty"`
 	ActiveSessionCount int    `json:"active_session_count,omitempty"`
-	LastEventID        int64  `json:"last_event_id,omitempty"`
 	UpdatedAt          string `json:"updated_at,omitempty"`
 }
 
@@ -85,10 +84,6 @@ func ControlRunStatePath(runDir string) string {
 	return filepath.Join(ControlDir(runDir), "run-state.json")
 }
 
-func ControlEventsPath(runDir string) string {
-	return filepath.Join(ControlDir(runDir), "events.jsonl")
-}
-
 func ControlLeasesDir(runDir string) string {
 	return filepath.Join(ControlDir(runDir), "leases")
 }
@@ -124,7 +119,6 @@ func EnsureControlState(runDir string) error {
 		return fmt.Errorf("mkdir inbox dir: %w", err)
 	}
 	for _, path := range []string{
-		ControlEventsPath(runDir),
 		ControlInboxPath(runDir, "master"),
 	} {
 		if err := ensureEmptyFile(path); err != nil {

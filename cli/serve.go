@@ -378,11 +378,11 @@ func (a *serveApp) handleTellAction(w http.ResponseWriter, projectRoot string, r
 		}
 		target = rc.TmuxSession + ":" + windowName
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":                  true,
-			"action":              "tell",
-			"target":              target,
-			"guidance_path":       GuidancePath(rc.RunDir, session),
-			"guidance_state_path": SessionGuidanceStatePath(rc.RunDir, session),
+			"ok":          true,
+			"action":      "tell",
+			"target":      target,
+			"inbox_path":  ControlInboxPath(rc.RunDir, session),
+			"cursor_path": SessionCursorPath(rc.RunDir, session),
 		})
 		return
 	}

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -104,20 +103,14 @@ func Status(projectRoot string, args []string) error {
 				}
 			}
 		}
-		guidancePending := sess.GuidancePending
-		if !guidancePending {
-			if guidanceState, err := LoadSessionGuidanceState(SessionGuidanceStatePath(rc.RunDir, sName)); err == nil && guidanceState != nil {
-				guidancePending = guidanceState.Pending
-			}
-		}
-		if guidancePending {
+		if unreadControlInboxCount(ControlInboxPath(rc.RunDir, sName), SessionCursorPath(rc.RunDir, sName)) > 0 {
 			if status == "idle" || status == "pending" {
-				status = "guidance-pending"
+				status = "inbox-pending"
 			}
 			if summary == "no entries" {
-				summary = "guidance pending"
-			} else if summary != "guidance pending" {
-				summary += " | guidance pending"
+				summary = "inbox pending"
+			} else if summary != "inbox pending" {
+				summary += " | inbox pending"
 			}
 		}
 		if sess.DirtyFiles > 0 {
@@ -146,8 +139,7 @@ func printStatusControlSummary(rc *RunContext) {
 	if rc == nil {
 		return
 	}
-	masterCursor, _ := LoadMasterCursorState(MasterCursorPath(rc.RunDir))
-	unread := unreadMasterInboxCount(rc.RunDir, masterCursor)
+	unread := unreadControlInboxCount(MasterInboxPath(rc.RunDir), MasterCursorPath(rc.RunDir))
 	masterLease := controlLeaseSummary(rc.RunDir, "master")
 	sidecarLease := controlLeaseSummary(rc.RunDir, "sidecar")
 	runStatus := "unknown"
@@ -157,27 +149,6 @@ func printStatusControlSummary(rc *RunContext) {
 	remindersDue, deliveriesFailed := controlQueueSummary(rc.RunDir)
 	fmt.Printf("Control: run_status=%s unread_inbox=%d master_lease=%s sidecar_lease=%s reminders_due=%d deliveries_failed=%d\n", runStatus, unread, masterLease, sidecarLease, remindersDue, deliveriesFailed)
 	fmt.Println()
-}
-
-func unreadMasterInboxCount(runDir string, state *MasterCursorState) int {
-	f, err := os.ReadFile(MasterInboxPath(runDir))
-	if err != nil {
-		return 0
-	}
-	lastID := int64(0)
-	for _, line := range splitNonEmptyLines(string(f)) {
-		var msg MasterInboxMessage
-		if err := json.Unmarshal([]byte(line), &msg); err != nil {
-			continue
-		}
-		if msg.ID > lastID {
-			lastID = msg.ID
-		}
-	}
-	if state == nil || lastID <= state.LastSeenID {
-		return 0
-	}
-	return int(lastID - state.LastSeenID)
 }
 
 func splitNonEmptyLines(s string) []string {
