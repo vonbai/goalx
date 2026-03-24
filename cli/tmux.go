@@ -58,6 +58,11 @@ func SendKeys(target, keys string) error {
 	return sendKeysWithSubmit(target, keys, "Enter")
 }
 
+// SendEscape sends Escape to a tmux target without submitting Enter.
+func SendEscape(target string) error {
+	return exec.Command("tmux", "send-keys", "-t", target, "Escape").Run()
+}
+
 func sendKeysWithSubmit(target, keys, submitKey string) error {
 	time.Sleep(200 * time.Millisecond)
 	args := []string{"send-keys", "-t", target}

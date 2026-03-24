@@ -197,6 +197,28 @@ func unreadControlInboxCount(inboxPath, cursorPath string) int {
 	return int(lastID - cursor.LastSeenID)
 }
 
+func hasUrgentUnread(runDir string) bool {
+	cursor, _ := LoadMasterCursorState(MasterCursorPath(runDir))
+	lastSeen := int64(0)
+	if cursor != nil {
+		lastSeen = cursor.LastSeenID
+	}
+	data, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		return false
+	}
+	for _, line := range splitNonEmptyLines(string(data)) {
+		var msg MasterInboxMessage
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			continue
+		}
+		if msg.ID > lastSeen && msg.Urgent {
+			return true
+		}
+	}
+	return false
+}
+
 func nextMasterInboxID(path string) (int64, error) {
 	f, err := os.Open(path)
 	if err != nil {

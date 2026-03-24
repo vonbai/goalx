@@ -154,11 +154,21 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 			return err
 		}
 	}
-	if err := queueMasterWakeReminder(runDir, goalx.TmuxSessionName(projectRoot, runName)); err != nil {
-		return err
-	}
 	cfg, err := LoadRunSpec(runDir)
 	if err != nil {
+		return err
+	}
+	if hasUrgentUnread(runDir) {
+		tmuxTarget := goalx.TmuxSessionName(projectRoot, runName) + ":master"
+		if err := SendEscape(tmuxTarget); err != nil {
+			return err
+		}
+		time.Sleep(500 * time.Millisecond)
+		if err := sendAgentNudge(tmuxTarget, cfg.Master.Engine); err != nil {
+			return err
+		}
+	}
+	if err := queueMasterWakeReminder(runDir, goalx.TmuxSessionName(projectRoot, runName)); err != nil {
 		return err
 	}
 	return DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudge)
