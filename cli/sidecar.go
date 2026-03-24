@@ -144,6 +144,11 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 			return err
 		}
 	}
+	if liveness, err := ScanLiveness(runDir); err == nil {
+		if err := SaveLivenessState(runDir, liveness); err != nil {
+			return err
+		}
+	}
 	if err := queueMasterWakeReminder(runDir, goalx.TmuxSessionName(projectRoot, runName)); err != nil {
 		return err
 	}
