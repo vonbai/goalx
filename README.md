@@ -33,6 +33,8 @@ cd goalx
 go build -o /usr/local/bin/goalx ./cmd/goalx
 ```
 
+Always install to `/usr/local/bin/goalx`. Do not use `go install` for GoalX.
+
 ### Requirements
 
 - Go 1.24+
@@ -45,14 +47,17 @@ go build -o /usr/local/bin/goalx ./cmd/goalx
 # Give a goal, master decides approach (research/develop/hybrid)
 goalx auto "audit code quality and find bugs"
 
-# Or specify mode explicitly
-goalx research "audit code quality and find bugs"
-goalx develop "implement the fix"
+# Or enter a phase directly with explicit effort
+goalx research "audit code quality and find bugs" --effort high
+goalx develop "implement the fix" --effort medium
 
 # Continue from a saved run (inherits source run's code changes)
 goalx debate --from research-audit
 goalx implement --from research-audit-debate
 goalx explore --from research-audit
+
+# Adjust runtime dimensions after launch
+goalx dimension --run research-audit session-2 --set adversarial,evidence
 
 # Watch progress
 goalx observe
@@ -64,7 +69,7 @@ goalx keep
 goalx result
 ```
 
-Default to `goalx auto`. Use `goalx research` / `goalx develop` when you want an explicit phase-specific run with role defaults. Use `goalx debate --from RUN`, `goalx implement --from RUN`, and `goalx explore --from RUN` to continue from saved runs. Only use `goalx init` / `goalx start --config PATH` when you explicitly want config-first or low-level control. GoalX now snapshots the caller environment once at run creation and reuses that same run-scoped environment for later `add` and `resume`, so actor launches do not depend on whatever env the tmux server or later shell happens to have. Use `goalx focus --run NAME` when a project has multiple active runs and you want to pin the default run. Bare `--run NAME` resolution is local-first within the current project; for cross-project targeting, use `--run <project-id>/<run>`. `--parallel` is optional: if you omit it, GoalX keeps project/preset defaults; if nothing else sets it, the initial fan-out is `1`. That value is initial planning guidance, not a permanent ceiling on later master dispatch.
+Default to `goalx auto`. Use `goalx research` / `goalx develop` when you want an explicit phase-specific run with role defaults, optional `--effort`, or role-specific engine/model overrides. Use `goalx debate --from RUN`, `goalx implement --from RUN`, and `goalx explore --from RUN` to continue from saved runs. Use `--dimension NAMES` only to seed launch-time hints; the canonical runtime control is `goalx dimension`. Only use `goalx init` / `goalx start --config PATH` when you explicitly want config-first or low-level control. GoalX now snapshots the caller environment once at run creation and reuses that same run-scoped environment for later `add` and `resume`, so actor launches do not depend on whatever env the tmux server or later shell happens to have. Use `goalx focus --run NAME` when a project has multiple active runs and you want to pin the default run. Bare `--run NAME` resolution is local-first within the current project; for cross-project targeting, use `--run <project-id>/<run>`. `--parallel` is optional: if you omit it, GoalX keeps project/preset defaults; if nothing else sets it, the initial fan-out is `1`. That value is initial planning guidance, not a permanent ceiling on later master dispatch.
 
 ## Commands
 
@@ -74,12 +79,13 @@ Default to `goalx auto`. Use `goalx research` / `goalx develop` when you want an
 | `goalx init` | Advanced/manual path: generate a manual draft config from an objective |
 | `goalx start` | Advanced/manual path: launch from explicit `--config PATH` |
 | `goalx auto` | Init and start one master-led run, then exit |
-| `goalx research` | Start a research run directly from CLI flags |
-| `goalx develop` | Start a develop run directly from CLI flags |
+| `goalx research` | Start a research run directly from CLI flags (`--effort`, `--dimension`, role overrides) |
+| `goalx develop` | Start a develop run directly from CLI flags (`--effort`, `--dimension`, role overrides) |
 | `goalx observe` | Live transport capture when available plus control-plane summary |
 | `goalx status` | Progress summary plus run ID, epoch, charter health, lease health, unread inbox, reminders, and delivery failures |
 | `goalx focus` | Set the default run used by commands that omit `--run` |
 | `goalx add` | Add a session to a running run (`--worktree` for isolated parallel work, `--mode research` for research session) |
+| `goalx dimension` | Change runtime dimension assignments for one session or all sessions in a run |
 | `goalx tell` | Send a durable instruction to the master or a specific session (`--urgent` for priority delivery) |
 | `goalx wait` | Inbox-aware blocking wait; replaces sleep for master monitoring loops |
 | `goalx park` | Park an idle/blocked session for later reuse without deleting its worktree |
@@ -142,12 +148,28 @@ Use `goalx init` + `goalx start --config .goalx/goalx.yaml`, direct config edits
 - When a project has multiple active runs, pass `--run NAME` explicitly for mutating commands. Use `goalx focus --run NAME` to pin the default run for commands that omit `--run`.
 - Bare `--run NAME` resolution is local-first within the current project. For cross-project targeting, use `--run <project-id>/<run>`.
 
+## Effort Levels
+
+Effort is first-class. GoalX stores the requested effort in session identity, resolves it through the selected engine, and records the provider-specific effective effort.
+
+| Level | Meaning | Claude Code | Codex |
+|-------|---------|-------------|-------|
+| `auto` | Engine or routing profile chooses the provider-specific default | provider default | provider default |
+| `minimal` | Cheapest acceptable pass for lightweight validation or triage | `low` | `low` |
+| `low` | Fast iteration with basic reasoning depth | `low` | `low` |
+| `medium` | Default balanced execution for most work | `medium` | `medium` |
+| `high` | Deeper reasoning for hard implementation or research slices | `high` | `high` |
+| `max` | Highest-value, hardest slices only | `max` | `xhigh` |
+
 ## Goal Dimensions
 
-Dimensions define how agents approach the objective — not what they do, but from what angle:
+Dimensions define how agents approach the objective, and they now live in runtime state. Seed them at launch with `--dimension NAMES` if needed, then change them during the run with `goalx dimension`:
 
 ```bash
-goalx research "objective" --parallel 3 --strategy depth,adversarial,evidence
+goalx dimension --run my-run session-2 --set depth,adversarial
+goalx dimension --run my-run session-2 --add evidence
+goalx dimension --run my-run session-2 --remove depth
+goalx dimension --run my-run all --set breadth,comparative
 ```
 
 | Dimension | Focus |
@@ -161,19 +183,19 @@ goalx research "objective" --parallel 3 --strategy depth,adversarial,evidence
 | `comparative` | Compare with industry best practices |
 | `user` | End-user perspective, usability |
 
-Strategy defaults for research fan-out: parallel=2 → depth+adversarial, parallel=3 → +evidence. Custom dimensions in `~/.goalx/config.yaml`.
+Runtime assignments are stored in `control/dimensions.json` inside the run directory. Custom dimensions still come from `~/.goalx/config.yaml` or `.goalx/config.yaml`.
 
 ## Agent Composition
 
 ```bash
 # Explicit agent composition with --sub
-goalx research "objective" --sub claude-code/opus:2 --sub codex/gpt-5.4:1
+goalx research "objective" --sub claude-code/opus:2 --sub codex/gpt-5.4:1 --effort high
 
 # Override role defaults
-goalx research "objective" --master codex/gpt-5.4 --research-role claude-code/opus --develop-role codex/gpt-5.4-mini
+goalx research "objective" --master codex/gpt-5.4 --research-role claude-code/opus --develop-role codex/gpt-5.4-mini --master-effort medium --research-effort high --develop-effort medium
 
 # N workers + 1 auditor pattern
-goalx develop "objective" --preset claude-h --parallel 3 --auditor codex/gpt-5.4
+goalx develop "objective" --preset claude-h --parallel 3 --dimension feasibility,adversarial --auditor codex/gpt-5.4 --effort medium
 ```
 
 ## Architecture
@@ -181,13 +203,15 @@ goalx develop "objective" --preset claude-h --parallel 3 --auditor codex/gpt-5.4
 ```
 goalx/
 ├── config.go           # Shared config loading + explicit manual draft overlay
-├── strategies.go       # Built-in research strategies
+├── dimensions.go       # Built-in goal dimensions
 ├── journal.go          # JSONL journal format
 ├── templates/
 │   ├── master.md.tmpl  # Master agent protocol
 │   └── program.md.tmpl # Subagent protocol
 ├── cli/                # All CLI commands
 │   ├── auto.go         # Init + start, then exit
+│   ├── dimension.go    # Runtime dimension mutation command
+│   ├── session_identity.go # Requested/effective effort + route profile
 │   ├── start.go        # Session launch + worktree setup
 │   ├── observe.go      # Live transport capture + control summary
 │   └── ...
@@ -212,6 +236,44 @@ Built-in defaults → ~/.goalx/config.yaml → .goalx/config.yaml
 
 `Built-in defaults` and `~/.goalx/config.yaml` provide global defaults. `.goalx/config.yaml` is the only shared project-scoped GoalX file. `.goalx/goalx.yaml` is an explicit advanced/manual draft, loaded only when you choose `goalx start --config PATH` or `--write-config`.
 
+Example shared config:
+
+```yaml
+preset: codex
+master:
+  engine: claude-code
+  model: opus
+roles:
+  research:
+    engine: codex
+    model: gpt-5.4
+    effort: high
+  develop:
+    engine: codex
+    model: gpt-5.4
+    effort: medium
+routing:
+  profiles:
+    research_deep:   { engine: claude-code, model: opus, effort: high }
+    research_max:    { engine: claude-code, model: opus, effort: max }
+    build_balanced:  { engine: codex, model: gpt-5.4, effort: medium }
+    build_fast:      { engine: codex, model: gpt-5.4-mini, effort: minimal }
+    fallback_safe:   { engine: claude-code, model: sonnet, effort: low }
+  table:
+    research: { low: build_fast, medium: research_deep, high: research_max }
+    develop:  { low: build_fast, medium: build_balanced, high: research_deep }
+    simple:   { low: build_fast, medium: build_fast, high: build_balanced }
+preferences:
+  research:
+    guidance: "默认 gpt-5.4 high。深度分析/架构设计用 opus。简单信息收集用 fast。"
+  develop:
+    guidance: "主力 gpt-5.4 medium。简单修复用 fast。"
+  simple:
+    guidance: "轻量任务用 fast。"
+```
+
+`routing.profiles` defines reusable engine/model/effort bundles. `routing.table` maps `role + dimension` to a profile name. `preferences.*.guidance` is human guidance for the agent, not a routing alias.
+
 ### Engine Presets
 
 | Preset | Master | Research Role | Develop Role |
@@ -223,7 +285,7 @@ Built-in defaults → ~/.goalx/config.yaml → .goalx/config.yaml
 | mixed | codex/gpt-5.4 | claude/opus | codex/gpt-5.4 |
 
 Custom presets in `~/.goalx/config.yaml`. Override per-run with `--preset` plus role-specific flags.
-Role-specific overrides use `--master`, `--research-role`, `--develop-role`, `--parallel`, `--context`, `--strategy`, `--budget-seconds`, `--name`, and `--sub`. `--parallel` is optional initial fan-out. Master may still add or resume more durable workers later when the goal warrants it.
+Role-specific overrides use `--master`, `--research-role`, `--develop-role`, `--effort`, `--master-effort`, `--research-effort`, `--develop-effort`, `--parallel`, `--context`, `--dimension`, `--name`, and `--sub`. `--parallel` is optional initial fan-out. Master may still add or resume more durable workers later when the goal warrants it.
 
 ## HTTP API & Remote Management
 
@@ -271,10 +333,10 @@ For local interactive use in Claude Code:
 
 ```bash
 mkdir -p ~/.claude/skills/goalx
-cp skill/SKILL.md ~/.claude/skills/goalx/SKILL.md
+cp -R skill/. ~/.claude/skills/goalx/
 ```
 
-Then: `/goalx observe`, `/goalx auto "objective"`, etc.
+Copy the whole directory so `references/advanced-control.md` stays available. Then ask Claude to use the GoalX skill for tasks such as `goalx observe` or `goalx auto "objective"`.
 
 ## License
 
