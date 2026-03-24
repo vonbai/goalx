@@ -155,16 +155,16 @@ func TestResumeRelaunchesParkedSessionAndMarksActive(t *testing.T) {
 	}
 	logText := string(logData)
 	wantSession := goalx.TmuxSessionName(repo, runName)
-	if !strings.Contains(logText, "new-window -t "+wantSession+" -n session-1") {
+	if !strings.Contains(logText, "new-window -t "+wantSession+" -n session-1 -c "+WorktreePath(runDir, runName, 1)+" env ") {
 		t.Fatalf("tmux log missing new-window:\n%s", logText)
-	}
-	if !strings.Contains(logText, "send-keys -t "+wantSession+":session-1") {
-		t.Fatalf("tmux log missing launch send-keys:\n%s", logText)
 	}
 	for _, want := range []string{"/bin/bash -c ", "lease-loop --run", "--holder", "session-1"} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("tmux log missing %q:\n%s", want, logText)
 		}
+	}
+	if strings.Contains(logText, "send-keys -t "+wantSession+":session-1") {
+		t.Fatalf("resume should launch directly, not via send-keys:\n%s", logText)
 	}
 }
 
@@ -254,6 +254,74 @@ func TestResumeUsesDurableSessionIdentityInsteadOfCurrentConfig(t *testing.T) {
 	}
 	if !strings.Contains(logText, "exec codex ") {
 		t.Fatalf("resume launch should use durable session identity engine:\n%s", logText)
+	}
+}
+
+func TestResumeUsesRunLaunchEnv(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	logPath := filepath.Join(fakeBin, "tmux.log")
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := `#!/bin/sh
+echo "$@" >> "$TMUX_LOG"
+case "$1" in
+  has-session)
+    exit 0
+    ;;
+  list-windows)
+    if [ -n "$TMUX_WINDOWS" ]; then
+      printf '%s\n' $TMUX_WINDOWS
+    fi
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("TMUX_LOG", logPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+"/tmp/goalx-bin:/usr/bin")
+	t.Setenv("OPENAI_API_KEY", "sk-before")
+	t.Setenv("FOO_TOOLCHAIN_ROOT", "/opt/resume-before")
+
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	writeTestLaunchEnvSnapshot(t, runDir, map[string]string{
+		"HOME":               home,
+		"PATH":               fakeBin + string(os.PathListSeparator) + "/tmp/goalx-bin:/usr/bin",
+		"OPENAI_API_KEY":     "sk-before",
+		"FOO_TOOLCHAIN_ROOT": "/opt/resume-before",
+	})
+
+	t.Setenv("OPENAI_API_KEY", "sk-after")
+	t.Setenv("FOO_TOOLCHAIN_ROOT", "/opt/resume-after")
+
+	if err := Resume(repo, []string{"--run", runName, "session-1"}); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+
+	out, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	logText := string(out)
+	for _, want := range []string{
+		"FOO_TOOLCHAIN_ROOT='/opt/resume-before'",
+		"OPENAI_API_KEY='sk-before'",
+	} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("resume launch missing %q:\n%s", want, logText)
+		}
+	}
+	if strings.Contains(logText, "OPENAI_API_KEY='sk-after'") || strings.Contains(logText, "FOO_TOOLCHAIN_ROOT='/opt/resume-after'") {
+		t.Fatalf("resume should use stored run launch env, not caller env:\n%s", logText)
 	}
 }
 
@@ -418,6 +486,7 @@ func writeLifecycleRunFixture(t *testing.T, repo string) (string, string) {
 	if err := EnsureMasterControl(runDir); err != nil {
 		t.Fatalf("EnsureMasterControl: %v", err)
 	}
+	writeTestLaunchEnvSnapshotFromCurrent(t, runDir)
 	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)

@@ -14,12 +14,36 @@ func SessionExists(name string) bool {
 
 // NewSession creates a new detached tmux session with its first window named.
 func NewSession(name, firstWindow string) error {
-	return exec.Command("tmux", "new-session", "-d", "-s", name, "-n", firstWindow).Run()
+	return NewSessionWithCommand(name, firstWindow, "", "")
+}
+
+// NewSessionWithCommand creates a new detached tmux session with its first window named.
+func NewSessionWithCommand(name, firstWindow, workdir, command string) error {
+	args := []string{"new-session", "-d", "-s", name, "-n", firstWindow}
+	if workdir != "" {
+		args = append(args, "-c", workdir)
+	}
+	if command != "" {
+		args = append(args, command)
+	}
+	return exec.Command("tmux", args...).Run()
 }
 
 // NewWindow creates a new window in the given tmux session.
 func NewWindow(session, window, workdir string) error {
-	return exec.Command("tmux", "new-window", "-t", session, "-n", window, "-c", workdir).Run()
+	return NewWindowWithCommand(session, window, workdir, "")
+}
+
+// NewWindowWithCommand creates a new window in the given tmux session.
+func NewWindowWithCommand(session, window, workdir, command string) error {
+	args := []string{"new-window", "-t", session, "-n", window}
+	if workdir != "" {
+		args = append(args, "-c", workdir)
+	}
+	if command != "" {
+		args = append(args, command)
+	}
+	return exec.Command("tmux", args...).Run()
 }
 
 // RenameWindow renames a window by index in the given tmux session.

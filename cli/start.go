@@ -170,6 +170,9 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	if err := EnsureMasterControl(runDir); err != nil {
 		return fmt.Errorf("init master control: %w", err)
 	}
+	if err := SaveLaunchEnvSnapshot(ControlLaunchEnvPath(runDir), CaptureCurrentLaunchEnvSnapshot()); err != nil {
+		return fmt.Errorf("write launch env snapshot: %w", err)
+	}
 	fence, err := NewIdentityFence(runDir, meta)
 	if err != nil {
 		return fmt.Errorf("init identity fence: %w", err)
@@ -240,17 +243,6 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		return fmt.Errorf("init project status cache: %w", err)
 	}
 
-	// 13. Create tmux session (first window = "master")
-	if err := NewSession(tmuxSess, "master"); err != nil {
-		return fmt.Errorf("tmux new-session: %w", err)
-	}
-	tmuxCreated = true
-
-	// Set master working directory to project root
-	if err := SendKeys(tmuxSess+":master", "cd "+shellQuote(absProjectRoot)); err != nil {
-		return fmt.Errorf("set master cwd: %w", err)
-	}
-
 	checkSec, warning := normalizeSidecarInterval(cfg.Master.CheckInterval)
 	if warning != "" {
 		fmt.Fprint(os.Stderr, warning)
@@ -261,11 +253,16 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
 	}
-	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
-	masterLaunch := buildMasterLaunchCommand(goalxBin, cfg.Name, runDir, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
-	if err := SendKeys(tmuxSess+":master", masterLaunch); err != nil {
-		return fmt.Errorf("launch master: %w", err)
+	launchEnv, err := RequireLaunchEnvSnapshot(runDir)
+	if err != nil {
+		return fmt.Errorf("load launch env snapshot: %w", err)
 	}
+	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
+	masterLaunch := buildMasterLaunchCommandWithEnv(launchEnv.Env, goalxBin, cfg.Name, runDir, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
+	if err := NewSessionWithCommand(tmuxSess, "master", absProjectRoot, masterLaunch); err != nil {
+		return fmt.Errorf("tmux new-session: %w", err)
+	}
+	tmuxCreated = true
 
 	// Launch the run-scoped sidecar for lease renewal and supervision.
 	if err := launchRunSidecar(projectRoot, cfg.Name, time.Duration(checkSec)*time.Second); err != nil {

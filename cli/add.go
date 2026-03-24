@@ -156,6 +156,10 @@ func Add(projectRoot string, args []string) (err error) {
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
 	}
+	launchEnv, err := RequireLaunchEnvSnapshot(rc.RunDir)
+	if err != nil {
+		return fmt.Errorf("load run launch env: %w", err)
+	}
 	goalxBin, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
@@ -261,12 +265,9 @@ func Add(projectRoot string, args []string) (err error) {
 
 	// Launch in tmux
 	prompt := goalx.ResolvePrompt(engines, engine, protocolPath)
-	if err := NewWindow(rc.TmuxSession, windowName, wtPath); err != nil {
+	launchCmd := buildLeaseWrappedLaunchCommandWithEnv(launchEnv.Env, goalxBin, rc.Name, rc.RunDir, sName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
+	if err := NewWindowWithCommand(rc.TmuxSession, windowName, wtPath, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
-	}
-	launchCmd := buildLeaseWrappedLaunchCommand(goalxBin, rc.Name, rc.RunDir, sName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
-	if err := SendKeys(rc.TmuxSession+":"+windowName, launchCmd); err != nil {
-		return fmt.Errorf("launch subagent: %w", err)
 	}
 
 	if coord, err := EnsureCoordinationState(rc.RunDir, rc.Config.Objective); err == nil {

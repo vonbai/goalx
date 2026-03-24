@@ -84,8 +84,7 @@ case "$cmd" in
     exit 0
     ;;
   send-keys)
-    target="$2"
-    if [ "${GOALX_FAKE_TMUX_FAIL_TARGET:-}" = "$target" ]; then
+    if [ "${GOALX_FAKE_TMUX_FAIL_TARGET:-}" = "send-keys" ]; then
       exit 1
     fi
     exit 0
@@ -100,9 +99,13 @@ esac
 	}
 	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
-
 	tmuxSess := goalx.TmuxSessionName(repo, cfg.Name)
-	t.Setenv("GOALX_FAKE_TMUX_FAIL_TARGET", tmuxSess+":master")
+
+	origLaunchSidecar := launchRunSidecar
+	defer func() { launchRunSidecar = origLaunchSidecar }()
+	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error {
+		return os.ErrPermission
+	}
 
 	err = Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")})
 	if err == nil {
@@ -299,6 +302,9 @@ esac
 	}
 	if !strings.Contains(logText, "new-session -d -s "+goalx.TmuxSessionName(repo, cfg.Name)+" -n master") {
 		t.Fatalf("start log missing master session creation:\n%s", logText)
+	}
+	if strings.Contains(logText, "send-keys -t "+goalx.TmuxSessionName(repo, cfg.Name)+":master") {
+		t.Fatalf("start should launch master directly, not via send-keys:\n%s", logText)
 	}
 	if gotSidecarProjectRoot != repo || gotSidecarRunName != cfg.Name {
 		t.Fatalf("launchRunSidecar got (%q, %q), want (%q, %q)", gotSidecarProjectRoot, gotSidecarRunName, repo, cfg.Name)
@@ -520,6 +526,8 @@ esac
 	}
 	t.Setenv("PATH", binDir+":"+"/tmp/goalx-bin:/usr/bin")
 	t.Setenv("OPENAI_API_KEY", "sk-goalx")
+	t.Setenv("FOO_TOOLCHAIN_ROOT", "/opt/goalx-toolchain")
+	t.Setenv("TMUX_PANE", "%99")
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
 	origLaunchSidecar := launchRunSidecar
@@ -536,11 +544,12 @@ esac
 	}
 	logText := string(logData)
 	for _, want := range []string{
-		"send-keys -t " + goalx.TmuxSessionName(repo, cfg.Name) + ":master env ",
+		"new-session -d -s " + goalx.TmuxSessionName(repo, cfg.Name) + " -n master -c " + repo + " env ",
 		"/bin/bash -c ",
 		"lease-loop --run",
 		"--holder",
 		"master",
+		"FOO_TOOLCHAIN_ROOT='/opt/goalx-toolchain'",
 		"HOME='" + home + "'",
 		"PATH='" + binDir + ":/tmp/goalx-bin:/usr/bin'",
 		"OPENAI_API_KEY='sk-goalx'",
@@ -549,5 +558,27 @@ esac
 		if !strings.Contains(logText, want) {
 			t.Fatalf("start launch log missing %q:\n%s", want, logText)
 		}
+	}
+	if strings.Contains(logText, "TMUX_PANE='%99'") {
+		t.Fatalf("start launch should not propagate TMUX_PANE:\n%s", logText)
+	}
+
+	runDir := goalx.RunDir(repo, cfg.Name)
+	launchEnvData, err := os.ReadFile(filepath.Join(runDir, "control", "launch-env.json"))
+	if err != nil {
+		t.Fatalf("read launch env snapshot: %v", err)
+	}
+	launchEnvText := string(launchEnvData)
+	for _, want := range []string{
+		`"FOO_TOOLCHAIN_ROOT": "/opt/goalx-toolchain"`,
+		`"HOME": "` + home + `"`,
+		`"OPENAI_API_KEY": "sk-goalx"`,
+	} {
+		if !strings.Contains(launchEnvText, want) {
+			t.Fatalf("launch env snapshot missing %q:\n%s", want, launchEnvText)
+		}
+	}
+	if strings.Contains(launchEnvText, `"TMUX_PANE"`) {
+		t.Fatalf("launch env snapshot should not persist TMUX_PANE:\n%s", launchEnvText)
 	}
 }

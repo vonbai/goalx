@@ -250,7 +250,7 @@ acceptance:
 	}
 }
 
-func TestAddLaunchesSessionWithRuntimeEnv(t *testing.T) {
+func TestAddLaunchesSessionWithRunLaunchEnv(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -277,6 +277,7 @@ esac
 	t.Setenv("TMUX_LOG", logPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+"/tmp/goalx-bin:/usr/bin")
 	t.Setenv("ANTHROPIC_API_KEY", "anthropic-test")
+	t.Setenv("FOO_TOOLCHAIN_ROOT", "/opt/add-before")
 
 	snapshot := []byte(`name: add-run
 mode: develop
@@ -296,9 +297,17 @@ harness:
   command: "go test ./..."
 `)
 	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	writeTestLaunchEnvSnapshot(t, runDir, map[string]string{
+		"HOME":               home,
+		"PATH":               fakeBin + string(os.PathListSeparator) + "/tmp/goalx-bin:/usr/bin",
+		"ANTHROPIC_API_KEY":  "anthropic-test",
+		"FOO_TOOLCHAIN_ROOT": "/opt/add-before",
+	})
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
+	t.Setenv("ANTHROPIC_API_KEY", "anthropic-after")
+	t.Setenv("FOO_TOOLCHAIN_ROOT", "/opt/add-after")
 
 	if err := Add(repo, []string{"--run", runName, "--mode", "research", "audit root cause"}); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -310,11 +319,12 @@ harness:
 	}
 	logText := string(logData)
 	for _, want := range []string{
-		"send-keys -t " + goalx.TmuxSessionName(repo, runName) + ":session-2 env ",
+		"new-window -t " + goalx.TmuxSessionName(repo, runName) + " -n session-2 -c " + WorktreePath(runDir, runName, 2) + " env ",
 		"/bin/bash -c ",
 		"lease-loop --run",
 		"--holder",
 		"session-2",
+		"FOO_TOOLCHAIN_ROOT='/opt/add-before'",
 		"HOME='" + home + "'",
 		"PATH='" + fakeBin + ":/tmp/goalx-bin:/usr/bin'",
 		"ANTHROPIC_API_KEY='anthropic-test'",
@@ -323,6 +333,12 @@ harness:
 		if !strings.Contains(logText, want) {
 			t.Fatalf("add launch log missing %q:\n%s", want, logText)
 		}
+	}
+	if strings.Contains(logText, "send-keys -t "+goalx.TmuxSessionName(repo, runName)+":session-2") {
+		t.Fatalf("add should launch session directly, not via send-keys:\n%s", logText)
+	}
+	if strings.Contains(logText, "ANTHROPIC_API_KEY='anthropic-after'") || strings.Contains(logText, "FOO_TOOLCHAIN_ROOT='/opt/add-after'") {
+		t.Fatalf("add should use stored run launch env, not caller env:\n%s", logText)
 	}
 }
 
@@ -815,6 +831,7 @@ func writeAddRunFixture(t *testing.T, repo, snapshot string) (string, string) {
 	if err := EnsureMasterControl(runDir); err != nil {
 		t.Fatalf("EnsureMasterControl: %v", err)
 	}
+	writeTestLaunchEnvSnapshotFromCurrent(t, runDir)
 	fence, err := NewIdentityFence(runDir, meta)
 	if err != nil {
 		t.Fatalf("NewIdentityFence: %v", err)
