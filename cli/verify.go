@@ -59,7 +59,10 @@ func Verify(projectRoot string, args []string) error {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
-	cmd.Dir = rc.ProjectRoot
+	cmd.Dir = RunWorktreePath(rc.RunDir)
+	if info, err := os.Stat(cmd.Dir); err != nil || !info.IsDir() {
+		cmd.Dir = rc.ProjectRoot
+	}
 	output, runErr := cmd.CombinedOutput()
 
 	evidencePath := AcceptanceEvidencePath(rc.RunDir)

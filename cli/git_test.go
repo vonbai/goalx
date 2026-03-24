@@ -278,6 +278,11 @@ func TestDropRemovesRunDirectoryAndBranch(t *testing.T) {
 	if err := CreateWorktree(repo, worktreePath, branch); err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
+	runBranch := "goalx/drop-run/root"
+	runWorktreePath := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWorktreePath, runBranch); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
 
 	if err := Drop(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Drop: %v", err)
@@ -288,6 +293,9 @@ func TestDropRemovesRunDirectoryAndBranch(t *testing.T) {
 	}
 	if err := exec.Command("git", "-C", repo, "rev-parse", "--verify", branch).Run(); err == nil {
 		t.Fatalf("branch %s should be deleted", branch)
+	}
+	if err := exec.Command("git", "-C", repo, "rev-parse", "--verify", runBranch).Run(); err == nil {
+		t.Fatalf("branch %s should be deleted", runBranch)
 	}
 }
 

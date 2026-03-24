@@ -110,6 +110,18 @@ func Drop(projectRoot string, args []string) error {
 			}
 		}
 	}
+	runWT := RunWorktreePath(rc.RunDir)
+	if !removedWorktrees[runWT] {
+		if info, err := os.Stat(runWT); err == nil && info.IsDir() {
+			if err := RemoveWorktree(rc.ProjectRoot, runWT); err != nil {
+				fmt.Printf("Warning: remove run worktree %s: %v\n", runWT, err)
+			} else {
+				removedWorktrees[runWT] = true
+				fmt.Printf("Removed worktree: %s\n", runWT)
+			}
+		}
+	}
+	removeSessionBranch(fmt.Sprintf("goalx/%s/root", rc.Config.Name))
 
 	if err := os.RemoveAll(rc.RunDir); err != nil {
 		return fmt.Errorf("remove run dir %s: %w", rc.RunDir, err)

@@ -88,6 +88,54 @@ acceptance:
 
 }
 
+func TestVerifyRunsAcceptanceInsideRunWorktree(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	ensureSharedProofEvidence(t)
+
+	runName := "verify-run"
+	runDir := goalx.RunDir(repo, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+
+	snapshot := []byte(`name: verify-run
+mode: develop
+objective: ship feature
+acceptance:
+  command: "test -f run-worktree-only.txt"
+`)
+	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
+		Version:      1,
+		Objective:    "ship feature",
+		BaseRevision: strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD")),
+	}); err != nil {
+		t.Fatalf("write run metadata: %v", err)
+	}
+	seedRunCharterForTests(t, runDir, runName, repo)
+	if err := os.WriteFile(GoalPath(runDir), []byte(`{"version":1,"required":[{"id":"req-1","text":"ship feature","source":"user","state":"claimed","evidence_paths":["/tmp/e2e.txt"]}],"optional":[]}`), 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
+	}
+
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runWT, "run-worktree-only.txt"), []byte("ok\n"), 0o644); err != nil {
+		t.Fatalf("write run-worktree-only.txt: %v", err)
+	}
+
+	if err := Verify(repo, []string{"--run", runName}); err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+}
+
 func TestVerifyFallsBackToHarnessAndRecordsFailure(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

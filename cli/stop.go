@@ -43,6 +43,7 @@ func Stop(projectRoot string, args []string) error {
 		return nil
 	}
 
+	// Stopping a run preserves the run worktree for inspection or later reuse.
 	if err := KillSession(rc.TmuxSession); err != nil {
 		return fmt.Errorf("kill tmux session %s: %w", rc.TmuxSession, err)
 	}
