@@ -331,9 +331,8 @@ func TestRenderSubagentProtocolIncludesTeamContext(t *testing.T) {
 		JournalPath:         "/tmp/journal.jsonl",
 		SessionInboxPath:    "/tmp/control/inbox/session-1.jsonl",
 		SessionCursorPath:   "/tmp/control/session-1-cursor.json",
-		AcceptancePath:      "/tmp/acceptance.md",
 		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalContractPath:    "/tmp/goal-contract.json",
+		GoalPath:            "/tmp/goal.json",
 		Sessions: []SessionData{
 			{Name: "session-1", WorktreePath: "/tmp/worktree-1"},
 			{Name: "session-2", WorktreePath: "/tmp/worktree-2"},
@@ -354,8 +353,7 @@ func TestRenderSubagentProtocolIncludesTeamContext(t *testing.T) {
 		"session-1",
 		"session-2",
 		"of 2 sessions",
-		"acceptance.md",
-		"goal-contract.json",
+		"goal.json",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered protocol missing %q", want)
@@ -363,7 +361,7 @@ func TestRenderSubagentProtocolIncludesTeamContext(t *testing.T) {
 	}
 }
 
-func TestRenderSubagentProtocolMakesGoalContractBoundaryExplicit(t *testing.T) {
+func TestRenderSubagentProtocolMakesGoalBoundaryExplicit(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
 		RunName:             "demo",
@@ -377,8 +375,7 @@ func TestRenderSubagentProtocolMakesGoalContractBoundaryExplicit(t *testing.T) {
 		JournalPath:         "/tmp/journal.jsonl",
 		SessionInboxPath:    "/tmp/control/inbox/session-1.jsonl",
 		SessionCursorPath:   "/tmp/control/session-1-cursor.json",
-		GoalContractPath:    "/tmp/goal-contract.json",
-		AcceptancePath:      "/tmp/acceptance.md",
+		GoalPath:            "/tmp/goal.json",
 		AcceptanceStatePath: "/tmp/acceptance.json",
 		Sessions: []SessionData{
 			{Name: "session-1", WorktreePath: "/tmp/worktree-1", Mode: goalx.ModeDevelop},
@@ -395,8 +392,8 @@ func TestRenderSubagentProtocolMakesGoalContractBoundaryExplicit(t *testing.T) {
 	}
 	text := string(out)
 	for _, want := range []string{
-		"Goal contract: `/tmp/goal-contract.json`",
-		"The goal contract defines what must be true before the overall goal can be considered complete.",
+		"Goal boundary: `/tmp/goal.json`",
+		"The goal boundary defines what must be true before the overall goal can be considered complete.",
 		"Your current assignment defines what to do next, not what counts as full completion.",
 		"one coherent capability slice at a time",
 	} {
@@ -409,7 +406,7 @@ func TestRenderSubagentProtocolMakesGoalContractBoundaryExplicit(t *testing.T) {
 	}
 }
 
-func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testing.T) {
+func TestRenderMasterProtocolIncludesGoalBoundaryChecklistInstructions(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
 		Objective:           "ship it",
@@ -417,9 +414,8 @@ func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testin
 		Mode:                goalx.ModeDevelop,
 		TmuxSession:         "ar-demo",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptancePath:      "/tmp/acceptance.md",
 		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalContractPath:    "/tmp/goal-contract.json",
+		GoalPath:            "/tmp/goal.json",
 		StatusPath:          "/tmp/status.json",
 		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
 	}
@@ -437,28 +433,21 @@ func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testin
 		"## Mode",
 		"The user specified **develop** mode.",
 		"## Your Job",
-		"goal contract",
-		"execution_state\":\"active|waiting_external|dispatchable\"",
+		"goal boundary",
+		"state\":\"open|claimed|waived\"",
 		"acceptance.json",
-		"goal-contract.json",
+		"goal.json",
+		"goal-log.jsonl",
 		"goalx verify --run demo",
-		"completeness",
-		"evidence density (code refs)",
-		"counter-evidence",
-		"quantification",
-		"actionability",
-		"structure",
-		"/tmp/acceptance.md",
 		"goalx add --run demo",
 		"goalx tell --run demo session-N",
 		"goalx park --run demo session-N",
 		"goalx resume --run demo session-N",
 		"dispatcher and referee",
-		"check evidence density, counter-evidence presence, and actionability of findings",
+		"check evidence density, clear evidence, and actionability of findings",
 		"If any required item is uncovered, that is a scheduling bug.",
 		"If parallel capacity exists and independent required work remains, dispatch it now instead of waiting.",
 		"waiting_external",
-		"dispatchable",
 		"If a required item stays stuck, reassign it, split it, or take it over yourself.",
 		"Do not wait on one session if other independent required work can proceed.",
 		"Prefer reusing a parked or idle session with fresh inbox instructions before launching another session.",
@@ -470,8 +459,15 @@ func TestRenderMasterProtocolIncludesGoalContractChecklistInstructions(t *testin
 	if strings.Contains(text, "tmux send-keys -t ar-demo:<window> Enter") {
 		t.Fatalf("rendered master protocol should not tell master to hand-send tmux enter nudges:\n%s", text)
 	}
-	if strings.Contains(text, "3-7 testable bullets") {
-		t.Fatalf("rendered master protocol should not cap required goal coverage:\n%s", text)
+	for _, unwanted := range []string{
+		"goal contract",
+		"counter-evidence",
+		"semantic_match",
+		"acceptance.md",
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("rendered master protocol should not contain legacy boundary/proof wording %q:\n%s", unwanted, text)
+		}
 	}
 }
 
@@ -483,7 +479,6 @@ func TestRenderMasterProtocolIncludesOptimizerDoctrine(t *testing.T) {
 		Mode:             goalx.ModeDevelop,
 		TmuxSession:      "ar-demo",
 		SummaryPath:      "/tmp/summary.md",
-		AcceptancePath:   "/tmp/acceptance.md",
 		CoordinationPath: "/tmp/coordination.json",
 		EngineCommand:    "claude --model claude-opus-4-6 --permission-mode auto",
 	}
@@ -506,10 +501,12 @@ func TestRenderMasterProtocolIncludesOptimizerDoctrine(t *testing.T) {
 		"architecture-level redesign path",
 		"Prefer the highest expected-value path",
 		"Do not over-engineer for elegance alone",
-		"Treat narrowed causes as hypotheses until a failing regression test or decisive counter-evidence confirms them.",
+		"Treat narrowed causes as hypotheses until a failing regression test or decisive evidence confirms them.",
 		"keep it short: current problem, chosen path, and one-line reason",
 		"Do not ask the user to choose between implementation paths unless the choice materially changes scope, risk, acceptance, or irreversible cost.",
 		"Otherwise decide yourself, record why, and execute.",
+		"Before you commit on a non-trivial goal, compare at least 2-3 concrete paths first.",
+		"If later evidence shows the chosen path is stuck, falsified, or clearly lower-value, switch paths autonomously and record why.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
@@ -526,9 +523,8 @@ func TestRenderMasterProtocolDefinesGenericLastMileAutonomy(t *testing.T) {
 		Master:                goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		TmuxSession:           "ar-demo",
 		SummaryPath:           "/tmp/summary.md",
-		AcceptancePath:        "/tmp/acceptance.md",
 		AcceptanceStatePath:   "/tmp/acceptance.json",
-		GoalContractPath:      "/tmp/goal-contract.json",
+		GoalPath:              "/tmp/goal.json",
 		RunStatePath:          "/tmp/state/run.json",
 		SessionsStatePath:     "/tmp/state/sessions.json",
 		MasterInboxPath:       "/tmp/control/master-inbox.jsonl",
@@ -556,6 +552,7 @@ func TestRenderMasterProtocolDefinesGenericLastMileAutonomy(t *testing.T) {
 		"If a required proof step depends on a long-running local process, confirm that the live process matches current `HEAD`; if it does not, rebuild/restart or relaunch it yourself before evaluating.",
 		"Do not stop at intermediate states such as \"implementation complete\", \"ready for eval\", or \"awaiting external verification\" while an actionable required item remains.",
 		"If the only remaining gap is proof or verification that you can execute yourself, run it now instead of waiting for another cycle.",
+		"If a better path becomes clear during execution, update the goal boundary, switch, and continue without waiting for a user tell.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
@@ -571,7 +568,7 @@ func TestRenderMasterProtocolIncludesResearchModeLaunchGuidance(t *testing.T) {
 		Mode:           goalx.ModeResearch,
 		TmuxSession:    "ar-demo",
 		SummaryPath:    "/tmp/summary.md",
-		AcceptancePath: "/tmp/acceptance.md",
+		AcceptanceNotesPath: "/tmp/acceptance.md",
 		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
 	}
 
@@ -720,7 +717,7 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 		Master:         goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		TmuxSession:    "ar-demo",
 		SummaryPath:    "/tmp/summary.md",
-		AcceptancePath: "/tmp/acceptance.md",
+		AcceptanceNotesPath: "/tmp/acceptance.md",
 		StatusPath:     "/tmp/status.json",
 		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
 	}
@@ -762,9 +759,9 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		Master:                goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		TmuxSession:           "ar-demo",
 		SummaryPath:           "/tmp/summary.md",
-		AcceptancePath:        "/tmp/acceptance.md",
+		AcceptanceNotesPath:   "/tmp/acceptance.md",
 		AcceptanceStatePath:   "/tmp/acceptance.json",
-		GoalContractPath:      "/tmp/goal-contract.json",
+		GoalPath:              "/tmp/goal.json",
 		MasterJournalPath:     "/tmp/master.jsonl",
 		StatusPath:            "/tmp/status.json",
 		CoordinationPath:      "/tmp/coordination.json",
@@ -816,7 +813,7 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		"short-lived information gathering",
 		"if you are running on Claude Code, you may use Claude's native subagents inside the master session",
 		"`goalx add` remains the durable path",
-		"Treat narrowed causes as hypotheses until a failing regression test or decisive counter-evidence confirms them.",
+		"Treat narrowed causes as hypotheses until a failing regression test or decisive evidence confirms them.",
 		"If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated control cycles.",
 		"Keep detailed hypotheses, traces, and path comparisons in journals, not the coordination digest.",
 		"Avoid sync-only liveness narration.",
@@ -839,9 +836,9 @@ func TestRenderMasterProtocolOmitsOldSyncOnlyLivenessGuidance(t *testing.T) {
 		Master:              goalx.MasterConfig{Engine: "codex", Model: "best"},
 		TmuxSession:         "ar-demo",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptancePath:      "/tmp/acceptance.md",
+		AcceptanceNotesPath: "/tmp/acceptance.md",
 		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalContractPath:    "/tmp/goal-contract.json",
+		GoalPath:            "/tmp/goal.json",
 		CoordinationPath:    "/tmp/coordination.json",
 		StatusPath:          "/tmp/status.json",
 		MasterJournalPath:   "/tmp/master.jsonl",
@@ -876,9 +873,9 @@ func TestRenderMasterProtocolIncludesOptimizationDoctrine(t *testing.T) {
 		Master:              goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		TmuxSession:         "ar-demo",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptancePath:      "/tmp/acceptance.md",
+		AcceptanceNotesPath: "/tmp/acceptance.md",
 		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalContractPath:    "/tmp/goal-contract.json",
+		GoalPath:            "/tmp/goal.json",
 		CoordinationPath:    "/tmp/coordination.json",
 		StatusPath:          "/tmp/status.json",
 		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
@@ -902,7 +899,7 @@ func TestRenderMasterProtocolIncludesOptimizationDoctrine(t *testing.T) {
 		"architecture-level redesign path",
 		"Prefer the highest expected-value path feasible within budget and risk.",
 		"Do not over-engineer for elegance alone.",
-		"Treat narrowed causes as hypotheses until a failing regression test or decisive counter-evidence confirms them.",
+		"Treat narrowed causes as hypotheses until a failing regression test or decisive evidence confirms them.",
 		"keep it short: current problem, chosen path, and one-line reason",
 	} {
 		if !strings.Contains(text, want) {

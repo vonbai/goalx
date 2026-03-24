@@ -47,7 +47,7 @@ Common path:
 4. Route course corrections through the master. Prefer `goalx tell --run NAME "direction"` over raw transport input.
 5. Do not manually edit GoalX config or runtime files unless the user explicitly asks for config-level control.
 6. Keep recaps short. GoalX resumes from durable run state and current files.
-7. Interpret `goalx observe` and `goalx status` as control-plane summaries. Report run status, lease health, unread inbox, reminders, delivery failures, and contract progress instead of raw transport noise.
+7. Interpret `goalx observe` and `goalx status` as control-plane summaries. Report run status, lease health, unread inbox, reminders, delivery failures, and goal-boundary progress instead of raw transport noise.
 8. `goalx verify` is stricter than "tests passed": it checks the effective acceptance gate, required-item completion, and the canonical `proof/completion.json` manifest.
 9. `--parallel` is optional. Treat it as initial fan-out, not as a permanent cap on later master dispatch.
 10. Role defaults are separate. Use `--master`, `--research-role`, and `--develop-role` only when the user wants to override the run's default engine/model split.

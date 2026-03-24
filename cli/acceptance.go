@@ -16,30 +16,32 @@ const (
 	acceptanceStatusPassed  = "passed"
 	acceptanceStatusFailed  = "failed"
 
-	acceptanceScopeBaseline     = "baseline"
-	acceptanceScopeGoalSpecific = "goal_specific"
-	acceptanceScopeNarrowed     = "narrowed"
-	acceptanceScopeExpanded     = "expanded"
-	acceptanceScopeRewritten    = "rewritten"
+	acceptanceChangeSame      = "same"
+	acceptanceChangeExpanded  = "expanded"
+	acceptanceChangeRewritten = "rewritten"
+	acceptanceChangeNarrowed  = "narrowed"
 )
 
-type AcceptanceState struct {
-	Version         int    `json:"version"`
-	BaselineCommand string `json:"baseline_command,omitempty"`
-	BaselineSource  string `json:"baseline_source,omitempty"`
-	Command         string `json:"command,omitempty"`
-	CommandSource   string `json:"command_source,omitempty"`
-	ScopeType       string `json:"scope_type,omitempty"`
-	ScopeReason     string `json:"scope_reason,omitempty"`
-	ContractVersion int    `json:"contract_version,omitempty"`
-	Status          string `json:"status"`
-	UpdatedAt       string `json:"updated_at,omitempty"`
-	CheckedAt       string `json:"checked_at,omitempty"`
-	LastExitCode    *int   `json:"last_exit_code,omitempty"`
-	EvidencePath    string `json:"evidence_path,omitempty"`
+type AcceptanceResult struct {
+	Status       string `json:"status,omitempty"`
+	CheckedAt    string `json:"checked_at,omitempty"`
+	ExitCode     *int   `json:"exit_code,omitempty"`
+	EvidencePath string `json:"evidence_path,omitempty"`
 }
 
-func AcceptanceChecklistPath(runDir string) string {
+type AcceptanceState struct {
+	Version          int              `json:"version"`
+	GoalVersion      int              `json:"goal_version,omitempty"`
+	DefaultCommand   string           `json:"default_command,omitempty"`
+	EffectiveCommand string           `json:"effective_command,omitempty"`
+	ChangeKind       string           `json:"change_kind,omitempty"`
+	ChangeReason     string           `json:"change_reason,omitempty"`
+	UserApproved     bool             `json:"user_approved,omitempty"`
+	LastResult       AcceptanceResult `json:"last_result,omitempty"`
+	UpdatedAt        string           `json:"updated_at,omitempty"`
+}
+
+func AcceptanceNotesPath(runDir string) string {
 	return filepath.Join(runDir, "acceptance.md")
 }
 
@@ -51,17 +53,18 @@ func AcceptanceEvidencePath(runDir string) string {
 	return filepath.Join(runDir, "acceptance-last.txt")
 }
 
-func NewAcceptanceState(cfg *goalx.Config) *AcceptanceState {
-	cmd, source := goalx.ResolveAcceptanceCommandSource(cfg)
+func NewAcceptanceState(cfg *goalx.Config, goalVersion int) *AcceptanceState {
+	cmd, _ := goalx.ResolveAcceptanceCommandSource(cfg)
 	return &AcceptanceState{
-		Version:         1,
-		BaselineCommand: cmd,
-		BaselineSource:  source,
-		Command:         cmd,
-		CommandSource:   source,
-		ScopeType:       acceptanceScopeBaseline,
-		Status:          acceptanceStatusPending,
-		UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
+		Version:          1,
+		GoalVersion:      goalVersion,
+		DefaultCommand:   cmd,
+		EffectiveCommand: cmd,
+		ChangeKind:       acceptanceChangeSame,
+		LastResult: AcceptanceResult{
+			Status: acceptanceStatusPending,
+		},
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 }
 
@@ -77,6 +80,7 @@ func LoadAcceptanceState(path string) (*AcceptanceState, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
+	normalizeAcceptanceState(&state)
 	return &state, nil
 }
 
@@ -84,12 +88,7 @@ func SaveAcceptanceState(path string, state *AcceptanceState) error {
 	if state == nil {
 		return fmt.Errorf("acceptance state is nil")
 	}
-	if state.Version <= 0 {
-		state.Version = 1
-	}
-	if strings.TrimSpace(state.ScopeType) == "" {
-		state.ScopeType = acceptanceScopeBaseline
-	}
+	normalizeAcceptanceState(state)
 	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -101,87 +100,80 @@ func SaveAcceptanceState(path string, state *AcceptanceState) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-func EnsureAcceptanceState(runDir string, cfg *goalx.Config) (*AcceptanceState, error) {
+func EnsureAcceptanceState(runDir string, cfg *goalx.Config, goalVersion int) (*AcceptanceState, error) {
 	path := AcceptanceStatePath(runDir)
 	state, err := LoadAcceptanceState(path)
 	if err != nil {
 		return nil, err
 	}
 	if state == nil {
-		state = NewAcceptanceState(cfg)
+		state = NewAcceptanceState(cfg, goalVersion)
 		if err := SaveAcceptanceState(path, state); err != nil {
 			return nil, err
 		}
 		return state, nil
 	}
 
-	if state.Version <= 0 {
-		state.Version = 1
+	defaultCommand, _ := goalx.ResolveAcceptanceCommandSource(cfg)
+	if strings.TrimSpace(state.DefaultCommand) == "" {
+		state.DefaultCommand = defaultCommand
 	}
-	if state.Status == "" {
-		state.Status = acceptanceStatusPending
+	if strings.TrimSpace(state.EffectiveCommand) == "" {
+		state.EffectiveCommand = state.DefaultCommand
 	}
-	if state.BaselineCommand == "" {
-		state.BaselineCommand, state.BaselineSource = goalx.ResolveAcceptanceCommandSource(cfg)
-		if state.BaselineCommand == "" {
-			state.BaselineCommand = state.Command
-			state.BaselineSource = state.CommandSource
-		}
+	if state.GoalVersion <= 0 {
+		state.GoalVersion = goalVersion
 	}
-	if state.Command == "" {
-		state.Command, state.CommandSource = goalx.ResolveAcceptanceCommandSource(cfg)
-	}
-	if state.CommandSource == "" {
-		state.CommandSource = state.BaselineSource
-	}
-	if state.ScopeType == "" {
-		if strings.TrimSpace(state.Command) == strings.TrimSpace(state.BaselineCommand) {
-			state.ScopeType = acceptanceScopeBaseline
-		}
-	}
-	if state.UpdatedAt == "" {
-		state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	}
+	normalizeAcceptanceState(state)
 	if err := SaveAcceptanceState(path, state); err != nil {
 		return nil, err
 	}
 	return state, nil
 }
 
-func ValidateAcceptanceStateForVerification(state *AcceptanceState, contract *GoalContractState) error {
+func ValidateAcceptanceStateForVerification(state *AcceptanceState, goal *GoalState) error {
 	if state == nil {
 		return fmt.Errorf("acceptance state is nil")
 	}
-	command := strings.TrimSpace(state.Command)
-	if command == "" {
+	if strings.TrimSpace(state.EffectiveCommand) == "" {
 		return fmt.Errorf("no acceptance command configured")
 	}
-	baseline := strings.TrimSpace(state.BaselineCommand)
-	if baseline == "" {
-		baseline = command
+	if goal != nil && goal.Version > 0 && state.GoalVersion != goal.Version {
+		return fmt.Errorf("acceptance goal_version=%d but goal.json version is %d", state.GoalVersion, goal.Version)
 	}
-	if command == baseline {
+
+	if strings.TrimSpace(state.DefaultCommand) == strings.TrimSpace(state.EffectiveCommand) {
+		if state.ChangeKind != acceptanceChangeSame {
+			return fmt.Errorf("acceptance change_kind must be %q when effective_command matches default_command", acceptanceChangeSame)
+		}
 		return nil
 	}
-	scopeType := strings.TrimSpace(state.ScopeType)
-	switch scopeType {
-	case acceptanceScopeGoalSpecific, acceptanceScopeNarrowed, acceptanceScopeExpanded, acceptanceScopeRewritten:
+
+	switch state.ChangeKind {
+	case acceptanceChangeExpanded, acceptanceChangeRewritten, acceptanceChangeNarrowed:
 	default:
-		return fmt.Errorf("acceptance command differs from baseline but scope_type is missing or invalid")
+		return fmt.Errorf("acceptance command differs from default_command but change_kind is missing or invalid")
 	}
-	if strings.TrimSpace(state.ScopeReason) == "" {
-		return fmt.Errorf("acceptance command differs from baseline but scope_reason is empty")
+	if strings.TrimSpace(state.ChangeReason) == "" {
+		return fmt.Errorf("acceptance command differs from default_command but change_reason is empty")
 	}
-	if contract != nil && contract.Version > 0 && state.ContractVersion > 0 && state.ContractVersion != contract.Version {
-		return fmt.Errorf("acceptance scope targets contract version %d but current goal contract is version %d", state.ContractVersion, contract.Version)
-	}
-	if contract != nil && contract.Version > 0 && state.ContractVersion == 0 {
-		return fmt.Errorf("acceptance command differs from baseline but contract_version is missing")
+	if state.ChangeKind == acceptanceChangeNarrowed && !state.UserApproved {
+		return fmt.Errorf("narrowed acceptance gate requires explicit user approval")
 	}
 	return nil
 }
 
-func updateStatusWithAcceptance(statusPath string, state *AcceptanceState, contractSummary GoalContractSummary, completion *CompletionState) error {
+func acceptanceStatus(state *AcceptanceState) string {
+	if state == nil {
+		return ""
+	}
+	if strings.TrimSpace(state.LastResult.Status) == "" {
+		return acceptanceStatusPending
+	}
+	return state.LastResult.Status
+}
+
+func updateStatusWithAcceptance(statusPath string, state *AcceptanceState, summary GoalSummary, completion *CompletionState) error {
 	if state == nil {
 		return fmt.Errorf("acceptance state is nil")
 	}
@@ -195,27 +187,22 @@ func updateStatusWithAcceptance(statusPath string, state *AcceptanceState, contr
 		return err
 	}
 
-	payload["acceptance_status"] = state.Status
-	payload["acceptance_baseline_command"] = state.BaselineCommand
-	payload["acceptance_baseline_source"] = state.BaselineSource
-	payload["acceptance_command"] = state.Command
-	payload["acceptance_command_source"] = state.CommandSource
-	payload["acceptance_scope_type"] = state.ScopeType
-	payload["acceptance_scope_reason"] = state.ScopeReason
-	payload["acceptance_contract_version"] = state.ContractVersion
-	payload["acceptance_checked_at"] = state.CheckedAt
-	if state.LastExitCode != nil {
-		payload["acceptance_exit_code"] = *state.LastExitCode
+	payload["acceptance_status"] = acceptanceStatus(state)
+	payload["acceptance_checked_at"] = state.LastResult.CheckedAt
+	payload["acceptance_evidence_path"] = state.LastResult.EvidencePath
+	payload["acceptance_default_command"] = state.DefaultCommand
+	payload["acceptance_effective_command"] = state.EffectiveCommand
+	payload["acceptance_change_kind"] = state.ChangeKind
+	if state.ChangeReason != "" {
+		payload["acceptance_change_reason"] = state.ChangeReason
 	}
-	if state.EvidencePath != "" {
-		payload["acceptance_evidence_path"] = state.EvidencePath
-	}
-	payload["goal_contract_status"] = contractSummary.Status
-	payload["goal_required_total"] = contractSummary.RequiredTotal
-	payload["goal_required_done"] = contractSummary.RequiredDone
-	payload["goal_required_remaining"] = contractSummary.RequiredRemaining
-	payload["goal_enhancement_open"] = contractSummary.EnhancementOpen
+	payload["goal_version"] = summary.Version
+	payload["required_total"] = summary.RequiredTotal
+	payload["required_satisfied"] = summary.RequiredSatisfied
+	payload["required_remaining"] = summary.RequiredRemaining
+	payload["optional_open"] = summary.OptionalOpen
 	if completion != nil {
+		payload["goal_satisfied"] = completion.GoalSatisfied
 		payload["completion_mode"] = completion.CompletionMode
 		payload["code_changed"] = completion.CodeChanged
 		payload["base_revision"] = completion.BaseRevision
@@ -239,23 +226,24 @@ func updateStatusWithAcceptance(statusPath string, state *AcceptanceState, contr
 	return os.WriteFile(statusPath, data, 0o644)
 }
 
-func updateRunVerificationState(projectRoot, runDir string, cfg *goalx.Config, state *AcceptanceState, contractSummary GoalContractSummary, completion *CompletionState) error {
+func updateRunVerificationState(projectRoot, runDir string, cfg *goalx.Config, state *AcceptanceState, summary GoalSummary, completion *CompletionState) error {
 	runtimeState, err := EnsureRuntimeState(runDir, cfg)
 	if err != nil {
 		return err
 	}
-	runtimeState.AcceptanceMet = state != nil && state.Status == acceptanceStatusPassed
+	runtimeState.AcceptanceMet = state != nil && acceptanceStatus(state) == acceptanceStatusPassed
 	if state != nil {
-		runtimeState.AcceptanceStatus = state.Status
-		runtimeState.AcceptanceCheckedAt = state.CheckedAt
-		runtimeState.AcceptanceEvidencePath = state.EvidencePath
+		runtimeState.AcceptanceStatus = acceptanceStatus(state)
+		runtimeState.AcceptanceCheckedAt = state.LastResult.CheckedAt
+		runtimeState.AcceptanceEvidencePath = state.LastResult.EvidencePath
 	}
-	runtimeState.GoalContractStatus = contractSummary.Status
-	runtimeState.GoalRequiredTotal = contractSummary.RequiredTotal
-	runtimeState.GoalRequiredDone = contractSummary.RequiredDone
-	runtimeState.GoalRequiredRemain = contractSummary.RequiredRemaining
-	runtimeState.GoalEnhancementOpen = contractSummary.EnhancementOpen
+	runtimeState.GoalVersion = summary.Version
+	runtimeState.RequiredTotal = summary.RequiredTotal
+	runtimeState.RequiredSatisfied = summary.RequiredSatisfied
+	runtimeState.RequiredRemaining = summary.RequiredRemaining
+	runtimeState.OptionalOpen = summary.OptionalOpen
 	if completion != nil {
+		runtimeState.GoalSatisfied = completion.GoalSatisfied
 		runtimeState.CompletionMode = completion.CompletionMode
 		runtimeState.CodeChanged = completion.CodeChanged
 		runtimeState.BaseRevision = completion.BaseRevision
@@ -266,4 +254,24 @@ func updateRunVerificationState(projectRoot, runDir string, cfg *goalx.Config, s
 		return err
 	}
 	return syncProjectStatusCache(projectRoot, runtimeState)
+}
+
+func normalizeAcceptanceState(state *AcceptanceState) {
+	if state.Version <= 0 {
+		state.Version = 1
+	}
+	if strings.TrimSpace(state.EffectiveCommand) == "" {
+		state.EffectiveCommand = strings.TrimSpace(state.DefaultCommand)
+	}
+	if strings.TrimSpace(state.DefaultCommand) == "" {
+		state.DefaultCommand = strings.TrimSpace(state.EffectiveCommand)
+	}
+	if strings.TrimSpace(state.ChangeKind) == "" {
+		if strings.TrimSpace(state.EffectiveCommand) == strings.TrimSpace(state.DefaultCommand) {
+			state.ChangeKind = acceptanceChangeSame
+		}
+	}
+	if strings.TrimSpace(state.LastResult.Status) == "" {
+		state.LastResult.Status = acceptanceStatusPending
+	}
 }

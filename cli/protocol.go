@@ -29,8 +29,9 @@ type ProtocolData struct {
 	TmuxSession            string
 	ProjectRoot            string
 	SummaryPath            string
-	GoalContractPath       string
-	AcceptancePath         string
+	GoalPath               string
+	GoalLogPath            string
+	AcceptanceNotesPath    string
 	AcceptanceStatePath    string
 	CompletionProofPath    string
 	RunStatePath           string
@@ -78,13 +79,33 @@ type SessionData struct {
 
 // RenderMasterProtocol renders master.md.tmpl to the run directory.
 func RenderMasterProtocol(data ProtocolData, runDir string) error {
+	data = normalizeProtocolData(data)
 	return renderTemplate("templates/master.md.tmpl", filepath.Join(runDir, "master.md"), data)
 }
 
 // RenderSubagentProtocol renders program.md.tmpl for a specific session.
 func RenderSubagentProtocol(data ProtocolData, runDir string, sessionIdx int) error {
+	data = normalizeProtocolData(data)
 	outPath := filepath.Join(runDir, sessionName(sessionIdx)+".md")
 	return renderTemplate("templates/program.md.tmpl", outPath, data)
+}
+
+func normalizeProtocolData(data ProtocolData) ProtocolData {
+	if data.GoalLogPath == "" && data.GoalPath != "" {
+		data.GoalLogPath = filepath.Join(filepath.Dir(data.GoalPath), "goal-log.jsonl")
+	}
+	return data
+}
+
+func existingProtocolPath(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return ""
+	}
+	return path
 }
 
 func sessionName(idx int) string {

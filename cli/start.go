@@ -117,8 +117,8 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	}
 	masterProtocolPath := filepath.Join(runDir, "master.md")
 	masterPrompt := goalx.ResolvePrompt(engines, cfg.Master.Engine, masterProtocolPath)
-	goalContractPath := GoalContractPath(runDir)
-	acceptancePath := AcceptanceChecklistPath(runDir)
+	goalPath := GoalPath(runDir)
+	goalLogPath := GoalLogPath(runDir)
 	acceptanceStatePath := AcceptanceStatePath(runDir)
 	statusPath := ProjectStatusCachePath(projectRoot)
 
@@ -145,8 +145,9 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		TmuxSession:            tmuxSess,
 		ProjectRoot:            absProjectRoot,
 		SummaryPath:            filepath.Join(runDir, "summary.md"),
-		GoalContractPath:       goalContractPath,
-		AcceptancePath:         acceptancePath,
+		GoalPath:               goalPath,
+		GoalLogPath:            goalLogPath,
+		AcceptanceNotesPath:    existingProtocolPath(AcceptanceNotesPath(runDir)),
 		AcceptanceStatePath:    acceptanceStatePath,
 		CompletionProofPath:    CompletionStatePath(runDir),
 		RunStatePath:           RunRuntimeStatePath(runDir),
@@ -174,13 +175,14 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	if err := os.WriteFile(filepath.Join(runDir, "master.jsonl"), nil, 0644); err != nil {
 		return fmt.Errorf("init master journal: %w", err)
 	}
-	if err := os.WriteFile(acceptancePath, nil, 0644); err != nil {
-		return fmt.Errorf("init acceptance checklist: %w", err)
+	goalState, err := EnsureGoalState(runDir)
+	if err != nil {
+		return fmt.Errorf("init goal state: %w", err)
 	}
-	if _, err := EnsureGoalContractState(runDir, cfg.Objective); err != nil {
-		return fmt.Errorf("init goal contract: %w", err)
+	if err := EnsureGoalLog(runDir); err != nil {
+		return fmt.Errorf("init goal log: %w", err)
 	}
-	if _, err := EnsureAcceptanceState(runDir, cfg); err != nil {
+	if _, err := EnsureAcceptanceState(runDir, cfg, goalState.Version); err != nil {
 		return fmt.Errorf("init acceptance state: %w", err)
 	}
 	meta, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective)

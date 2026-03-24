@@ -59,10 +59,11 @@ func Save(projectRoot string, args []string) error {
 		return fmt.Errorf("copy session state: %w", err)
 	}
 
-	// Copy acceptance checklist
-	goalContractPath := GoalContractPath(rc.RunDir)
-	if err := copyFileIfExists(goalContractPath, filepath.Join(saveDir, "goal-contract.json")); err != nil {
-		return fmt.Errorf("copy goal contract: %w", err)
+	if err := copyFileIfExists(GoalPath(rc.RunDir), filepath.Join(saveDir, "goal.json")); err != nil {
+		return fmt.Errorf("copy goal state: %w", err)
+	}
+	if err := copyFileIfExists(GoalLogPath(rc.RunDir), filepath.Join(saveDir, "goal-log.jsonl")); err != nil {
+		return fmt.Errorf("copy goal log: %w", err)
 	}
 	runMetadataPath := RunMetadataPath(rc.RunDir)
 	if err := copyFileIfExists(runMetadataPath, filepath.Join(saveDir, "run-metadata.json")); err != nil {
@@ -71,10 +72,6 @@ func Save(projectRoot string, args []string) error {
 	completionStatePath := CompletionStatePath(rc.RunDir)
 	if err := copyFileIfExists(completionStatePath, filepath.Join(saveDir, "proof", "completion.json")); err != nil {
 		return fmt.Errorf("copy completion state: %w", err)
-	}
-	acceptPath := filepath.Join(rc.RunDir, "acceptance.md")
-	if err := copyFileIfExists(acceptPath, filepath.Join(saveDir, "acceptance.md")); err != nil {
-		return fmt.Errorf("copy acceptance: %w", err)
 	}
 	acceptStatePath := AcceptanceStatePath(rc.RunDir)
 	if err := copyFileIfExists(acceptStatePath, filepath.Join(saveDir, "acceptance.json")); err != nil {

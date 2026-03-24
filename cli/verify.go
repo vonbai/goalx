@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 // Verify executes the run's acceptance command and records the result.
@@ -28,32 +30,27 @@ func Verify(projectRoot string, args []string) error {
 		return err
 	}
 
-	state, err := EnsureAcceptanceState(rc.RunDir, rc.Config)
+	goalState, err := EnsureGoalState(rc.RunDir)
+	if err != nil {
+		return fmt.Errorf("load goal state: %w", err)
+	}
+	state, err := EnsureAcceptanceState(rc.RunDir, rc.Config, goalState.Version)
 	if err != nil {
 		return fmt.Errorf("load acceptance state: %w", err)
 	}
 	if _, err := EnsureRunMetadata(rc.RunDir, rc.ProjectRoot, rc.Config.Objective); err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
 	}
-	goalContract, err := EnsureGoalContractState(rc.RunDir, rc.Config.Objective)
-	if err != nil {
-		return fmt.Errorf("load goal contract: %w", err)
-	}
-	completion, err := DetectCompletionState(rc.ProjectRoot, rc.RunDir, goalContract, state)
-	if err != nil {
-		return fmt.Errorf("detect completion state: %w", err)
-	}
-	if err := SaveCompletionState(CompletionStatePath(rc.RunDir), completion); err != nil {
-		return fmt.Errorf("save completion state: %w", err)
-	}
-	acceptanceErr := ValidateAcceptanceStateForVerification(state, goalContract)
-	command := strings.TrimSpace(state.Command)
+
+	goalSummary, goalErr := ValidateGoalStateForVerification(goalState)
+	acceptanceErr := ValidateAcceptanceStateForVerification(state, goalState)
+	command := strings.TrimSpace(state.EffectiveCommand)
 	if command == "" {
 		return fmt.Errorf("no acceptance command configured")
 	}
 
 	timeout := rc.Config.Acceptance.Timeout
-	if state.CommandSource == "harness" && timeout <= 0 {
+	if defaultCommand, source := goalx.ResolveAcceptanceCommandSource(rc.Config); source == "harness" && strings.TrimSpace(defaultCommand) == command && timeout <= 0 {
 		timeout = rc.Config.Harness.Timeout
 	}
 
@@ -66,25 +63,18 @@ func Verify(projectRoot string, args []string) error {
 
 	var output []byte
 	var runErr error
+	ranCommand := false
 	if acceptanceErr == nil {
+		ranCommand = true
 		cmd := exec.CommandContext(ctx, "bash", "-lc", command)
 		cmd.Dir = rc.ProjectRoot
 		output, runErr = cmd.CombinedOutput()
 	}
-	contractSummary, contractErr := ValidateGoalContractForCompletion(goalContract)
-	if contractErr != nil {
-		output = append(output, []byte("\n[goal-contract]\n"+contractErr.Error()+"\n")...)
+	if goalErr != nil {
+		output = append(output, []byte("\n[goal]\n"+goalErr.Error()+"\n")...)
 	}
 	if acceptanceErr != nil {
 		output = append(output, []byte("\n[acceptance]\n"+acceptanceErr.Error()+"\n")...)
-	}
-	completionErr := ValidateGoalContractAgainstCompletion(goalContract, completion)
-	if completionErr != nil {
-		output = append(output, []byte("\n[completion]\n"+completionErr.Error()+"\n")...)
-	}
-	proofErr := ValidateCompletionStateForVerification(rc.ProjectRoot, completion, goalContract, state)
-	if proofErr != nil {
-		output = append(output, []byte("\n[proof]\n"+proofErr.Error()+"\n")...)
 	}
 
 	evidencePath := AcceptanceEvidencePath(rc.RunDir)
@@ -93,64 +83,64 @@ func Verify(projectRoot string, args []string) error {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	state.CheckedAt = now
-	state.EvidencePath = evidencePath
 	exitCode := 0
-
-	if runErr != nil || contractErr != nil || acceptanceErr != nil || completionErr != nil || proofErr != nil {
+	gateStatus := acceptanceStatusFailed
+	switch {
+	case runErr == nil && ranCommand:
+		gateStatus = acceptanceStatusPassed
+	case errors.Is(runErr, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded:
+		exitCode = 124
+	case runErr != nil:
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
 			exitCode = exitErr.ExitCode()
-		} else if errors.Is(runErr, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded {
-			exitCode = 124
-		} else if runErr != nil {
+		} else {
 			exitCode = 1
 		}
-		if runErr == nil && (contractErr != nil || acceptanceErr != nil || completionErr != nil || proofErr != nil) {
-			exitCode = 3
-		}
-		state.LastExitCode = &exitCode
-		state.Status = acceptanceStatusFailed
-		if err := SaveAcceptanceState(AcceptanceStatePath(rc.RunDir), state); err != nil {
-			return fmt.Errorf("save acceptance state: %w", err)
-		}
-		completion.AcceptanceStatus = state.Status
-		completion.AcceptanceCheckedAt = state.CheckedAt
-		completion.AcceptanceEvidence = state.EvidencePath
-		if err := SaveCompletionState(CompletionStatePath(rc.RunDir), completion); err != nil {
-			return fmt.Errorf("save completion state: %w", err)
-		}
-		if err := updateRunVerificationState(rc.ProjectRoot, rc.RunDir, rc.Config, state, contractSummary, completion); err != nil {
-			return fmt.Errorf("update run verification state: %w", err)
-		}
-		if runErr != nil {
-			return fmt.Errorf("acceptance command failed (%d): %w", exitCode, runErr)
-		}
-		if acceptanceErr != nil {
-			return acceptanceErr
-		}
-		if completionErr != nil {
-			return completionErr
-		}
-		if proofErr != nil {
-			return proofErr
-		}
-		return contractErr
+	default:
+		exitCode = 3
 	}
-
-	state.Status = acceptanceStatusPassed
-	state.LastExitCode = &exitCode
+	state.LastResult = AcceptanceResult{
+		Status:       gateStatus,
+		CheckedAt:    now,
+		ExitCode:     &exitCode,
+		EvidencePath: evidencePath,
+	}
 	if err := SaveAcceptanceState(AcceptanceStatePath(rc.RunDir), state); err != nil {
 		return fmt.Errorf("save acceptance state: %w", err)
 	}
-	completion.AcceptanceStatus = state.Status
-	completion.AcceptanceCheckedAt = state.CheckedAt
-	completion.AcceptanceEvidence = state.EvidencePath
+
+	completion, err := DetectCompletionState(rc.ProjectRoot, rc.RunDir, goalState, state)
+	if err != nil {
+		return fmt.Errorf("detect completion state: %w", err)
+	}
 	if err := SaveCompletionState(CompletionStatePath(rc.RunDir), completion); err != nil {
 		return fmt.Errorf("save completion state: %w", err)
 	}
-	if err := updateRunVerificationState(rc.ProjectRoot, rc.RunDir, rc.Config, state, contractSummary, completion); err != nil {
+
+	proofErr := ValidateCompletionStateForVerification(rc.ProjectRoot, completion, goalState, state)
+	if proofErr != nil {
+		output = append(output, []byte("\n[proof]\n"+proofErr.Error()+"\n")...)
+		if err := os.WriteFile(evidencePath, output, 0o644); err != nil {
+			return fmt.Errorf("write acceptance evidence: %w", err)
+		}
+	}
+
+	if err := updateRunVerificationState(rc.ProjectRoot, rc.RunDir, rc.Config, state, goalSummary, completion); err != nil {
 		return fmt.Errorf("update run verification state: %w", err)
+	}
+
+	if runErr != nil {
+		return fmt.Errorf("acceptance command failed (%d): %w", exitCode, runErr)
+	}
+	if acceptanceErr != nil {
+		return acceptanceErr
+	}
+	if goalErr != nil {
+		return goalErr
+	}
+	if proofErr != nil {
+		return proofErr
 	}
 
 	fmt.Printf("Acceptance passed for run '%s'\n", rc.Name)

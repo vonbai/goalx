@@ -42,30 +42,28 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
-	contract := []byte(`{
+	goal := []byte(`{
   "version": 1,
-  "objective": "ship feature",
-  "items": [
+  "required": [
     {
       "id": "req-1",
-      "kind": "user_required",
-      "requirement": "ship feature",
-      "status": "done",
-      "satisfaction_basis": "preexisting",
-      "evidence": ["/tmp/e2e.txt"]
+      "text": "ship feature",
+      "source": "user",
+      "state": "claimed"
     }
-  ]
+  ],
+  "optional": []
 }`)
-	if err := os.WriteFile(GoalContractPath(runDir), contract, 0o644); err != nil {
-		t.Fatalf("write goal contract: %v", err)
+	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
 	}
 
 	err := Verify(repo, []string{"--run", runName})
 	if err == nil {
 		t.Fatal("expected Verify to fail")
 	}
-	if !strings.Contains(err.Error(), "proof") && !strings.Contains(err.Error(), "evidence_class") {
-		t.Fatalf("Verify error = %v, want structured proof failure", err)
+	if !strings.Contains(err.Error(), "evidence") {
+		t.Fatalf("Verify error = %v, want evidence failure", err)
 	}
 }
 
@@ -103,25 +101,22 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
-	contract := []byte(`{
+	goal := []byte(`{
   "version": 1,
-  "objective": "ship feature",
-  "items": [
+  "required": [
     {
       "id": "req-1",
-      "kind": "user_required",
-      "requirement": "ship feature",
-      "status": "done",
-      "satisfaction_basis": "run_change",
-      "evidence": ["/tmp/e2e.txt"],
-      "evidence_class": "artifact",
-      "counter_evidence": ["checked for missing files"],
-      "semantic_match": "exact"
+      "text": "ship feature",
+      "source": "user",
+      "state": "claimed",
+      "evidence_paths": ["/tmp/e2e.txt"],
+      "note": "ready for verification"
     }
-  ]
+  ],
+  "optional": []
 }`)
-	if err := os.WriteFile(GoalContractPath(runDir), contract, 0o644); err != nil {
-		t.Fatalf("write goal contract: %v", err)
+	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
 	}
 
 	writeAndCommit(t, repo, "feature.txt", "feature", "run change")
@@ -143,11 +138,12 @@ acceptance:
 	text := string(data)
 	for _, want := range []string{
 		`"acceptance_status": "passed"`,
-		`"goal_contract_version": 1`,
-		`"proof_items": [`,
-		`"requirement_id": "req-1"`,
-		`"evidence_class": "artifact"`,
-		`"semantic_match": "exact"`,
+		`"goal_version": 1`,
+		`"goal_satisfied": true`,
+		`"items": [`,
+		`"goal_item_id": "req-1"`,
+		`"verdict": "satisfied"`,
+		`"basis": "run_change"`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("proof manifest missing %q:\n%s", want, text)
@@ -184,25 +180,21 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
-	contract := []byte(`{
+	goal := []byte(`{
   "version": 1,
-  "objective": "ship feature",
-  "items": [
+  "required": [
     {
       "id": "req-1",
-      "kind": "user_required",
-      "requirement": "ship feature",
-      "status": "done",
-      "satisfaction_basis": "preexisting",
-      "evidence": ["/tmp/goalx-missing-proof-evidence.txt"],
-      "evidence_class": "artifact",
-      "counter_evidence": ["checked current HEAD against missing feature path"],
-      "semantic_match": "exact"
+      "text": "ship feature",
+      "source": "user",
+      "state": "claimed",
+      "evidence_paths": ["/tmp/goalx-missing-proof-evidence.txt"]
     }
-  ]
+  ],
+  "optional": []
 }`)
-	if err := os.WriteFile(GoalContractPath(runDir), contract, 0o644); err != nil {
-		t.Fatalf("write goal contract: %v", err)
+	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
 	}
 
 	err := Verify(repo, []string{"--run", runName})
@@ -214,14 +206,14 @@ acceptance:
 	}
 }
 
-func TestVerifyFailsWhenStructuredProofIsOnlyPartialSemanticMatch(t *testing.T) {
+func TestVerifyFailsWhenRequiredGoalItemRemainsOpen(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
 
-	runName := "verify-proof-partial-match"
+	runName := "verify-open-goal-item"
 	runDir := goalx.RunDir(repo, runName)
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		t.Fatalf("mkdir run dir: %v", err)
@@ -231,7 +223,7 @@ func TestVerifyFailsWhenStructuredProofIsOnlyPartialSemanticMatch(t *testing.T) 
 		t.Fatalf("write evidence artifact: %v", err)
 	}
 
-	snapshot := []byte(`name: verify-proof-partial-match
+	snapshot := []byte(`name: verify-open-goal-item
 mode: develop
 objective: ship feature
 acceptance:
@@ -247,32 +239,28 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
-	contract := []byte(`{
+	goal := []byte(`{
   "version": 1,
-  "objective": "ship feature",
-  "items": [
+  "required": [
     {
       "id": "req-1",
-      "kind": "user_required",
-      "requirement": "ship feature",
-      "status": "done",
-      "satisfaction_basis": "preexisting",
-      "evidence": ["` + evidencePath + `"],
-      "evidence_class": "artifact",
-      "counter_evidence": ["checked current HEAD against missing feature path"],
-      "semantic_match": "partial"
+      "text": "ship feature",
+      "source": "user",
+      "state": "open",
+      "evidence_paths": ["` + evidencePath + `"]
     }
-  ]
+  ],
+  "optional": []
 }`)
-	if err := os.WriteFile(GoalContractPath(runDir), contract, 0o644); err != nil {
-		t.Fatalf("write goal contract: %v", err)
+	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
 	}
 
 	err := Verify(repo, []string{"--run", runName})
 	if err == nil {
 		t.Fatal("expected Verify to fail")
 	}
-	if !strings.Contains(err.Error(), "semantic_match") {
-		t.Fatalf("Verify error = %v, want partial semantic_match failure", err)
+	if !strings.Contains(err.Error(), "open") && !strings.Contains(err.Error(), "unsatisfied") {
+		t.Fatalf("Verify error = %v, want open required item failure", err)
 	}
 }

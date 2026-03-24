@@ -39,22 +39,18 @@ acceptance:
 	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
-	contract := []byte(`{
+	goal := []byte(`{
   "version": 1,
-  "objective": "ship feature",
-  "items": [
+  "required": [
     {
       "id": "req-1",
-      "kind": "user_required",
-      "requirement": "ship feature",
-      "status": "done",
-      "satisfaction_basis": "preexisting",
-      "evidence": ["/tmp/e2e.txt"],
-      "evidence_class": "artifact",
-      "counter_evidence": ["checked current HEAD against missing feature path"],
-      "semantic_match": "exact"
+      "text": "ship feature",
+      "source": "user",
+      "state": "claimed",
+      "evidence_paths": ["/tmp/e2e.txt"]
     }
-  ]
+  ],
+  "optional": []
 }`)
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
 		Version:      1,
@@ -63,8 +59,8 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
-	if err := os.WriteFile(GoalContractPath(runDir), contract, 0o644); err != nil {
-		t.Fatalf("write goal contract: %v", err)
+	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
 	}
 
 	if err := Verify(repo, []string{"--run", runName}); err != nil {
@@ -78,11 +74,11 @@ acceptance:
 	stateText := string(stateData)
 	for _, want := range []string{
 		`"status": "passed"`,
-		`"command": "printf 'e2e ok\n'"`,
-		`"command_source": "acceptance"`,
-		`"baseline_command": "printf 'e2e ok\n'"`,
-		`"scope_type": "baseline"`,
-		`"last_exit_code": 0`,
+		`"default_command": "printf 'e2e ok\n'"`,
+		`"effective_command": "printf 'e2e ok\n'"`,
+		`"change_kind": "same"`,
+		`"goal_version": 1`,
+		`"exit_code": 0`,
 	} {
 		if !strings.Contains(stateText, want) {
 			t.Fatalf("acceptance state missing %q:\n%s", want, stateText)
@@ -96,6 +92,8 @@ acceptance:
 	statusText := string(statusData)
 	for _, want := range []string{
 		`"acceptance_status":"passed"`,
+		`"goal_satisfied":true`,
+		`"required_remaining":0`,
 		`"completion_mode":"verification_only"`,
 		`"code_changed":false`,
 	} {
@@ -130,22 +128,18 @@ harness:
 	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
-	contract := []byte(`{
+	goal := []byte(`{
   "version": 1,
-  "objective": "ship feature",
-  "items": [
+  "required": [
     {
       "id": "req-1",
-      "kind": "user_required",
-      "requirement": "ship feature",
-      "status": "done",
-      "satisfaction_basis": "preexisting",
-      "evidence": ["/tmp/e2e.txt"],
-      "evidence_class": "artifact",
-      "counter_evidence": ["checked current HEAD against missing feature path"],
-      "semantic_match": "exact"
+      "text": "ship feature",
+      "source": "user",
+      "state": "claimed",
+      "evidence_paths": ["/tmp/e2e.txt"]
     }
-  ]
+  ],
+  "optional": []
 }`)
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
 		Version:      1,
@@ -154,8 +148,8 @@ harness:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
-	if err := os.WriteFile(GoalContractPath(runDir), contract, 0o644); err != nil {
-		t.Fatalf("write goal contract: %v", err)
+	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
 	}
 
 	err := Verify(repo, []string{"--run", runName})
@@ -170,8 +164,8 @@ harness:
 	stateText := string(stateData)
 	for _, want := range []string{
 		`"status": "failed"`,
-		`"command_source": "harness"`,
-		`"baseline_command": "test -f DOES-NOT-EXIST"`,
+		`"default_command": "test -f DOES-NOT-EXIST"`,
+		`"effective_command": "test -f DOES-NOT-EXIST"`,
 	} {
 		if !strings.Contains(stateText, want) {
 			t.Fatalf("acceptance state missing %q:\n%s", want, stateText)
@@ -205,25 +199,21 @@ harness:
 	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
-	contract := []byte(`{
+	goal := []byte(`{
   "version": 1,
-  "objective": "ship feature",
-  "items": [
+  "required": [
     {
       "id": "req-1",
-      "kind": "user_required",
-      "requirement": "ship feature",
-      "status": "done",
-      "satisfaction_basis": "preexisting",
-      "evidence": ["/tmp/e2e.txt"],
-      "evidence_class": "artifact",
-      "counter_evidence": ["checked current HEAD against narrowed gate output"],
-      "semantic_match": "exact"
+      "text": "ship feature",
+      "source": "user",
+      "state": "claimed",
+      "evidence_paths": ["/tmp/e2e.txt"]
     }
-  ]
+  ],
+  "optional": []
 }`)
-	if err := os.WriteFile(GoalContractPath(runDir), contract, 0o644); err != nil {
-		t.Fatalf("write goal contract: %v", err)
+	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
 	}
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
 		Version:      1,
@@ -233,12 +223,11 @@ harness:
 		t.Fatalf("write run metadata: %v", err)
 	}
 	state := &AcceptanceState{
-		Version:         1,
-		BaselineCommand: "printf 'baseline gate\\n'",
-		BaselineSource:  "harness",
-		Command:         "printf 'narrow gate\\n'",
-		CommandSource:   "master",
-		Status:          acceptanceStatusPending,
+		Version:          1,
+		GoalVersion:      1,
+		DefaultCommand:   "printf 'baseline gate\\n'",
+		EffectiveCommand: "printf 'narrow gate\\n'",
+		LastResult:       AcceptanceResult{Status: acceptanceStatusPending},
 	}
 	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), state); err != nil {
 		t.Fatalf("write acceptance state: %v", err)
@@ -248,8 +237,8 @@ harness:
 	if err == nil {
 		t.Fatal("expected Verify to fail")
 	}
-	if !strings.Contains(err.Error(), "scope") {
-		t.Fatalf("Verify error = %v, want scope failure", err)
+	if !strings.Contains(err.Error(), "change_kind") {
+		t.Fatalf("Verify error = %v, want change_kind failure", err)
 	}
 }
 
@@ -280,25 +269,22 @@ acceptance:
 	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
-	contract := []byte(`{
+	goal := []byte(`{
   "version": 1,
-  "objective": "ship feature",
-  "items": [
+  "required": [
     {
       "id": "req-1",
-      "kind": "user_required",
-      "requirement": "ship feature",
-      "status": "done",
-      "satisfaction_basis": "run_change",
-      "evidence": ["/tmp/e2e.txt"],
-      "evidence_class": "artifact",
-      "counter_evidence": ["checked baseline revision for missing feature file"],
-      "semantic_match": "exact"
+      "text": "ship feature",
+      "source": "user",
+      "state": "claimed",
+      "evidence_paths": ["/tmp/e2e.txt"],
+      "note": "ready for verification"
     }
-  ]
+  ],
+  "optional": []
 }`)
-	if err := os.WriteFile(GoalContractPath(runDir), contract, 0o644); err != nil {
-		t.Fatalf("write goal contract: %v", err)
+	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
 	}
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
 		Version:      1,

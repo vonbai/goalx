@@ -228,9 +228,9 @@ esac
 	for _, path := range []string{
 		filepath.Join(runDir, "master.md"),
 		filepath.Join(runDir, "master.jsonl"),
-		filepath.Join(runDir, "acceptance.md"),
 		filepath.Join(runDir, "acceptance.json"),
-		filepath.Join(runDir, "goal-contract.json"),
+		filepath.Join(runDir, "goal.json"),
+		filepath.Join(runDir, "goal-log.jsonl"),
 		RunMetadataPath(runDir),
 		filepath.Join(runDir, "artifacts.json"),
 		filepath.Join(runDir, "coordination.json"),
@@ -239,6 +239,14 @@ esac
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(runDir, "acceptance.md"),
+		filepath.Join(runDir, "goal-contract.json"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be absent, stat err = %v", path, err)
 		}
 	}
 	for _, path := range []string{
@@ -276,8 +284,10 @@ esac
 	stateText := string(stateData)
 	for _, want := range []string{
 		`"status": "pending"`,
-		`"command": "test -f README.md"`,
-		`"command_source": "harness"`,
+		`"default_command": "test -f README.md"`,
+		`"effective_command": "test -f README.md"`,
+		`"change_kind": "same"`,
+		`"goal_version": 1`,
 	} {
 		if !strings.Contains(stateText, want) {
 			t.Fatalf("acceptance state missing %q:\n%s", want, stateText)

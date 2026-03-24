@@ -16,25 +16,23 @@ const (
 )
 
 type CompletionState struct {
-	Version               int                   `json:"version"`
-	BaseRevision          string                `json:"base_revision,omitempty"`
-	HeadRevision          string                `json:"head_revision,omitempty"`
-	CodeChanged           bool                  `json:"code_changed"`
-	CompletionMode        string                `json:"completion_mode,omitempty"`
-	ChangedFiles          []string              `json:"changed_files,omitempty"`
-	KeptSession           string                `json:"kept_session,omitempty"`
-	KeptBranch            string                `json:"kept_branch,omitempty"`
-	AcceptanceStatus      string                `json:"acceptance_status,omitempty"`
-	AcceptanceCheckedAt   string                `json:"acceptance_checked_at,omitempty"`
-	AcceptanceEvidence    string                `json:"acceptance_evidence_path,omitempty"`
-	GoalContractVersion   int                   `json:"goal_contract_version,omitempty"`
-	GoalContractStatus    string                `json:"goal_contract_status,omitempty"`
-	GoalRequiredTotal     int                   `json:"goal_required_total,omitempty"`
-	GoalRequiredDone      int                   `json:"goal_required_done,omitempty"`
-	GoalRequiredRemaining int                   `json:"goal_required_remaining,omitempty"`
-	GoalEnhancementOpen   int                   `json:"goal_enhancement_open,omitempty"`
-	ProofItems            []CompletionProofItem `json:"proof_items,omitempty"`
-	UpdatedAt             string                `json:"updated_at,omitempty"`
+	Version           int                   `json:"version"`
+	GoalVersion       int                   `json:"goal_version"`
+	AcceptanceStatus  string                `json:"acceptance_status,omitempty"`
+	GoalSatisfied     bool                  `json:"goal_satisfied"`
+	RequiredTotal     int                   `json:"required_total"`
+	RequiredSatisfied int                   `json:"required_satisfied"`
+	RequiredRemaining int                   `json:"required_remaining"`
+	OptionalOpen      int                   `json:"optional_open"`
+	BaseRevision      string                `json:"base_revision,omitempty"`
+	HeadRevision      string                `json:"head_revision,omitempty"`
+	CodeChanged       bool                  `json:"code_changed"`
+	CompletionMode    string                `json:"completion_mode,omitempty"`
+	ChangedFiles      []string              `json:"changed_files,omitempty"`
+	KeptSession       string                `json:"kept_session,omitempty"`
+	KeptBranch        string                `json:"kept_branch,omitempty"`
+	Items             []CompletionProofItem `json:"items,omitempty"`
+	UpdatedAt         string                `json:"updated_at,omitempty"`
 }
 
 func CompletionStatePath(runDir string) string {
@@ -59,7 +57,7 @@ func SaveCompletionState(path string, state *CompletionState) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-func DetectCompletionState(projectRoot, runDir string, contract *GoalContractState, acceptance *AcceptanceState) (*CompletionState, error) {
+func DetectCompletionState(projectRoot, runDir string, goal *GoalState, acceptance *AcceptanceState) (*CompletionState, error) {
 	meta, err := EnsureRunMetadata(runDir, projectRoot, "")
 	if err != nil {
 		return nil, err
@@ -74,6 +72,7 @@ func DetectCompletionState(projectRoot, runDir string, contract *GoalContractSta
 	}
 	selection, _ := loadSelectionFile(filepath.Join(runDir, "selection.json"))
 	codeChanged := len(changedFiles) > 0
+
 	state := &CompletionState{
 		Version:      1,
 		BaseRevision: meta.BaseRevision,
@@ -94,20 +93,27 @@ func DetectCompletionState(projectRoot, runDir string, contract *GoalContractSta
 		state.CompletionMode = completionModeVerificationOnly
 	}
 	if acceptance != nil {
-		state.AcceptanceStatus = acceptance.Status
-		state.AcceptanceCheckedAt = acceptance.CheckedAt
-		state.AcceptanceEvidence = acceptance.EvidencePath
+		state.AcceptanceStatus = acceptanceStatus(acceptance)
 	}
-	if contract != nil {
-		summary := SummarizeGoalContract(contract)
-		state.GoalContractVersion = contract.Version
-		state.GoalContractStatus = summary.Status
-		state.GoalRequiredTotal = summary.RequiredTotal
-		state.GoalRequiredDone = summary.RequiredDone
-		state.GoalRequiredRemaining = summary.RequiredRemaining
-		state.GoalEnhancementOpen = summary.EnhancementOpen
-		state.ProofItems = BuildCompletionProofItems(contract)
+	if goal != nil {
+		summary := SummarizeGoalState(goal)
+		state.GoalVersion = summary.Version
+		state.RequiredTotal = summary.RequiredTotal
+		state.OptionalOpen = summary.OptionalOpen
+		state.Items = BuildCompletionProofItems(goal, state.CodeChanged)
+		for _, item := range state.Items {
+			switch item.Verdict {
+			case completionVerdictSatisfied:
+				state.RequiredSatisfied++
+			case completionVerdictWaived:
+				if item.UserApproved {
+					state.RequiredSatisfied++
+				}
+			}
+		}
+		state.RequiredRemaining = state.RequiredTotal - state.RequiredSatisfied
 	}
+	state.GoalSatisfied = state.AcceptanceStatus == acceptanceStatusPassed && state.RequiredTotal > 0 && state.RequiredRemaining == 0
 	return state, nil
 }
 

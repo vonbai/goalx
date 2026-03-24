@@ -33,17 +33,17 @@ You are **{{.SessionName}}** of {{len .Sessions}} sessions working in parallel o
 - **{{$s.Name}}** ({{$s.Mode}}): worktree `{{$s.WorktreePath}}`
 {{end}}
 
-{{if .GoalContractPath}}### Goal Boundary
+{{if .GoalPath}}### Goal Boundary
 
-Goal contract: `{{.GoalContractPath}}` (read-only — this defines required current-goal work and the Improvement backlog)
-The goal contract defines what must be true before the overall goal can be considered complete. Your current assignment defines what to do next, not what counts as full completion.
+Goal boundary: `{{.GoalPath}}` (read-only — this defines required current-goal work and optional improvements)
+The goal boundary defines what must be true before the overall goal can be considered complete. Your current assignment defines what to do next, not what counts as full completion.
 {{end}}
 
-{{if .AcceptancePath}}### Acceptance Proof
+{{if .AcceptanceStatePath}}### Acceptance Gate
 
-Master's acceptance checklist: `{{.AcceptancePath}}` (read-only — master evaluates these as proof against the goal contract)
-{{if .AcceptanceStatePath}}Machine-readable acceptance state: `{{.AcceptanceStatePath}}` (read-only — use this to understand the latest contract/check status){{end}}
+Machine-readable acceptance state: `{{.AcceptanceStatePath}}` (read-only — use this to understand the latest gate/check status)
 {{if .CompletionProofPath}}Canonical completion proof manifest: `{{.CompletionProofPath}}` (read-only — inspect this when you need to understand current closeout coverage or proof gaps){{end}}
+{{if .AcceptanceNotesPath}}Optional acceptance notes: `{{.AcceptanceNotesPath}}`{{end}}
 {{end}}
 {{end}}
 

@@ -26,11 +26,12 @@ type RunRuntimeState struct {
 	AcceptanceStatus       string `json:"acceptance_status,omitempty"`
 	AcceptanceCheckedAt    string `json:"acceptance_checked_at,omitempty"`
 	AcceptanceEvidencePath string `json:"acceptance_evidence_path,omitempty"`
-	GoalContractStatus     string `json:"goal_contract_status,omitempty"`
-	GoalRequiredTotal      int    `json:"goal_required_total,omitempty"`
-	GoalRequiredDone       int    `json:"goal_required_done,omitempty"`
-	GoalRequiredRemain     int    `json:"goal_required_remaining,omitempty"`
-	GoalEnhancementOpen    int    `json:"goal_enhancement_open,omitempty"`
+	GoalVersion            int    `json:"goal_version"`
+	GoalSatisfied          bool   `json:"goal_satisfied"`
+	RequiredTotal          int    `json:"required_total"`
+	RequiredSatisfied      int    `json:"required_satisfied"`
+	RequiredRemaining      int    `json:"required_remaining"`
+	OptionalOpen           int    `json:"optional_open"`
 	CodeChanged            bool   `json:"code_changed,omitempty"`
 	CompletionMode         string `json:"completion_mode,omitempty"`
 	BaseRevision           string `json:"base_revision,omitempty"`
@@ -347,11 +348,12 @@ func deriveProjectStatusFromRun(state *RunRuntimeState) []byte {
 		"acceptance_status":        state.AcceptanceStatus,
 		"acceptance_checked_at":    state.AcceptanceCheckedAt,
 		"acceptance_evidence_path": state.AcceptanceEvidencePath,
-		"goal_contract_status":     state.GoalContractStatus,
-		"goal_required_total":      state.GoalRequiredTotal,
-		"goal_required_done":       state.GoalRequiredDone,
-		"goal_required_remaining":  state.GoalRequiredRemain,
-		"goal_enhancement_open":    state.GoalEnhancementOpen,
+		"goal_version":             state.GoalVersion,
+		"goal_satisfied":           state.GoalSatisfied,
+		"required_total":           state.RequiredTotal,
+		"required_satisfied":       state.RequiredSatisfied,
+		"required_remaining":       state.RequiredRemaining,
+		"optional_open":            state.OptionalOpen,
 		"completion_mode":          state.CompletionMode,
 		"code_changed":             state.CodeChanged,
 		"base_revision":            state.BaseRevision,

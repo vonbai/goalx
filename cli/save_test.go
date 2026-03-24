@@ -132,7 +132,7 @@ func TestSaveWritesArtifactsManifestForResearchSession(t *testing.T) {
 	}
 }
 
-func TestSaveCopiesGoalContractState(t *testing.T) {
+func TestSaveCopiesGoalBoundaryArtifacts(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -156,21 +156,30 @@ func TestSaveCopiesGoalContractState(t *testing.T) {
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
-	contract := `{"version":1,"objective":"ship feature","items":[{"id":"req-1","kind":"user_required","requirement":"ship feature","status":"done"}]}`
-	if err := os.WriteFile(filepath.Join(runDir, "goal-contract.json"), []byte(contract), 0o644); err != nil {
-		t.Fatalf("write goal contract: %v", err)
+	goal := `{"version":1,"required":[{"id":"req-1","text":"ship feature","source":"user","state":"claimed","evidence_paths":["/tmp/e2e.txt"]}],"optional":[]}`
+	if err := os.WriteFile(filepath.Join(runDir, "goal.json"), []byte(goal), 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "goal-log.jsonl"), []byte("{\"type\":\"path_selected\"}\n"), 0o644); err != nil {
+		t.Fatalf("write goal log: %v", err)
 	}
 
 	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(SavedRunDir(projectRoot, runName), "goal-contract.json"))
+	got, err := os.ReadFile(filepath.Join(SavedRunDir(projectRoot, runName), "goal.json"))
 	if err != nil {
-		t.Fatalf("read saved goal contract: %v", err)
+		t.Fatalf("read saved goal state: %v", err)
 	}
-	if string(got) != contract {
-		t.Fatalf("saved goal contract = %q, want %q", string(got), contract)
+	if string(got) != goal {
+		t.Fatalf("saved goal state = %q, want %q", string(got), goal)
+	}
+	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "goal-log.jsonl")); err != nil {
+		t.Fatalf("saved goal log missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "goal-contract.json")); !os.IsNotExist(err) {
+		t.Fatalf("goal-contract.json should not be exported, stat err = %v", err)
 	}
 }
 

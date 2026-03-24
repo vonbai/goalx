@@ -266,7 +266,7 @@ acceptance:
 	if err := os.WriteFile(filepath.Join(runDir, "acceptance.md"), []byte("- deploy succeeds\n- e2e passes\n"), 0o644); err != nil {
 		t.Fatalf("write acceptance checklist: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "acceptance.json"), []byte(`{"status":"pending","command":"go test -run E2E ./..."}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(runDir, "acceptance.json"), []byte(`{"version":1,"goal_version":1,"default_command":"go test -run E2E ./...","effective_command":"go test -run E2E ./...","change_kind":"same","last_result":{"status":"pending"}}`), 0o644); err != nil {
 		t.Fatalf("write acceptance state: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {

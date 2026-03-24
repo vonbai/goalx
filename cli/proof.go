@@ -7,125 +7,145 @@ import (
 	"strings"
 )
 
+const (
+	completionVerdictSatisfied   = "satisfied"
+	completionVerdictWaived      = "waived"
+	completionVerdictUnsatisfied = "unsatisfied"
+
+	completionBasisPreexisting = "preexisting"
+	completionBasisRunChange   = "run_change"
+	completionBasisMixed       = "mixed"
+	completionBasisWaived      = "waived"
+)
+
 type CompletionProofItem struct {
-	RequirementID     string   `json:"requirement_id"`
-	Requirement       string   `json:"requirement,omitempty"`
-	Kind              string   `json:"kind,omitempty"`
-	Status            string   `json:"status,omitempty"`
-	SatisfactionBasis string   `json:"satisfaction_basis,omitempty"`
-	EvidencePaths     []string `json:"evidence_paths,omitempty"`
-	EvidenceClass     string   `json:"evidence_class,omitempty"`
-	CounterEvidence   []string `json:"counter_evidence,omitempty"`
-	SemanticMatch     string   `json:"semantic_match,omitempty"`
-	UserApproved      bool     `json:"user_approved,omitempty"`
+	GoalItemID    string   `json:"goal_item_id"`
+	Verdict       string   `json:"verdict,omitempty"`
+	Basis         string   `json:"basis,omitempty"`
+	EvidencePaths []string `json:"evidence_paths,omitempty"`
+	Note          string   `json:"note,omitempty"`
+	UserApproved  bool     `json:"user_approved,omitempty"`
 }
 
-func BuildCompletionProofItems(contract *GoalContractState) []CompletionProofItem {
-	if contract == nil {
+func BuildCompletionProofItems(goal *GoalState, codeChanged bool) []CompletionProofItem {
+	if goal == nil {
 		return nil
 	}
-	items := make([]CompletionProofItem, 0, len(contract.Items))
-	for _, item := range contract.Items {
-		if !isRequiredGoalContractKind(strings.TrimSpace(item.Kind)) {
-			continue
+	items := make([]CompletionProofItem, 0, len(goal.Required))
+	for _, item := range goal.Required {
+		proof := CompletionProofItem{
+			GoalItemID:    item.ID,
+			EvidencePaths: append([]string(nil), item.EvidencePaths...),
+			Note:          item.Note,
+			UserApproved:  item.UserApproved,
 		}
-		items = append(items, CompletionProofItem{
-			RequirementID:     item.ID,
-			Requirement:       item.Requirement,
-			Kind:              item.Kind,
-			Status:            item.Status,
-			SatisfactionBasis: item.SatisfactionBasis,
-			EvidencePaths:     append([]string(nil), item.Evidence...),
-			EvidenceClass:     item.EvidenceClass,
-			CounterEvidence:   append([]string(nil), item.CounterEvidence...),
-			SemanticMatch:     item.SemanticMatch,
-			UserApproved:      item.UserApproved,
-		})
+		switch normalizeGoalItemState(item.State) {
+		case goalItemStateClaimed:
+			proof.Verdict = completionVerdictSatisfied
+			if codeChanged {
+				proof.Basis = completionBasisRunChange
+			} else {
+				proof.Basis = completionBasisPreexisting
+			}
+		case goalItemStateWaived:
+			proof.Verdict = completionVerdictWaived
+			proof.Basis = completionBasisWaived
+		default:
+			proof.Verdict = completionVerdictUnsatisfied
+		}
+		items = append(items, proof)
 	}
 	return items
 }
 
-func ValidateGoalContractStructuredProof(item GoalContractItem) error {
-	if len(item.Evidence) == 0 {
-		return fmt.Errorf("goal contract item %s is done but missing structured proof evidence", item.ID)
-	}
-	if strings.TrimSpace(item.EvidenceClass) == "" {
-		return fmt.Errorf("goal contract item %s is done but missing structured proof evidence_class", item.ID)
-	}
-	if len(item.CounterEvidence) == 0 {
-		return fmt.Errorf("goal contract item %s is done but missing structured proof counter_evidence", item.ID)
-	}
-	if strings.TrimSpace(item.SemanticMatch) == "" {
-		return fmt.Errorf("goal contract item %s is done but missing structured proof semantic_match", item.ID)
-	}
-	return nil
-}
-
-func ValidateCompletionStateForVerification(projectRoot string, completion *CompletionState, contract *GoalContractState, acceptance *AcceptanceState) error {
+func ValidateCompletionStateForVerification(projectRoot string, completion *CompletionState, goal *GoalState, acceptance *AcceptanceState) error {
 	if completion == nil {
 		return fmt.Errorf("completion proof manifest is missing")
 	}
-	if contract == nil {
-		return nil
-	}
-	if contract.Version > 0 && completion.GoalContractVersion > 0 && completion.GoalContractVersion != contract.Version {
-		return fmt.Errorf("completion proof targets contract version %d but current goal contract is version %d", completion.GoalContractVersion, contract.Version)
-	}
-	if contract.Version > 0 && completion.GoalContractVersion == 0 {
-		return fmt.Errorf("completion proof is missing goal_contract_version")
-	}
-	if acceptance != nil && strings.TrimSpace(acceptance.Status) != "" && strings.TrimSpace(completion.AcceptanceStatus) != strings.TrimSpace(acceptance.Status) {
-		return fmt.Errorf("completion proof acceptance_status=%q but acceptance state is %q", completion.AcceptanceStatus, acceptance.Status)
+	if goal == nil {
+		return fmt.Errorf("goal state is missing")
 	}
 
-	proofs := make(map[string]CompletionProofItem, len(completion.ProofItems))
-	for _, item := range completion.ProofItems {
-		proofs[item.RequirementID] = item
+	summary := SummarizeGoalState(goal)
+	if completion.GoalVersion != summary.Version {
+		return fmt.Errorf("completion proof goal_version=%d but goal.json version is %d", completion.GoalVersion, summary.Version)
+	}
+	if acceptance != nil && acceptanceStatus(acceptance) != "" && completion.AcceptanceStatus != acceptanceStatus(acceptance) {
+		return fmt.Errorf("completion proof acceptance_status=%q but acceptance state is %q", completion.AcceptanceStatus, acceptanceStatus(acceptance))
+	}
+	if completion.RequiredTotal != summary.RequiredTotal {
+		return fmt.Errorf("completion proof required_total=%d but goal.json requires %d items", completion.RequiredTotal, summary.RequiredTotal)
+	}
+	if completion.OptionalOpen != summary.OptionalOpen {
+		return fmt.Errorf("completion proof optional_open=%d but goal.json has %d open optional items", completion.OptionalOpen, summary.OptionalOpen)
 	}
 
-	for _, item := range contract.Items {
-		if !isRequiredGoalContractKind(strings.TrimSpace(item.Kind)) {
-			continue
-		}
+	proofs := make(map[string]CompletionProofItem, len(completion.Items))
+	for _, item := range completion.Items {
+		proofs[item.GoalItemID] = item
+	}
+
+	requiredSatisfied := 0
+	for _, item := range goal.Required {
 		proof, ok := proofs[item.ID]
 		if !ok {
-			return fmt.Errorf("completion proof missing requirement_id %s", item.ID)
+			return fmt.Errorf("completion proof missing goal_item_id %s", item.ID)
 		}
-		status := strings.TrimSpace(item.Status)
-		switch status {
-		case goalContractStatusDone:
-			if err := ValidateGoalContractStructuredProof(item); err != nil {
+		switch normalizeGoalItemState(item.State) {
+		case goalItemStateClaimed:
+			if proof.Verdict != completionVerdictSatisfied {
+				return fmt.Errorf("completion proof item %s verdict=%q, want satisfied", item.ID, proof.Verdict)
+			}
+			if completion.CodeChanged {
+				if proof.Basis != completionBasisRunChange && proof.Basis != completionBasisMixed {
+					return fmt.Errorf("completion proof item %s basis=%q, want run_change or mixed", item.ID, proof.Basis)
+				}
+			} else if proof.Basis != completionBasisPreexisting {
+				return fmt.Errorf("completion proof item %s basis=%q, want preexisting", item.ID, proof.Basis)
+			}
+			if len(trimmedGoalEvidencePaths(proof.EvidencePaths)) == 0 {
+				return fmt.Errorf("completion proof item %s is satisfied but has no evidence_paths", item.ID)
+			}
+			if err := validateGoalEvidencePaths(projectRoot, item.ID, proof.EvidencePaths); err != nil {
 				return err
 			}
-			if err := validateStructuredProofEvidence(projectRoot, item); err != nil {
-				return err
+			requiredSatisfied++
+		case goalItemStateWaived:
+			if proof.Verdict != completionVerdictWaived {
+				return fmt.Errorf("completion proof item %s verdict=%q, want waived", item.ID, proof.Verdict)
 			}
-			if strings.TrimSpace(proof.SatisfactionBasis) != strings.TrimSpace(item.SatisfactionBasis) {
-				return fmt.Errorf("completion proof requirement %s has satisfaction_basis=%q but goal contract says %q", item.ID, proof.SatisfactionBasis, item.SatisfactionBasis)
-			}
-			if strings.TrimSpace(proof.EvidenceClass) == "" || len(proof.EvidencePaths) == 0 || len(proof.CounterEvidence) == 0 || strings.TrimSpace(proof.SemanticMatch) == "" {
-				return fmt.Errorf("completion proof requirement %s is missing structured proof fields", item.ID)
-			}
-			if strings.TrimSpace(proof.SemanticMatch) != "exact" {
-				return fmt.Errorf("completion proof requirement %s must use semantic_match=exact for done items", item.ID)
-			}
-		case goalContractStatusWaived:
 			if !item.UserApproved || !proof.UserApproved {
-				return fmt.Errorf("completion proof requirement %s is waived without explicit user approval", item.ID)
+				return fmt.Errorf("completion proof item %s is waived without explicit user approval", item.ID)
+			}
+			requiredSatisfied++
+		default:
+			if proof.Verdict != completionVerdictUnsatisfied {
+				return fmt.Errorf("completion proof item %s verdict=%q, want unsatisfied", item.ID, proof.Verdict)
 			}
 		}
 	}
+
+	requiredRemaining := summary.RequiredTotal - requiredSatisfied
+	if completion.RequiredSatisfied != requiredSatisfied {
+		return fmt.Errorf("completion proof required_satisfied=%d, want %d", completion.RequiredSatisfied, requiredSatisfied)
+	}
+	if completion.RequiredRemaining != requiredRemaining {
+		return fmt.Errorf("completion proof required_remaining=%d, want %d", completion.RequiredRemaining, requiredRemaining)
+	}
+
+	wantSatisfied := acceptanceStatus(acceptance) == acceptanceStatusPassed && summary.RequiredTotal > 0 && requiredRemaining == 0
+	if completion.GoalSatisfied != wantSatisfied {
+		return fmt.Errorf("completion proof goal_satisfied=%t, want %t", completion.GoalSatisfied, wantSatisfied)
+	}
+
 	return nil
 }
 
-func validateStructuredProofEvidence(projectRoot string, item GoalContractItem) error {
-	if strings.TrimSpace(item.SemanticMatch) != "exact" {
-		return fmt.Errorf("goal contract item %s is done but semantic_match=%q; done items require semantic_match=exact", item.ID, item.SemanticMatch)
-	}
-	for _, evidencePath := range item.Evidence {
+func validateGoalEvidencePaths(projectRoot, itemID string, evidencePaths []string) error {
+	for _, evidencePath := range evidencePaths {
 		evidencePath = strings.TrimSpace(evidencePath)
 		if evidencePath == "" {
-			return fmt.Errorf("goal contract item %s has empty evidence path", item.ID)
+			return fmt.Errorf("goal item %s has empty evidence path", itemID)
 		}
 		resolved := evidencePath
 		if !filepath.IsAbs(resolved) {
@@ -133,9 +153,9 @@ func validateStructuredProofEvidence(projectRoot string, item GoalContractItem) 
 		}
 		if _, err := os.Stat(resolved); err != nil {
 			if os.IsNotExist(err) {
-				return fmt.Errorf("goal contract item %s evidence path %s does not exist", item.ID, evidencePath)
+				return fmt.Errorf("goal item %s evidence path %s does not exist", itemID, evidencePath)
 			}
-			return fmt.Errorf("goal contract item %s evidence path %s: %w", item.ID, evidencePath, err)
+			return fmt.Errorf("goal item %s evidence path %s: %w", itemID, evidencePath, err)
 		}
 	}
 	return nil

@@ -185,8 +185,8 @@ func TestVerifyDoesNotRewriteRunStateFromStatus(t *testing.T) {
 	if err := os.WriteFile(ProjectStatusCachePath(repo), []byte(`{"run":"verify-run","phase":"working","recommendation":"keep going"}`), 0o644); err != nil {
 		t.Fatalf("write status cache: %v", err)
 	}
-	if err := os.WriteFile(GoalContractPath(runDir), []byte(`{"version":1,"objective":"ship feature","items":[{"id":"req-1","kind":"user_required","requirement":"ship feature","status":"done","satisfaction_basis":"preexisting","evidence":["/tmp/e2e.txt"],"evidence_class":"artifact","counter_evidence":["checked current HEAD against missing feature path"],"semantic_match":"exact"}]}`), 0o644); err != nil {
-		t.Fatalf("write goal contract: %v", err)
+	if err := os.WriteFile(GoalPath(runDir), []byte(`{"version":1,"required":[{"id":"req-1","text":"ship feature","source":"user","state":"claimed","evidence_paths":["/tmp/e2e.txt"]}],"optional":[]}`), 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
 	}
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{Version: 1, Objective: "ship feature", BaseRevision: strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD"))}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
@@ -205,7 +205,8 @@ func TestVerifyDoesNotRewriteRunStateFromStatus(t *testing.T) {
 		`"phase": "working"`,
 		`"recommendation": "keep going"`,
 		`"acceptance_status": "passed"`,
-		`"goal_contract_status": "satisfied"`,
+		`"goal_satisfied": true`,
+		`"required_remaining": 0`,
 		`"completion_mode": "verification_only"`,
 	} {
 		if !strings.Contains(text, want) {
