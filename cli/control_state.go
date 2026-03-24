@@ -118,10 +118,6 @@ func LivenessPath(runDir string) string {
 	return filepath.Join(ControlDir(runDir), "liveness.json")
 }
 
-func ControlDimensionsPath(runDir string) string {
-	return filepath.Join(ControlDir(runDir), "dimensions.json")
-}
-
 func EnsureControlState(runDir string) error {
 	if err := os.MkdirAll(ControlDir(runDir), 0o755); err != nil {
 		return fmt.Errorf("mkdir control dir: %w", err)
