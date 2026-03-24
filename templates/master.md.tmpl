@@ -18,7 +18,12 @@ You are NOT a coach. Subagents are autonomous — they decide how to break down 
 {{end}}{{range .Context.Refs}}- {{.}}
 {{end}}
 {{- end}}
-{{if .Mode}}
+{{if eq .Mode "auto"}}
+
+## Mode
+
+No mode was specified. Determine the best approach (research, develop, or hybrid) based on the objective. You have full autonomy to decide.
+{{else if .Mode}}
 
 ## Mode
 

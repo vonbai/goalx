@@ -38,6 +38,7 @@ goalx explore --from RUN
 Prefer durable GoalX commands over direct transport input:
 
 - `goalx tell --run NAME "direction"` to redirect the master or a session
+- `goalx tell --urgent --run NAME "message"` to send an urgent message through the durable inbox
 - `goalx add --run NAME "direction"` to create a session manually
 - `goalx add --run NAME --mode research "question"` to add a temporary research session
 - `goalx research "goal"` to start a direct research run with research-role defaults
@@ -53,5 +54,17 @@ Prefer durable GoalX commands over direct transport input:
 - `goalx keep --run NAME session-N` to merge a develop session branch
 
 `--parallel` is not a permanent cap. Master may still add or resume more durable sessions later if the goal warrants it.
+
+## Urgent Delivery and Recovery
+
+- `goalx tell --urgent` marks the inbox message as urgent instead of relying on raw transport nudges.
+- The sidecar handles the first escalation by sending tmux `Escape` plus a wake nudge so the master can interrupt its current action and read the durable inbox quickly.
+- If the urgent message stays unread for 3 sidecar ticks, the sidecar relaunches the master from durable state. The relaunched master re-reads the charter, inbox, goal, and runtime state before continuing.
+- Use this path when the direction must cut through a stuck or long-running master action; do not bypass the durable inbox with pane typing unless the user explicitly asks for pane-level control.
+
+## Stop and Drop Cleanup
+
+- `goalx stop --run NAME` kills all leased processes before destroying the tmux session.
+- `goalx drop --run NAME` performs the same process cleanup, then removes worktrees, branches, and the run directory.
 
 Only fall back to raw transport intervention when the user explicitly wants pane-level control or the GoalX durable control path is unavailable.

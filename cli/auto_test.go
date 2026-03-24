@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestAutoStartsRun(t *testing.T) {
+func TestAutoStartsRunWithoutInjectingMode(t *testing.T) {
 	oldStart := autoStart
 	defer func() {
 		autoStart = oldStart
@@ -15,8 +15,14 @@ func TestAutoStartsRun(t *testing.T) {
 	startCalls := 0
 	autoStart = func(_ string, args []string) error {
 		startCalls++
-		if len(args) < 2 || args[0] != "ship it" || args[1] != "--research" {
-			t.Fatalf("start args = %v, want objective plus default --research", args)
+		want := []string{"ship it"}
+		if len(args) != len(want) {
+			t.Fatalf("start args = %v, want %v", args, want)
+		}
+		for i := range want {
+			if args[i] != want[i] {
+				t.Fatalf("start args = %v, want %v", args, want)
+			}
 		}
 		return nil
 	}
@@ -117,6 +123,9 @@ func TestAutoHelpPrintsUsage(t *testing.T) {
 	}
 	if !strings.Contains(out, "usage: goalx auto") {
 		t.Fatalf("auto help missing usage:\n%s", out)
+	}
+	if !strings.Contains(out, "master decides mode") {
+		t.Fatalf("auto help missing auto-mode guidance:\n%s", out)
 	}
 }
 

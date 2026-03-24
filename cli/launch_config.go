@@ -71,6 +71,7 @@ func buildLaunchConfig(projectRoot string, opts launchOptions) (*goalx.Config, e
 	if len(opts.Subs) > 0 {
 		cfg.Parallel = 0
 		cfg.DiversityHints = nil
+		sessionMode := goalx.ResolveSessionMode(cfg.Mode, "")
 		for _, sub := range opts.Subs {
 			spec, countStr := sub, "1"
 			if idx := strings.LastIndex(sub, ":"); idx > 0 {
@@ -86,11 +87,10 @@ func buildLaunchConfig(projectRoot string, opts launchOptions) (*goalx.Config, e
 				return nil, fmt.Errorf("invalid --sub count %q in %q", countStr, sub)
 			}
 			for j := 0; j < n; j++ {
-				mode := cfg.Mode
 				cfg.Sessions = append(cfg.Sessions, goalx.SessionConfig{
 					Engine: engine,
 					Model:  model,
-					Mode:   mode,
+					Mode:   sessionMode,
 				})
 			}
 		}
@@ -104,7 +104,7 @@ func buildLaunchConfig(projectRoot string, opts launchOptions) (*goalx.Config, e
 		cfg.Sessions = append(cfg.Sessions, goalx.SessionConfig{
 			Engine: engine,
 			Model:  model,
-			Mode:   cfg.Mode,
+			Mode:   goalx.ResolveSessionMode(cfg.Mode, ""),
 			Hint:   "Auditor: Review and challenge other sessions' work. Find flaws, missed edge cases, and incorrect assumptions.",
 		})
 	}

@@ -21,7 +21,6 @@ GoalX is the default autonomous path for repo-level goals. Start one master-led 
 
 ```bash
 goalx auto "goal"
-goalx auto "goal" --develop
 goalx research "goal"
 goalx develop "goal"
 goalx debate --from RUN
@@ -31,7 +30,7 @@ goalx explore --from RUN
 
 Common path:
 
-- Start the run with `goalx auto ...`
+- Start the run with `goalx auto ...` when you want the master to decide the best approach (`research`, `develop`, or hybrid)
 - Use `goalx research ...` or `goalx develop ...` when you want a direct phase-specific run with the same autonomous defaults.
 - Use `goalx debate --from RUN`, `goalx implement --from RUN`, or `goalx explore --from RUN` when you want to continue from a saved run.
 - Watch progress with `goalx observe` or `goalx status`
@@ -57,11 +56,11 @@ Common path:
 14. Treat `run-charter.json` as the immutable doctrine anchor, `sessions/session-N/identity.json` as the durable worker identity, and `control/identity-fence.json` as the low-disturbance refresh signal.
 15. Treat missing charter or session-identity artifacts as a broken live run. Do not invent compatibility behavior around them.
 16. Treat `control/launch-env.json` as the run-scoped launch environment authority. `goalx add` and `goalx resume` should reuse that snapshot, not the caller's current shell env or tmux server env.
+17. `goalx stop` kills all leased processes before destroying the tmux session. `goalx drop` does the same cleanup, then removes worktrees, branches, and the run directory.
 
 ## Common Commands
 
-- `goalx auto "goal"`: default autonomous path
-- `goalx auto "goal" --develop`: default implementation path
+- `goalx auto "goal"`: master decides the approach (`research`, `develop`, or hybrid)
 - `goalx research "goal"`: direct research run with research-role defaults
 - `goalx develop "goal"`: direct develop run with develop-role defaults
 - `--master engine/model`, `--research-role engine/model`, `--develop-role engine/model`: optional role-default overrides for the current run
@@ -72,6 +71,7 @@ Common path:
 - `goalx observe --run NAME`: live progress plus control-plane summary
 - `goalx status --run NAME`: concise status, unread inbox, lease health, reminders, delivery failures
 - `goalx tell --run NAME "direction"`: durable redirect to the master or a specific session
+- `goalx tell --urgent --run NAME "message"`: urgent redirect; sidecar interrupts the master immediately and escalates if it stays unread
 - `goalx verify --run NAME`: acceptance gate plus goal/closeout validation
 - `goalx save --run NAME`: durable artifacts and run closeout
 - `goalx result --run NAME`: saved summary from user-scoped durable storage (`--full` for raw report)
