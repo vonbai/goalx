@@ -149,6 +149,11 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 			return err
 		}
 	}
+	if snapshot, err := SnapshotWorktrees(runDir); err == nil {
+		if err := SaveWorktreeSnapshot(runDir, snapshot); err != nil {
+			return err
+		}
+	}
 	if err := queueMasterWakeReminder(runDir, goalx.TmuxSessionName(projectRoot, runName)); err != nil {
 		return err
 	}
