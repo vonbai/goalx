@@ -89,6 +89,16 @@ func TestParseLaunchOptionsLeavesParallelUnsetByDefault(t *testing.T) {
 	}
 }
 
+func TestParseLaunchOptionsKeepsAutoDefaultMode(t *testing.T) {
+	opts, err := parseLaunchOptions([]string{"audit auth"}, goalx.ModeAuto, true)
+	if err != nil {
+		t.Fatalf("parseLaunchOptions: %v", err)
+	}
+	if opts.Mode != goalx.ModeAuto {
+		t.Fatalf("mode = %q, want %q", opts.Mode, goalx.ModeAuto)
+	}
+}
+
 func TestParseLaunchOptionsAcceptsNoSnapshotFlag(t *testing.T) {
 	opts, err := parseLaunchOptions([]string{"audit auth", "--no-snapshot"}, goalx.ModeResearch, true)
 	if err != nil {

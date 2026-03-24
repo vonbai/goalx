@@ -65,7 +65,7 @@ notes:
 		return `usage: goalx auto "objective" [--research|--develop] [--parallel N] [--name NAME] [--preset NAME] [--master ENGINE/MODEL] [--research-role ENGINE/MODEL] [--develop-role ENGINE/MODEL] [--context PATHS] [--strategy NAMES] [--auditor ENGINE/MODEL] [--sub ENGINE/MODEL[:N]]
 
 notes:
-  default mode is research unless you pass --develop.
+  master decides mode unless you pass --research or --develop.
   --parallel is optional initial fan-out, not a permanent cap on later dispatch.
   role defaults are separate: --master, --research-role, --develop-role.`
 	case "research", "develop":

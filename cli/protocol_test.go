@@ -630,6 +630,41 @@ func TestRenderMasterProtocolIncludesResearchModeLaunchGuidance(t *testing.T) {
 	}
 }
 
+func TestRenderMasterProtocolIncludesAutoModeGuidance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:     "ship it",
+		RunName:       "demo",
+		Mode:          goalx.ModeAuto,
+		TmuxSession:   "ar-demo",
+		SummaryPath:   "/tmp/summary.md",
+		EngineCommand: "claude --model claude-opus-4-6 --permission-mode auto",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"## Mode",
+		"No mode was specified.",
+		"Determine the best approach (research, develop, or hybrid)",
+		"You have full autonomy to decide.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q", want)
+		}
+	}
+	if strings.Contains(text, "The user specified **auto** mode.") {
+		t.Fatalf("rendered master protocol should not treat auto as a literal requested mode:\n%s", text)
+	}
+}
+
 func TestRenderSubagentProtocolIncludesOptimizerDoctrineInResearchMode(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
@@ -704,6 +739,39 @@ func TestRenderSubagentProtocolEncouragesBetterArchitecturePathsInDevelopMode(t 
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered develop protocol missing %q", want)
 		}
+	}
+}
+
+func TestRenderSubagentProtocolTreatsAutoModeAsDevelop(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		RunName:           "demo",
+		Objective:         "ship it",
+		Mode:              goalx.ModeAuto,
+		Engine:            "codex",
+		ProjectRoot:       "/tmp/project",
+		SessionName:       "session-1",
+		Target:            goalx.TargetConfig{Files: []string{"main.go"}},
+		Harness:           goalx.HarnessConfig{Command: "go test ./..."},
+		JournalPath:       "/tmp/journal.jsonl",
+		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath: "/tmp/control/session-1-cursor.json",
+	}
+
+	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
+		t.Fatalf("RenderSubagentProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "program-1.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	if !strings.Contains(text, "## Mode: Develop") {
+		t.Fatalf("auto subagent protocol should use develop guidance:\n%s", text)
+	}
+	if strings.Contains(text, "## Mode: Research") {
+		t.Fatalf("auto subagent protocol should not use research guidance:\n%s", text)
 	}
 }
 

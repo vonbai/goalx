@@ -11,12 +11,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Mode is the run mode: research or develop.
+// Mode is the run mode: research, develop, or auto.
 type Mode string
 
 const (
 	ModeResearch Mode = "research"
 	ModeDevelop  Mode = "develop"
+	ModeAuto     Mode = "auto"
 )
 
 // Config is the merged configuration for a single run.
@@ -379,8 +380,8 @@ func ValidateConfig(cfg *Config, engines map[string]EngineConfig) error {
 	if cfg.Objective == "" {
 		return fmt.Errorf("objective is required")
 	}
-	if cfg.Mode != ModeResearch && cfg.Mode != ModeDevelop {
-		return fmt.Errorf("mode must be 'research' or 'develop', got %q", cfg.Mode)
+	if cfg.Mode != ModeResearch && cfg.Mode != ModeDevelop && cfg.Mode != ModeAuto {
+		return fmt.Errorf("mode must be 'research', 'develop', or 'auto', got %q", cfg.Mode)
 	}
 	if cfg.Name == "" {
 		return fmt.Errorf("name is required (use --name or let goalx init generate one)")
@@ -557,9 +558,7 @@ func EffectiveSessionConfig(cfg *Config, idx int) SessionConfig {
 	if idx >= 0 && idx < len(sessions) {
 		out = sessions[idx]
 	}
-	if out.Mode == "" {
-		out.Mode = cfg.Mode
-	}
+	out.Mode = ResolveSessionMode(cfg.Mode, out.Mode)
 	roleDefault := defaultRoleSession(cfg, out.Mode)
 	if out.Engine == "" {
 		out.Engine = roleDefault.Engine
@@ -597,6 +596,20 @@ func EffectiveSessionConfig(cfg *Config, idx int) SessionConfig {
 	out.Harness = &harness
 
 	return out
+}
+
+// ResolveSessionMode normalizes a session mode against the enclosing run mode.
+// Sessions only run in research or develop mode. Auto runs default sessions to
+// develop until the master chooses a specific session mode.
+func ResolveSessionMode(runMode, sessionMode Mode) Mode {
+	switch sessionMode {
+	case ModeResearch, ModeDevelop:
+		return sessionMode
+	}
+	if runMode == ModeResearch {
+		return ModeResearch
+	}
+	return ModeDevelop
 }
 
 func defaultRoleSession(cfg *Config, mode Mode) SessionConfig {

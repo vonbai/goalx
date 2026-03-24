@@ -221,6 +221,22 @@ func TestValidateConfigOK(t *testing.T) {
 	}
 }
 
+func TestValidateConfigAcceptsAutoMode(t *testing.T) {
+	cfg := &Config{
+		Name:      "test",
+		Mode:      ModeAuto,
+		Objective: "test objective",
+		Engine:    "codex",
+		Model:     "codex",
+		Target:    TargetConfig{Files: []string{"src/"}},
+		Harness:   HarnessConfig{Command: "go test ./..."},
+		Master:    MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	if err := ValidateConfig(cfg, BuiltinEngines); err != nil {
+		t.Fatalf("expected auto mode to validate, got: %v", err)
+	}
+}
+
 func TestResolveAcceptanceCommandFallsBackToHarness(t *testing.T) {
 	cfg := &Config{
 		Harness: HarnessConfig{Command: "go test ./..."},
@@ -927,6 +943,27 @@ func TestEffectiveSessionConfigUsesModeSpecificRoleDefaults(t *testing.T) {
 	}
 	if gotDevelop.Engine != "codex" || gotDevelop.Model != "fast" {
 		t.Fatalf("develop session = %s/%s", gotDevelop.Engine, gotDevelop.Model)
+	}
+}
+
+func TestEffectiveSessionConfigDefaultsAutoRunsToDevelopMode(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeAuto,
+		Roles: RoleDefaultsConfig{
+			Research: SessionConfig{Engine: "claude-code", Model: "opus"},
+			Develop:  SessionConfig{Engine: "codex", Model: "fast"},
+		},
+		Target:  TargetConfig{Files: []string{"src/"}},
+		Harness: HarnessConfig{Command: "go test ./..."},
+	}
+
+	got := EffectiveSessionConfig(cfg, 0)
+
+	if got.Mode != ModeDevelop {
+		t.Fatalf("Mode = %q, want %q", got.Mode, ModeDevelop)
+	}
+	if got.Engine != "codex" || got.Model != "fast" {
+		t.Fatalf("Engine/Model = %s/%s, want codex/fast", got.Engine, got.Model)
 	}
 }
 

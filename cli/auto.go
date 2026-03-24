@@ -1,9 +1,13 @@
 package cli
 
-import "fmt"
+import (
+	"fmt"
+
+	goalx "github.com/vonbai/goalx"
+)
 
 var (
-	autoStart = Start
+	autoStart = startAuto
 )
 
 // Auto initializes a run, starts the master, and exits.
@@ -13,25 +17,28 @@ func Auto(projectRoot string, args []string) error {
 		fmt.Println(launchUsage("auto"))
 		return nil
 	}
-	initArgs := append([]string(nil), args...)
-	if len(initArgs) > 0 {
-		hasMode := false
-		for _, arg := range initArgs {
-			if arg == "--research" || arg == "--develop" {
-				hasMode = true
-				break
-			}
-		}
-		if !hasMode {
-			initArgs = append(initArgs[:1:1], append([]string{"--research"}, initArgs[1:]...)...)
-		}
-	}
 
-	if err := autoStart(projectRoot, initArgs); err != nil {
+	if err := autoStart(projectRoot, args); err != nil {
 		return fmt.Errorf("start: %w", err)
 	}
 
 	fmt.Println("Run started.")
 	fmt.Println("Use `goalx status`, `goalx observe`, or `goalx attach` to monitor progress.")
 	return nil
+}
+
+func startAuto(projectRoot string, args []string) error {
+	opts, err := parseLaunchOptions(args, goalx.ModeAuto, true)
+	if err != nil {
+		return err
+	}
+	cfg, err := buildLaunchConfig(projectRoot, opts)
+	if err != nil {
+		return err
+	}
+	_, engines, err := loadLaunchEngines(projectRoot)
+	if err != nil {
+		return fmt.Errorf("load base config: %w", err)
+	}
+	return startWithConfig(projectRoot, cfg, engines, nil, opts.NoSnapshot)
 }

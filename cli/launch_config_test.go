@@ -94,3 +94,34 @@ func TestBuildLaunchConfigResearchDoesNotHardcodeReportDefaults(t *testing.T) {
 		t.Fatalf("research launch should not hardcode report harness")
 	}
 }
+
+func TestBuildLaunchConfigAutoDefaultsPreconfiguredSessionsToDevelopMode(t *testing.T) {
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module example.com/demo\n\ngo 1.24\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+
+	cfg, err := buildLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeAuto,
+		Subs:      []string{"codex/codex"},
+		Auditor:   "codex/codex",
+	})
+	if err != nil {
+		t.Fatalf("buildLaunchConfig: %v", err)
+	}
+	if len(cfg.Sessions) != 2 {
+		t.Fatalf("sessions = %#v, want 2 preconfigured sessions", cfg.Sessions)
+	}
+	for i, sess := range cfg.Sessions {
+		if sess.Mode != goalx.ModeDevelop {
+			t.Fatalf("session[%d].Mode = %q, want %q", i, sess.Mode, goalx.ModeDevelop)
+		}
+	}
+}
