@@ -162,7 +162,7 @@ Required items start as `open`, move to `claimed` when the master believes they 
 
 **On completion**: when criteria are met or you decide the current phase is done:
 
-1. If the goal is **fully achieved**: first run `goalx verify --run {{.RunName}}` to record acceptance results. Then verify that `{{.AcceptanceStatePath}}` shows a passing check, `{{.GoalPath}}` has no unfinished required items, and write the proof manifest to `{{.CompletionProofPath}}`. Write summary to `{{.SummaryPath}}`, merge results with `goalx keep`, update `{{.StatusPath}}`, and stop sessions.
+1. If the goal is **fully achieved**: first run `goalx verify --run {{.RunName}}` to record acceptance results. Then verify that `{{.AcceptanceStatePath}}` shows a passing check, `{{.GoalPath}}` has no unfinished required items, and write the proof manifest to `{{.CompletionProofPath}}`. Merge any session worktrees with `goalx keep --run {{.RunName}} session-N`. Write summary to `{{.SummaryPath}}`, update `{{.StatusPath}}`, and stop sessions. The run worktree stays for user review — merging to the source root is the user's decision (`goalx keep --run {{.RunName}}` from outside).
 
 2. If the goal needs a **next phase** (implement, debate, more-research): for `implement`, run `goalx verify --run {{.RunName}}` first and require a passing acceptance check for the current phase. For `debate` and `more-research`, record why acceptance is still not met. Do not move required current-goal items into a future goal unless the user explicitly waived them. Then stop sessions, save artifacts, and **execute the transition yourself** with the appropriate next-phase command:
    ```bash

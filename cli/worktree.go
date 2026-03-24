@@ -12,9 +12,11 @@ import (
 )
 
 // CreateWorktree creates a new git worktree with a new branch.
+// If baseBranch is non-empty, the new branch starts from that branch
+// instead of HEAD. This enables forking from a previous run's worktree.
 // Cleans up stale branch collisions from failed previous runs, but refuses to
 // delete branches that are still checked out in another worktree.
-func CreateWorktree(projectRoot, worktreePath, branch string) error {
+func CreateWorktree(projectRoot, worktreePath, branch string, baseBranch ...string) error {
 	exec.Command("git", "-C", projectRoot, "worktree", "prune").Run()
 	exists, err := branchExists(projectRoot, branch)
 	if err != nil {
@@ -32,7 +34,11 @@ func CreateWorktree(projectRoot, worktreePath, branch string) error {
 			return fmt.Errorf("delete stale branch %s: %w", branch, err)
 		}
 	}
-	cmd := exec.Command("git", "-C", projectRoot, "worktree", "add", worktreePath, "-b", branch)
+	args := []string{"-C", projectRoot, "worktree", "add", worktreePath, "-b", branch}
+	if len(baseBranch) > 0 && baseBranch[0] != "" {
+		args = append(args, baseBranch[0])
+	}
+	cmd := exec.Command("git", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, out)

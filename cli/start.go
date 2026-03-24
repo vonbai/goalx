@@ -131,11 +131,33 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	if err := SaveRunSpec(runDir, cfg); err != nil {
 		return fmt.Errorf("write run spec: %w", err)
 	}
-	if err := CreateWorktree(absProjectRoot, runWT, runBranch); err != nil {
+	// If this run continues from a previous run (--from), fork from its worktree branch
+	// instead of HEAD. This inherits the source run's code changes.
+	var sourceBaseBranch string
+	if metaPatch != nil && metaPatch.SourceRun != "" {
+		candidate := fmt.Sprintf("goalx/%s/root", goalx.Slugify(metaPatch.SourceRun))
+		if ok, _ := branchExists(absProjectRoot, candidate); ok {
+			sourceBaseBranch = candidate
+			fmt.Fprintf(os.Stderr, "✓ Forking from source run worktree: %s\n", candidate)
+		}
+	}
+	if err := CreateWorktree(absProjectRoot, runWT, runBranch, sourceBaseBranch); err != nil {
 		return fmt.Errorf("create run worktree: %w", err)
 	}
 	runWorktreeCreated = true
-	if err := CopyGitignoredFiles(absProjectRoot, runWT); err != nil {
+	// Copy gitignored files from source run worktree if forking, otherwise from sourceRoot
+	copySource := absProjectRoot
+	if sourceBaseBranch != "" {
+		// Source run's worktree might still exist — use it for gitignored files
+		if metaPatch != nil && metaPatch.SourceRun != "" {
+			srcRunDir := goalx.RunDir(projectRoot, goalx.Slugify(metaPatch.SourceRun))
+			srcWT := RunWorktreePath(srcRunDir)
+			if info, statErr := os.Stat(srcWT); statErr == nil && info.IsDir() {
+				copySource = srcWT
+			}
+		}
+	}
+	if err := CopyGitignoredFiles(copySource, runWT); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: copy gitignored files: %v\n", err)
 	}
 
