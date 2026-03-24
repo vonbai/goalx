@@ -55,7 +55,7 @@ func TestObserveShowsDegradedRunWithoutTmux(t *testing.T) {
 			t.Fatalf("Observe: %v", err)
 		}
 	})
-	for _, want := range []string{"transport degraded", "master still coordinating"} {
+	for _, want := range []string{"transport degraded", "master still coordinating", "charter=ok", "epoch=1"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("observe output missing %q:\n%s", want, out)
 		}
@@ -90,8 +90,10 @@ func TestStatusLeavesRunAndStatusStateUntouched(t *testing.T) {
 			t.Fatalf("Status: %v", err)
 		}
 	})
-	if !strings.Contains(out, "SESSION") {
-		t.Fatalf("status output missing header:\n%s", out)
+	for _, want := range []string{"SESSION", "charter=ok", "epoch=1"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
 	}
 
 	assertFileUnchanged(t, RunRuntimeStatePath(runDir), runStateBefore)
@@ -253,6 +255,24 @@ func writeReadOnlyRunFixture(t *testing.T, repo string) (string, string, []byte,
 	}
 	if err := os.WriteFile(ProjectStatusCachePath(repo), statusBefore, 0o644); err != nil {
 		t.Fatalf("write status cache: %v", err)
+	}
+	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
+		Version:      1,
+		Objective:    cfg.Objective,
+		BaseRevision: strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD")),
+	}); err != nil {
+		t.Fatalf("write run metadata: %v", err)
+	}
+	seedRunCharterForTests(t, runDir, runName, repo)
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	identity, err := NewSessionIdentity(runDir, "session-1", sessionRoleKind(goalx.ModeDevelop), goalx.ModeDevelop, "codex", "", cfg.Target, cfg.Harness)
+	if err != nil {
+		t.Fatalf("NewSessionIdentity: %v", err)
+	}
+	if err := SaveSessionIdentity(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
+		t.Fatalf("SaveSessionIdentity: %v", err)
 	}
 	return runName, runDir, runStateBefore, statusBefore
 }

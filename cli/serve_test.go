@@ -46,6 +46,20 @@ func TestServeHandlerListsProjectsAndRuns(t *testing.T) {
 
 	writeRunSnapshot(t, workspaceA, "auth-audit", goalx.ModeResearch, "audit auth flow")
 	writeRunSnapshot(t, workspaceB, "serve-rollout", goalx.ModeDevelop, "implement serve API")
+	runDirA := goalx.RunDir(workspaceA, "auth-audit")
+	if err := EnsureControlState(runDirA); err != nil {
+		t.Fatalf("EnsureControlState auth-audit: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDirA), &ControlRunState{
+		Version:        1,
+		LifecycleState: "completed",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState auth-audit: %v", err)
+	}
+	runDirB := goalx.RunDir(workspaceB, "serve-rollout")
+	if err := EnsureControlState(runDirB); err != nil {
+		t.Fatalf("EnsureControlState serve-rollout: %v", err)
+	}
 	if err := SaveControlRunState(ControlRunStatePath(goalx.RunDir(workspaceB, "serve-rollout")), &ControlRunState{
 		Version:        1,
 		LifecycleState: "active",
@@ -54,6 +68,14 @@ func TestServeHandlerListsProjectsAndRuns(t *testing.T) {
 	}
 	if err := RenewControlLease(goalx.RunDir(workspaceB, "serve-rollout"), "sidecar", "run_demo", 1, time.Minute, "process", 4242); err != nil {
 		t.Fatalf("RenewControlLease: %v", err)
+	}
+	metaA, err := LoadRunMetadata(RunMetadataPath(runDirA))
+	if err != nil {
+		t.Fatalf("LoadRunMetadata auth-audit: %v", err)
+	}
+	metaB, err := LoadRunMetadata(RunMetadataPath(runDirB))
+	if err != nil {
+		t.Fatalf("LoadRunMetadata serve-rollout: %v", err)
 	}
 
 	app := newServeApp(goalx.ServeConfig{
@@ -133,10 +155,10 @@ func TestServeHandlerListsProjectsAndRuns(t *testing.T) {
 		if len(resp.Runs) != 2 {
 			t.Fatalf("runs len = %d, want 2", len(resp.Runs))
 		}
-		if resp.Runs[0].Workspace != "goalx" || resp.Runs[0].Name != "auth-audit" || resp.Runs[0].Status != "completed" {
+		if resp.Runs[0].Workspace != "goalx" || resp.Runs[0].Name != "auth-audit" || resp.Runs[0].Status != "completed" || resp.Runs[0].RunID != metaA.RunID || resp.Runs[0].Epoch != metaA.Epoch || resp.Runs[0].Charter != "ok" {
 			t.Fatalf("first run = %+v", resp.Runs[0])
 		}
-		if resp.Runs[1].Workspace != "quantos" || resp.Runs[1].Name != "serve-rollout" || resp.Runs[1].Mode != string(goalx.ModeDevelop) || resp.Runs[1].Status != "active" {
+		if resp.Runs[1].Workspace != "quantos" || resp.Runs[1].Name != "serve-rollout" || resp.Runs[1].Mode != string(goalx.ModeDevelop) || resp.Runs[1].Status != "active" || resp.Runs[1].RunID != metaB.RunID || resp.Runs[1].Epoch != metaB.Epoch || resp.Runs[1].Charter != "ok" {
 			t.Fatalf("second run = %+v", resp.Runs[1])
 		}
 	})
@@ -561,4 +583,16 @@ func writeRunSnapshot(t *testing.T, workspace, runName string, mode goalx.Mode, 
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run-spec.yaml: %v", err)
 	}
+	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
+		Version:         1,
+		Objective:       objective,
+		ProjectRoot:     workspace,
+		ProtocolVersion: currentProtocolVersion,
+		RunID:           newRunID(),
+		RootRunID:       "",
+		Epoch:           1,
+	}); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
+	seedRunCharterForTests(t, runDir, runName, workspace)
 }

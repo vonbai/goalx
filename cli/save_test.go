@@ -38,6 +38,8 @@ func TestSaveUsesConfiguredResearchTargetFile(t *testing.T) {
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
+	seedSaveSessionIdentity(t, runDir, "session-1", goalx.ModeResearch, "codex", "", cfg.Target, goalx.HarnessConfig{})
 
 	want := "saved custom report"
 	if err := os.WriteFile(filepath.Join(wtPath, "notes.md"), []byte(want+"\n"), 0o644); err != nil {
@@ -55,6 +57,12 @@ func TestSaveUsesConfiguredResearchTargetFile(t *testing.T) {
 	}
 	if string(got) != want+"\n" {
 		t.Fatalf("saved report = %q, want %q", string(got), want+"\n")
+	}
+	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "run-charter.json")); err != nil {
+		t.Fatalf("saved run charter missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "sessions", "session-1", "identity.json")); err != nil {
+		t.Fatalf("saved session identity missing: %v", err)
 	}
 }
 
@@ -92,6 +100,8 @@ func TestSaveWritesArtifactsManifestForResearchSession(t *testing.T) {
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
+	seedSaveSessionIdentity(t, runDir, "session-1", goalx.ModeResearch, "codex", "", *cfg.Sessions[0].Target, *cfg.Sessions[0].Harness)
 
 	want := "saved manifest report"
 	reportPath := filepath.Join(wtPath, "analysis.txt")
@@ -156,6 +166,7 @@ func TestSaveCopiesGoalBoundaryArtifacts(t *testing.T) {
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
 	goal := `{"version":1,"required":[{"id":"req-1","text":"ship feature","source":"user","state":"claimed","evidence_paths":["/tmp/e2e.txt"]}],"optional":[]}`
 	if err := os.WriteFile(filepath.Join(runDir, "goal.json"), []byte(goal), 0o644); err != nil {
 		t.Fatalf("write goal state: %v", err)
@@ -177,6 +188,9 @@ func TestSaveCopiesGoalBoundaryArtifacts(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "goal-log.jsonl")); err != nil {
 		t.Fatalf("saved goal log missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "run-charter.json")); err != nil {
+		t.Fatalf("saved run charter missing: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "goal-contract.json")); !os.IsNotExist(err) {
 		t.Fatalf("goal-contract.json should not be exported, stat err = %v", err)
@@ -207,6 +221,7 @@ func TestSaveDoesNotMutateRunStateFromProjectStatusCache(t *testing.T) {
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
 
 	runState := &RunRuntimeState{
 		Version:        1,
@@ -289,6 +304,8 @@ func TestSaveDoesNotGuessReportWhenManifestExistsWithoutDeclaredReport(t *testin
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
+	seedSaveSessionIdentity(t, runDir, "session-1", goalx.ModeResearch, "codex", "", cfg.Target, goalx.HarnessConfig{})
 	if err := os.WriteFile(filepath.Join(wtPath, "notes.md"), []byte("guessed report\n"), 0o644); err != nil {
 		t.Fatalf("write notes.md: %v", err)
 	}
@@ -342,6 +359,8 @@ func TestSaveDoesNotCreateActiveRunArtifactsManifest(t *testing.T) {
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
+	seedSaveSessionIdentity(t, runDir, "session-1", goalx.ModeResearch, "codex", "", cfg.Target, goalx.HarnessConfig{})
 	if err := os.WriteFile(filepath.Join(wtPath, "notes.md"), []byte("custom report\n"), 0o644); err != nil {
 		t.Fatalf("write notes.md: %v", err)
 	}
@@ -362,5 +381,33 @@ func TestSaveDoesNotCreateActiveRunArtifactsManifest(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "artifacts.json")); err != nil {
 		t.Fatalf("expected saved artifacts manifest: %v", err)
+	}
+}
+
+func seedSaveRunProvenance(t *testing.T, projectRoot, runDir, runName, objective string) {
+	t.Helper()
+
+	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
+		Version:         1,
+		Objective:       objective,
+		ProjectRoot:     projectRoot,
+		ProtocolVersion: currentProtocolVersion,
+		RunID:           newRunID(),
+		Epoch:           1,
+	}); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
+	seedRunCharterForTests(t, runDir, runName, projectRoot)
+}
+
+func seedSaveSessionIdentity(t *testing.T, runDir, sessionName string, mode goalx.Mode, engine, model string, target goalx.TargetConfig, harness goalx.HarnessConfig) {
+	t.Helper()
+
+	identity, err := NewSessionIdentity(runDir, sessionName, sessionRoleKind(mode), mode, engine, model, target, harness)
+	if err != nil {
+		t.Fatalf("NewSessionIdentity: %v", err)
+	}
+	if err := SaveSessionIdentity(SessionIdentityPath(runDir, sessionName), identity); err != nil {
+		t.Fatalf("SaveSessionIdentity: %v", err)
 	}
 }

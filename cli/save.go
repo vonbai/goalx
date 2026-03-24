@@ -32,6 +32,20 @@ func Save(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
+	meta, err := LoadRunMetadata(RunMetadataPath(rc.RunDir))
+	if err != nil {
+		return fmt.Errorf("load run metadata: %w", err)
+	}
+	if meta == nil {
+		return fmt.Errorf("run metadata missing at %s", RunMetadataPath(rc.RunDir))
+	}
+	charter, err := RequireRunCharter(rc.RunDir)
+	if err != nil {
+		return fmt.Errorf("load run charter: %w", err)
+	}
+	if err := ValidateRunCharterLinkage(meta, charter); err != nil {
+		return fmt.Errorf("validate run charter linkage: %w", err)
+	}
 
 	saveDir := SavedRunDir(rc.ProjectRoot, rc.Name)
 	if err := os.MkdirAll(saveDir, 0755); err != nil {
@@ -68,6 +82,9 @@ func Save(projectRoot string, args []string) error {
 	runMetadataPath := RunMetadataPath(rc.RunDir)
 	if err := copyFileIfExists(runMetadataPath, filepath.Join(saveDir, "run-metadata.json")); err != nil {
 		return fmt.Errorf("copy run metadata: %w", err)
+	}
+	if err := copyFileIfExists(RunCharterPath(rc.RunDir), filepath.Join(saveDir, "run-charter.json")); err != nil {
+		return fmt.Errorf("copy run charter: %w", err)
 	}
 	completionStatePath := CompletionStatePath(rc.RunDir)
 	if err := copyFileIfExists(completionStatePath, filepath.Join(saveDir, "proof", "completion.json")); err != nil {
@@ -109,17 +126,18 @@ func Save(projectRoot string, args []string) error {
 	}
 	for _, sess := range sessionList {
 		sName := sess.Name
-		sessionMode := sess.Mode
-		targetFiles := []string(nil)
-		if sessionMode == "" {
-			if num, parseErr := parseSessionNumber(sName); parseErr == nil {
-				effective := goalx.EffectiveSessionConfig(rc.Config, num-1)
-				sessionMode = string(effective.Mode)
-				if effective.Target != nil {
-					targetFiles = append(targetFiles, effective.Target.Files...)
-				}
-			}
+		identity, err := RequireSessionIdentity(rc.RunDir, sName)
+		if err != nil {
+			return fmt.Errorf("load %s identity: %w", sName, err)
 		}
+		if err := copyFileIfExists(SessionIdentityPath(rc.RunDir, sName), filepath.Join(saveDir, "sessions", sName, "identity.json")); err != nil {
+			return fmt.Errorf("copy %s identity: %w", sName, err)
+		}
+		sessionMode := identity.Mode
+		if sessionMode == "" {
+			sessionMode = sess.Mode
+		}
+		targetFiles := append([]string(nil), identity.Target.Files...)
 		reportSource := ""
 		declaredSession := FindSessionArtifacts(manifest, sName)
 		artifact := FindSessionArtifact(manifest, sName, "report")

@@ -38,6 +38,9 @@ type serveRun struct {
 	Name      string `json:"name"`
 	Mode      string `json:"mode"`
 	Objective string `json:"objective,omitempty"`
+	RunID     string `json:"run_id,omitempty"`
+	Epoch     int    `json:"epoch,omitempty"`
+	Charter   string `json:"charter,omitempty"`
 	Status    string `json:"status"`
 }
 
@@ -315,8 +318,18 @@ func (a *serveApp) runs() ([]serveRun, error) {
 			}
 
 			status := "completed"
+			objective := cfg.Objective
+			runID := ""
+			epoch := 0
+			charter := "missing"
 			if state, err := loadDerivedRunState(project.Path, filepath.Join(runsDir, entry.Name())); err == nil && state != nil {
 				status = state.Status
+				objective = state.Objective
+				runID = state.RunID
+				epoch = state.Epoch
+				if state.Charter != "" {
+					charter = state.Charter
+				}
 			} else if _, ok := reg.ActiveRuns[cfg.Name]; ok || a.sessionExists(goalx.TmuxSessionName(project.Path, cfg.Name)) {
 				status = "active"
 			}
@@ -326,7 +339,10 @@ func (a *serveApp) runs() ([]serveRun, error) {
 				ProjectID: project.ProjectID,
 				Name:      cfg.Name,
 				Mode:      string(cfg.Mode),
-				Objective: cfg.Objective,
+				Objective: objective,
+				RunID:     runID,
+				Epoch:     epoch,
+				Charter:   charter,
 				Status:    status,
 			})
 		}

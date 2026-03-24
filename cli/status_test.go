@@ -46,6 +46,17 @@ func TestStatusShowsControlQueueAndLeaseSummary(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveProjectRegistry: %v", err)
 	}
+	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
+		Version:   1,
+		Objective: cfg.Objective,
+	}); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
+	seedRunCharterForTests(t, runDir, cfg.Name, repo)
+	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadRunMetadata: %v", err)
+	}
 	if _, err := EnsureRuntimeState(runDir, &cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -107,6 +118,9 @@ func TestStatusShowsControlQueueAndLeaseSummary(t *testing.T) {
 	for _, want := range []string{
 		"Run: status-run",
 		"Control:",
+		"run_id=" + meta.RunID,
+		"epoch=1",
+		"charter=ok",
 		"run_status=active",
 		"unread_inbox=2",
 		"master_lease=healthy",

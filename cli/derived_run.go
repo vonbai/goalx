@@ -17,6 +17,8 @@ type DerivedRunState struct {
 	Objective      string
 	RunDir         string
 	RunID          string
+	Epoch          int
+	Charter        string
 	Selector       string
 	LifecycleState string
 	Status         string
@@ -44,9 +46,7 @@ func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
 		HasLease:       controlLeaseActive(runDir, "sidecar") || controlLeaseActive(runDir, "master"),
 		HasTmuxSession: SessionExists(goalx.TmuxSessionName(projectRoot, name)),
 	}
-	if meta, err := LoadRunMetadata(RunMetadataPath(runDir)); err == nil && meta != nil {
-		state.RunID = meta.RunID
-	}
+	state.RunID, state.Epoch, state.Charter, state.Objective = deriveRunIdentitySurface(runDir, cfg.Objective)
 
 	runtimeState, _ := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
 	controlState, _ := LoadControlRunState(ControlRunStatePath(runDir))
@@ -88,6 +88,78 @@ func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
 		}
 	}
 	return state, nil
+}
+
+func deriveRunIdentitySurface(runDir, fallbackObjective string) (string, int, string, string) {
+	runID := ""
+	epoch := 0
+	objective := strings.TrimSpace(fallbackObjective)
+
+	meta, _ := LoadRunMetadata(RunMetadataPath(runDir))
+	if meta != nil {
+		if meta.RunID != "" {
+			runID = meta.RunID
+		}
+		if meta.Epoch > 0 {
+			epoch = meta.Epoch
+		}
+		if strings.TrimSpace(meta.Objective) != "" {
+			objective = strings.TrimSpace(meta.Objective)
+		}
+	}
+
+	charter, _ := LoadRunCharter(RunCharterPath(runDir))
+	if charter != nil {
+		if strings.TrimSpace(charter.Objective) != "" {
+			objective = strings.TrimSpace(charter.Objective)
+		}
+		if runID == "" && charter.RunID != "" {
+			runID = charter.RunID
+		}
+	}
+
+	identity, _ := LoadControlRunIdentity(ControlRunIdentityPath(runDir))
+	if identity != nil {
+		if runID == "" && identity.RunID != "" {
+			runID = identity.RunID
+		}
+		if epoch == 0 && identity.Epoch > 0 {
+			epoch = identity.Epoch
+		}
+	}
+
+	return runID, epoch, deriveRunCharterStatus(runDir, meta, charter, identity), objective
+}
+
+func deriveRunCharterStatus(runDir string, meta *RunMetadata, charter *RunCharter, identity *ControlRunIdentity) string {
+	if meta == nil || charter == nil || identity == nil {
+		return "missing"
+	}
+	if err := ValidateRunCharterLinkage(meta, charter); err != nil {
+		return "mismatch"
+	}
+	if strings.TrimSpace(identity.CharterPath) == "" || identity.CharterPath != RunCharterPath(runDir) {
+		return "mismatch"
+	}
+	if strings.TrimSpace(identity.RunID) == "" || identity.Epoch <= 0 || strings.TrimSpace(identity.CharterID) == "" || strings.TrimSpace(identity.CharterDigest) == "" {
+		return "missing"
+	}
+	charterHash, err := hashRunCharter(charter)
+	if err != nil {
+		return "mismatch"
+	}
+	switch {
+	case identity.RunID != meta.RunID:
+		return "mismatch"
+	case identity.Epoch != meta.Epoch:
+		return "mismatch"
+	case identity.CharterID != charter.CharterID:
+		return "mismatch"
+	case identity.CharterDigest != charterHash:
+		return "mismatch"
+	default:
+		return "ok"
+	}
 }
 
 func listDerivedRunStates(projectRoot string) ([]DerivedRunState, error) {
