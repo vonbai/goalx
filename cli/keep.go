@@ -6,30 +6,37 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-
-	goalx "github.com/vonbai/goalx"
 )
 
 // Keep merges or preserves a specific session from a run.
 func Keep(projectRoot string, args []string) error {
-	if printUsageIfHelp(args, "usage: goalx keep [--run NAME] <session-name>") {
+	if printUsageIfHelp(args, "usage: goalx keep [--run NAME] [session-name]") {
 		return nil
 	}
 	runName, rest, err := extractRunFlag(args)
 	if err != nil {
 		return err
 	}
-	if len(rest) != 1 {
-		return fmt.Errorf("usage: goalx keep [--run NAME] <session-name>")
+	if len(rest) > 1 {
+		return fmt.Errorf("usage: goalx keep [--run NAME] [session-name]")
 	}
-	sessionName := rest[0]
 
 	rc, err := ResolveRun(projectRoot, runName)
 	if err != nil {
 		return err
 	}
+	runWT := RunWorktreePath(rc.RunDir)
 
-	// Parse session index from name
+	if len(rest) == 0 {
+		runBranch := fmt.Sprintf("goalx/%s/root", rc.Config.Name)
+		if err := MergeWorktree(rc.ProjectRoot, runBranch); err != nil {
+			return fmt.Errorf("merge %s: %w", runBranch, err)
+		}
+		fmt.Printf("Merged run worktree into source root.\n")
+		return nil
+	}
+
+	sessionName := rest[0]
 	idx, err := parseSessionIndex(sessionName)
 	if err != nil {
 		return err
@@ -43,17 +50,14 @@ func Keep(projectRoot string, args []string) error {
 	}
 
 	branch := fmt.Sprintf("goalx/%s/%d", rc.Config.Name, idx)
-
-	if rc.Config.Mode == goalx.ModeDevelop {
-		fmt.Printf("Merging branch %s into current branch...\n", branch)
-		if err := MergeWorktree(rc.ProjectRoot, branch); err != nil {
+	wtPath := WorktreePath(rc.RunDir, rc.Config.Name, idx)
+	if info, err := os.Stat(wtPath); err == nil && info.IsDir() {
+		if err := MergeWorktree(runWT, branch); err != nil {
 			return fmt.Errorf("merge %s: %w", branch, err)
 		}
-		fmt.Printf("Merged %s successfully.\n", branch)
+		fmt.Printf("Merged %s into run worktree.\n", branch)
 	} else {
-		wtPath := WorktreePath(rc.RunDir, rc.Config.Name, idx)
-		fmt.Printf("Research session preserved at: %s\n", wtPath)
-		fmt.Printf("Branch: %s\n", branch)
+		fmt.Printf("Session %s has no worktree (changes already in run worktree).\n", sessionName)
 	}
 
 	// Write selection.json

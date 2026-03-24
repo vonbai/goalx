@@ -404,7 +404,7 @@ func TestDirectCommandHelpPrintUsage(t *testing.T) {
 		{name: "stop", run: func() error { return Stop(t.TempDir(), []string{"--help"}) }, want: "usage: goalx stop [--run NAME]"},
 		{name: "review", run: func() error { return Review(t.TempDir(), []string{"--help"}) }, want: "usage: goalx review [--run NAME]"},
 		{name: "diff", run: func() error { return Diff(t.TempDir(), []string{"--help"}) }, want: "usage: goalx diff [--run NAME] <session-a> [session-b]"},
-		{name: "keep", run: func() error { return Keep(t.TempDir(), []string{"--help"}) }, want: "usage: goalx keep [--run NAME] <session-name>"},
+		{name: "keep", run: func() error { return Keep(t.TempDir(), []string{"--help"}) }, want: "usage: goalx keep [--run NAME] [session-name]"},
 		{name: "park", run: func() error { return Park(t.TempDir(), []string{"--help"}) }, want: "usage: goalx park [--run NAME] <session-name>"},
 		{name: "resume", run: func() error { return Resume(t.TempDir(), []string{"--help"}) }, want: "usage: goalx resume [--run NAME] <session-name>"},
 		{name: "save", run: func() error { return Save(t.TempDir(), []string{"--help"}) }, want: "usage: goalx save [NAME]"},
