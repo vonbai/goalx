@@ -191,6 +191,7 @@ func TestVerifyDoesNotRewriteRunStateFromStatus(t *testing.T) {
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{Version: 1, Objective: "ship feature", BaseRevision: strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD"))}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
+	seedRunCharterForTests(t, runDir, runName, repo)
 
 	if err := Verify(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Verify: %v", err)

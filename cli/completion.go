@@ -13,10 +13,15 @@ import (
 const (
 	completionModeVerificationOnly              = "verification_only"
 	completionModeImplementationAndVerification = "implementation_and_verification"
+
+	completionResultDone                           = "done"
+	completionResultIncomplete                     = "incomplete"
+	completionResultPhaseCompleteButGoalIncomplete = "phase_complete_but_goal_incomplete"
 )
 
 type CompletionState struct {
 	Version           int                   `json:"version"`
+	Result            string                `json:"result,omitempty"`
 	GoalVersion       int                   `json:"goal_version"`
 	AcceptanceStatus  string                `json:"acceptance_status,omitempty"`
 	GoalSatisfied     bool                  `json:"goal_satisfied"`
@@ -26,6 +31,8 @@ type CompletionState struct {
 	OptionalOpen      int                   `json:"optional_open"`
 	BaseRevision      string                `json:"base_revision,omitempty"`
 	HeadRevision      string                `json:"head_revision,omitempty"`
+	CharterID         string                `json:"charter_id,omitempty"`
+	CharterHash       string                `json:"charter_hash,omitempty"`
 	CodeChanged       bool                  `json:"code_changed"`
 	CompletionMode    string                `json:"completion_mode,omitempty"`
 	ChangedFiles      []string              `json:"changed_files,omitempty"`
@@ -62,6 +69,20 @@ func DetectCompletionState(projectRoot, runDir string, goal *GoalState, acceptan
 	if err != nil {
 		return nil, err
 	}
+	charter, err := RequireRunCharter(runDir)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateRunCharterLinkage(meta, charter); err != nil {
+		return nil, err
+	}
+	if err := ValidateRunCharterCompletionRules(charter); err != nil {
+		return nil, err
+	}
+	charterHash, err := hashRunCharter(charter)
+	if err != nil {
+		return nil, err
+	}
 	headRevision, err := gitHeadRevision(projectRoot)
 	if err != nil {
 		return nil, err
@@ -77,6 +98,8 @@ func DetectCompletionState(projectRoot, runDir string, goal *GoalState, acceptan
 		Version:      1,
 		BaseRevision: meta.BaseRevision,
 		HeadRevision: headRevision,
+		CharterID:    charter.CharterID,
+		CharterHash:  charterHash,
 		ChangedFiles: changedFiles,
 		CodeChanged:  codeChanged,
 	}
@@ -113,8 +136,19 @@ func DetectCompletionState(projectRoot, runDir string, goal *GoalState, acceptan
 		}
 		state.RequiredRemaining = state.RequiredTotal - state.RequiredSatisfied
 	}
-	state.GoalSatisfied = state.AcceptanceStatus == acceptanceStatusPassed && state.RequiredTotal > 0 && state.RequiredRemaining == 0
+	state.Result = deriveCompletionResult(state.AcceptanceStatus, state.RequiredTotal, state.RequiredRemaining)
+	state.GoalSatisfied = state.Result == completionResultDone
 	return state, nil
+}
+
+func deriveCompletionResult(acceptanceStatus string, requiredTotal, requiredRemaining int) string {
+	if acceptanceStatus == acceptanceStatusPassed {
+		if requiredTotal > 0 && requiredRemaining == 0 {
+			return completionResultDone
+		}
+		return completionResultPhaseCompleteButGoalIncomplete
+	}
+	return completionResultIncomplete
 }
 
 func gitChangedFilesSince(projectRoot, baseRevision, headRevision string) ([]string, error) {

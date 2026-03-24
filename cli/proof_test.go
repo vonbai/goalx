@@ -42,6 +42,7 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
+	seedRunCharterForTests(t, runDir, runName, repo)
 	goal := []byte(`{
   "version": 1,
   "required": [
@@ -101,6 +102,7 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
+	seedRunCharterForTests(t, runDir, runName, repo)
 	goal := []byte(`{
   "version": 1,
   "required": [
@@ -137,6 +139,7 @@ acceptance:
 	}
 	text := string(data)
 	for _, want := range []string{
+		`"result": "done"`,
 		`"acceptance_status": "passed"`,
 		`"goal_version": 1`,
 		`"goal_satisfied": true`,
@@ -180,6 +183,7 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
+	seedRunCharterForTests(t, runDir, runName, repo)
 	goal := []byte(`{
   "version": 1,
   "required": [
@@ -239,6 +243,7 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
+	seedRunCharterForTests(t, runDir, runName, repo)
 	goal := []byte(`{
   "version": 1,
   "required": [
@@ -262,5 +267,13 @@ acceptance:
 	}
 	if !strings.Contains(err.Error(), "open") && !strings.Contains(err.Error(), "unsatisfied") {
 		t.Fatalf("Verify error = %v, want open required item failure", err)
+	}
+
+	proofData, readErr := os.ReadFile(CompletionStatePath(runDir))
+	if readErr != nil {
+		t.Fatalf("read completion proof: %v", readErr)
+	}
+	if !strings.Contains(string(proofData), `"result": "phase_complete_but_goal_incomplete"`) {
+		t.Fatalf("completion proof missing phase_complete_but_goal_incomplete:\n%s", proofData)
 	}
 }

@@ -58,12 +58,36 @@ func BuildCompletionProofItems(goal *GoalState, codeChanged bool) []CompletionPr
 	return items
 }
 
-func ValidateCompletionStateForVerification(projectRoot string, completion *CompletionState, goal *GoalState, acceptance *AcceptanceState) error {
+func ValidateCompletionStateForVerification(projectRoot, runDir string, completion *CompletionState, goal *GoalState, acceptance *AcceptanceState) error {
 	if completion == nil {
 		return fmt.Errorf("completion proof manifest is missing")
 	}
 	if goal == nil {
 		return fmt.Errorf("goal state is missing")
+	}
+	meta, err := EnsureRunMetadata(runDir, projectRoot, "")
+	if err != nil {
+		return err
+	}
+	charter, err := RequireRunCharter(runDir)
+	if err != nil {
+		return err
+	}
+	if err := ValidateRunCharterLinkage(meta, charter); err != nil {
+		return err
+	}
+	if err := ValidateRunCharterCompletionRules(charter); err != nil {
+		return err
+	}
+	charterHash, err := hashRunCharter(charter)
+	if err != nil {
+		return err
+	}
+	if completion.CharterID != charter.CharterID {
+		return fmt.Errorf("completion proof charter_id=%q but run charter is %q", completion.CharterID, charter.CharterID)
+	}
+	if completion.CharterHash != charterHash {
+		return fmt.Errorf("completion proof charter_hash=%q but run charter hash is %q", completion.CharterHash, charterHash)
 	}
 
 	summary := SummarizeGoalState(goal)
@@ -133,11 +157,37 @@ func ValidateCompletionStateForVerification(projectRoot string, completion *Comp
 		return fmt.Errorf("completion proof required_remaining=%d, want %d", completion.RequiredRemaining, requiredRemaining)
 	}
 
-	wantSatisfied := acceptanceStatus(acceptance) == acceptanceStatusPassed && summary.RequiredTotal > 0 && requiredRemaining == 0
+	wantResult := deriveCompletionResult(acceptanceStatus(acceptance), summary.RequiredTotal, requiredRemaining)
+	if completion.Result != wantResult {
+		return fmt.Errorf("completion proof result=%q, want %q", completion.Result, wantResult)
+	}
+	wantSatisfied := wantResult == completionResultDone
 	if completion.GoalSatisfied != wantSatisfied {
 		return fmt.Errorf("completion proof goal_satisfied=%t, want %t", completion.GoalSatisfied, wantSatisfied)
 	}
 
+	return nil
+}
+
+func ValidateRunCharterCompletionRules(charter *RunCharter) error {
+	if charter == nil {
+		return fmt.Errorf("run charter is missing")
+	}
+	if charter.CompletionStandard != "full_goal" {
+		return fmt.Errorf("run charter completion_standard=%q, want full_goal", charter.CompletionStandard)
+	}
+	if !charter.PartialCompletionRequiresUserApproval {
+		return fmt.Errorf("run charter must require user approval for partial completion")
+	}
+	if !charter.NarrowScopeRequiresUserApproval {
+		return fmt.Errorf("run charter must require user approval for narrowed scope")
+	}
+	if !charter.RequiredOutcomesMayExpandButNotShrink {
+		return fmt.Errorf("run charter must forbid shrinking required outcomes")
+	}
+	if !charter.AcceptanceIsVerificationOnly {
+		return fmt.Errorf("run charter must keep acceptance verification-only")
+	}
 	return nil
 }
 

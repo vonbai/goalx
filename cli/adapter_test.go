@@ -157,6 +157,14 @@ func TestGenerateMasterAdapterRequiresVerifiedCompletionForDone(t *testing.T) {
 	}
 
 	if err := os.WriteFile(proofPath, []byte(`{"acceptance_status":"passed","goal_satisfied":true,"required_remaining":0,"completion_mode":"verification_only","code_changed":false}`), 0o644); err != nil {
+		t.Fatalf("write proof without result: %v", err)
+	}
+	out, err = runHook()
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("done without closeout result should block stop, err=%v out=%q", err, out)
+	}
+
+	if err := os.WriteFile(proofPath, []byte(`{"result":"done","acceptance_status":"passed","goal_satisfied":true,"required_remaining":0,"completion_mode":"verification_only","code_changed":false}`), 0o644); err != nil {
 		t.Fatalf("write verified done proof: %v", err)
 	}
 	if out, err = runHook(); err != nil {

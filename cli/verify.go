@@ -41,6 +41,20 @@ func Verify(projectRoot string, args []string) error {
 	if _, err := EnsureRunMetadata(rc.RunDir, rc.ProjectRoot, rc.Config.Objective); err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
 	}
+	meta, err := LoadRunMetadata(RunMetadataPath(rc.RunDir))
+	if err != nil {
+		return fmt.Errorf("load run metadata: %w", err)
+	}
+	charter, err := RequireRunCharter(rc.RunDir)
+	if err != nil {
+		return fmt.Errorf("load run charter: %w", err)
+	}
+	if err := ValidateRunCharterLinkage(meta, charter); err != nil {
+		return fmt.Errorf("validate run charter linkage: %w", err)
+	}
+	if err := ValidateRunCharterCompletionRules(charter); err != nil {
+		return fmt.Errorf("validate run charter completion rules: %w", err)
+	}
 
 	goalSummary, goalErr := ValidateGoalStateForVerification(goalState)
 	acceptanceErr := ValidateAcceptanceStateForVerification(state, goalState)
@@ -118,7 +132,7 @@ func Verify(projectRoot string, args []string) error {
 		return fmt.Errorf("save completion state: %w", err)
 	}
 
-	proofErr := ValidateCompletionStateForVerification(rc.ProjectRoot, completion, goalState, state)
+	proofErr := ValidateCompletionStateForVerification(rc.ProjectRoot, rc.RunDir, completion, goalState, state)
 	if proofErr != nil {
 		output = append(output, []byte("\n[proof]\n"+proofErr.Error()+"\n")...)
 		if err := os.WriteFile(evidencePath, output, 0o644); err != nil {

@@ -59,6 +59,7 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
+	seedRunCharterForTests(t, runDir, runName, repo)
 	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
 		t.Fatalf("write goal state: %v", err)
 	}
@@ -148,6 +149,7 @@ harness:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
+	seedRunCharterForTests(t, runDir, runName, repo)
 	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
 		t.Fatalf("write goal state: %v", err)
 	}
@@ -222,6 +224,7 @@ harness:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
+	seedRunCharterForTests(t, runDir, runName, repo)
 	state := &AcceptanceState{
 		Version:          1,
 		GoalVersion:      1,
@@ -293,6 +296,7 @@ acceptance:
 	}); err != nil {
 		t.Fatalf("write run metadata: %v", err)
 	}
+	seedRunCharterForTests(t, runDir, runName, repo)
 
 	writeAndCommit(t, repo, "feature.txt", "feature", "run change")
 
@@ -320,5 +324,100 @@ acceptance:
 	}
 	if !strings.Contains(string(proofData), `"base_revision": "`+baseRevision+`"`) {
 		t.Fatalf("completion proof missing base revision:\n%s", proofData)
+	}
+}
+
+func TestVerifyFailsWhenRunCharterProvenanceMismatchesMetadata(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	ensureSharedProofEvidence(t)
+
+	runName := "verify-charter-mismatch"
+	runDir := goalx.RunDir(repo, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+
+	snapshot := []byte(`name: verify-charter-mismatch
+mode: develop
+objective: ship feature
+acceptance:
+  command: "printf 'e2e ok\n'"
+`)
+	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
+		Version:      1,
+		Objective:    "ship feature",
+		BaseRevision: strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD")),
+	}); err != nil {
+		t.Fatalf("write run metadata: %v", err)
+	}
+	seedRunCharterForTests(t, runDir, runName, repo)
+	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadRunMetadata: %v", err)
+	}
+	meta.CharterHash = "charter_hash_mismatch"
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata mismatch: %v", err)
+	}
+	if err := os.WriteFile(GoalPath(runDir), []byte(`{"version":1,"required":[{"id":"req-1","text":"ship feature","source":"user","state":"claimed","evidence_paths":["/tmp/e2e.txt"]}],"optional":[]}`), 0o644); err != nil {
+		t.Fatalf("write goal state: %v", err)
+	}
+
+	err = Verify(repo, []string{"--run", runName})
+	if err == nil || !strings.Contains(err.Error(), "charter") {
+		t.Fatalf("Verify error = %v, want charter provenance failure", err)
+	}
+}
+
+func seedRunCharterForTests(t *testing.T, runDir, runName, projectRoot string) {
+	t.Helper()
+
+	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadRunMetadata: %v", err)
+	}
+	if meta == nil {
+		t.Fatal("run metadata missing")
+	}
+	if meta.ProtocolVersion == 0 {
+		meta.ProtocolVersion = 2
+	}
+	if meta.ProjectRoot == "" {
+		meta.ProjectRoot = projectRoot
+	}
+	if meta.RunID == "" {
+		meta.RunID = newRunID()
+	}
+	if meta.RootRunID == "" {
+		meta.RootRunID = meta.RunID
+	}
+	if meta.Epoch == 0 {
+		meta.Epoch = 1
+	}
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata normalize: %v", err)
+	}
+	charter, err := NewRunCharter(runDir, runName, meta)
+	if err != nil {
+		t.Fatalf("NewRunCharter: %v", err)
+	}
+	if err := SaveRunCharter(RunCharterPath(runDir), charter); err != nil {
+		t.Fatalf("SaveRunCharter: %v", err)
+	}
+	digest, err := hashRunCharter(charter)
+	if err != nil {
+		t.Fatalf("hashRunCharter: %v", err)
+	}
+	meta.CharterID = charter.CharterID
+	meta.CharterHash = digest
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata charter linkage: %v", err)
 	}
 }
