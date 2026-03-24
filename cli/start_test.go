@@ -702,3 +702,105 @@ esac
 		t.Fatalf("run worktree README = %q, want dirty tracked contents", string(data))
 	}
 }
+
+func TestStartCopiesGitignoredFilesToRunWorktree(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "base\n", "base commit")
+	writeAndCommit(t, repo, ".gitignore", "CLAUDE.md\ndocs/\n", "add ignore rules")
+	writeTestFile(t, repo, "CLAUDE.md", "master instructions\n")
+	writeTestFile(t, repo, "docs/plan.md", "mirror plan\n")
+
+	goalxDir := filepath.Join(repo, ".goalx")
+	if err := os.MkdirAll(goalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	cfg := goalx.Config{
+		Name:      "mirror-demo",
+		Mode:      goalx.ModeDevelop,
+		Objective: "mirror ignored files",
+		Target:    goalx.TargetConfig{Files: []string{"README.md"}},
+		Harness:   goalx.HarnessConfig{Command: "test -f README.md"},
+		Master: goalx.MasterConfig{
+			Engine: "codex",
+			Model:  "codex",
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(goalxDir, "goalx.yaml"), data, 0o644); err != nil {
+		t.Fatalf("write goalx.yaml: %v", err)
+	}
+
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	tmuxPath := filepath.Join(binDir, "tmux")
+	script := `#!/bin/sh
+set -eu
+state="${GOALX_FAKE_TMUX_STATE:?}"
+mkdir -p "$state"
+cmd="$1"
+shift
+case "$cmd" in
+  has-session)
+    target="$2"
+    if [ -f "$state/session_$target" ]; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  new-session)
+    name=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "-s" ]; then
+        shift
+        name="$1"
+        break
+      fi
+      shift
+    done
+    : > "$state/session_$name"
+    exit 0
+    ;;
+  kill-session)
+    target="$2"
+    rm -f "$state/session_$target"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
+
+	origLaunchSidecar := launchRunSidecar
+	defer func() { launchRunSidecar = origLaunchSidecar }()
+	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+
+	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	runWT := RunWorktreePath(goalx.RunDir(repo, cfg.Name))
+	for path, want := range map[string]string{
+		"CLAUDE.md":    "master instructions\n",
+		"docs/plan.md": "mirror plan\n",
+	} {
+		data, err := os.ReadFile(filepath.Join(runWT, path))
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if string(data) != want {
+			t.Fatalf("%s = %q, want %q", path, string(data), want)
+		}
+	}
+}

@@ -135,6 +135,9 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		return fmt.Errorf("create run worktree: %w", err)
 	}
 	runWorktreeCreated = true
+	if err := CopyGitignoredFiles(absProjectRoot, runWT); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: copy gitignored files: %v\n", err)
+	}
 
 	// 9. Resolve master engine command
 	masterCmd, err := goalx.ResolveEngineCommand(engines, cfg.Master.Engine, cfg.Master.Model)
