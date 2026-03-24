@@ -83,6 +83,32 @@ func TestWaitTimesOutWithoutUnreadInbox(t *testing.T) {
 	}
 }
 
+func TestParseDurationOrSeconds(t *testing.T) {
+	tests := []struct {
+		input string
+		want  time.Duration
+		err   bool
+	}{
+		{"5m", 5 * time.Minute, false},
+		{"300", 300 * time.Second, false},
+		{"1.5", 1500 * time.Millisecond, false},
+		{"50ms", 50 * time.Millisecond, false},
+		{"garbage", 0, true},
+	}
+	for _, tt := range tests {
+		got, err := parseDurationOrSeconds(tt.input)
+		if tt.err && err == nil {
+			t.Errorf("parseDurationOrSeconds(%q) = %v, want error", tt.input, got)
+		}
+		if !tt.err && err != nil {
+			t.Errorf("parseDurationOrSeconds(%q) error: %v", tt.input, err)
+		}
+		if !tt.err && got != tt.want {
+			t.Errorf("parseDurationOrSeconds(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestWaitReturnsStoppedErrorWhenRunStops(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -51,7 +52,7 @@ func parseWaitArgs(args []string) (runName, target string, timeout time.Duration
 				return "", "", 0, fmt.Errorf("missing value for --timeout")
 			}
 			i++
-			timeout, err = time.ParseDuration(rest[i])
+			timeout, err = parseDurationOrSeconds(rest[i])
 			if err != nil {
 				return "", "", 0, fmt.Errorf("parse --timeout: %w", err)
 			}
@@ -147,6 +148,19 @@ func waitForInboxEvent(runDir, runName, targetName, inboxPath, cursorPath string
 			return fmt.Sprintf("wait: timed out waiting for %s after %s", targetName, timeout), nil
 		}
 	}
+}
+
+// parseDurationOrSeconds parses a duration string. If time.ParseDuration fails
+// and the input is a plain number, it is treated as seconds.
+func parseDurationOrSeconds(s string) (time.Duration, error) {
+	d, err := time.ParseDuration(s)
+	if err == nil {
+		return d, nil
+	}
+	if secs, numErr := strconv.ParseFloat(s, 64); numErr == nil {
+		return time.Duration(secs * float64(time.Second)), nil
+	}
+	return 0, err
 }
 
 func waitRunStopped(runDir string) (bool, string) {
