@@ -28,34 +28,28 @@ GoalX creates a run directory, launches the master transport session, and starts
 ## Install
 
 ```bash
-go install github.com/vonbai/goalx/cmd/goalx@latest
-```
-
-Or build from source:
-
-```bash
 git clone https://github.com/vonbai/goalx.git
 cd goalx
-go build -o bin/goalx ./cmd/goalx
+go build -o /usr/local/bin/goalx ./cmd/goalx
 ```
 
 ### Requirements
 
-- Go 1.21+
+- Go 1.24+
 - tmux
 - One of: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex CLI](https://github.com/openai/codex)
 
 ## Quick Start
 
 ```bash
-# Give a goal, master handles everything
+# Give a goal, master decides approach (research/develop/hybrid)
 goalx auto "audit code quality and find bugs"
 
-# Start a direct research or develop run with role defaults
+# Or specify mode explicitly
 goalx research "audit code quality and find bugs"
 goalx develop "implement the fix"
 
-# Continue from a saved run with an explicit source
+# Continue from a saved run (inherits source run's code changes)
 goalx debate --from research-audit
 goalx implement --from research-audit-debate
 goalx explore --from research-audit
@@ -63,10 +57,10 @@ goalx explore --from research-audit
 # Watch progress
 goalx observe
 
-# For develop closeout, verify before treating the run as done
-goalx verify
+# Review results in run worktree, then merge to main when satisfied
+goalx keep
 
-# View results
+# View saved results
 goalx result
 ```
 
@@ -85,16 +79,17 @@ Default to `goalx auto`. Use `goalx research` / `goalx develop` when you want an
 | `goalx observe` | Live transport capture when available plus control-plane summary |
 | `goalx status` | Progress summary plus run ID, epoch, charter health, lease health, unread inbox, reminders, and delivery failures |
 | `goalx focus` | Set the default run used by commands that omit `--run` |
-| `goalx add` | Add a session to a running run (`--mode research` launches a temporary research session) |
-| `goalx tell` | Send a durable instruction to the master or a specific session |
+| `goalx add` | Add a session to a running run (`--worktree` for isolated parallel work, `--mode research` for research session) |
+| `goalx tell` | Send a durable instruction to the master or a specific session (`--urgent` for priority delivery) |
+| `goalx wait` | Inbox-aware blocking wait; replaces sleep for master monitoring loops |
 | `goalx park` | Park an idle/blocked session for later reuse without deleting its worktree |
 | `goalx resume` | Resume a parked session in its existing worktree |
 | `goalx diff` | Diff session code or report outputs |
 | `goalx review` | Compare all session outputs |
-| `goalx keep` | Merge session branch into main |
+| `goalx keep` | Merge session worktree into run worktree, or merge run worktree into source root |
 | `goalx archive` | Tag and preserve a session branch |
 | `goalx save` | Save durable artifacts, `run-charter.json`, session identities, goal-boundary state, provenance, and `artifacts.json` to user-scoped durable storage |
-| `goalx verify` | Run the effective acceptance gate, then validate goal boundary completion and the canonical proof manifest |
+| `goalx verify` | Run the acceptance command and record the exit code + output (master interprets the result) |
 | `goalx debate` | Start a debate phase from `--from RUN` |
 | `goalx implement` | Start a develop phase from `--from RUN` |
 | `goalx explore` | Start a follow-up research phase from `--from RUN` |
@@ -102,8 +97,8 @@ Default to `goalx auto`. Use `goalx research` / `goalx develop` when you want an
 | `goalx result` | Show saved run results (`--full` prints the full research summary) |
 | `goalx attach` | Attach to tmux session or window |
 | `goalx serve` | Start HTTP API server |
-| `goalx stop` | Graceful shutdown |
-| `goalx drop` | Cleanup worktrees and branches; refuses runs with unsaved artifacts |
+| `goalx stop` | Graceful shutdown (kills leased processes, preserves run worktree) |
+| `goalx drop` | Cleanup worktrees, branches, and leased processes; refuses runs with unsaved artifacts |
 | `goalx next` | Suggest next pipeline step |
 
 ## Single-Run Flow
@@ -119,6 +114,14 @@ goalx auto → master-led run
 ```
 
 `goalx auto` remains the default path. `goalx research` / `goalx develop` are direct phase entry points with role defaults, and `goalx debate --from RUN` / `goalx implement --from RUN` / `goalx explore --from RUN` continue from saved runs. Phase commands default to direct run creation and start; `--write-config` stays advanced/manual only. Use `--master`, `--research-role`, and `--develop-role` when you need explicit role defaults for a run or phase.
+
+## Run Worktree Model
+
+Every run gets its own isolated git worktree (`goalx/<run>/root` branch). Master and sessions work in this worktree, not on the main branch. Dirty tracked files are auto-committed before worktree creation (`--no-snapshot` to skip). Gitignored files (CLAUDE.md, docs/, .claude/) are copied into the worktree for a complete project mirror.
+
+Session worktrees are optional: `goalx add "task"` runs in the shared run worktree; `goalx add --worktree "task"` creates an isolated session worktree for parallel work. `--from RUN` inherits the source run's worktree code, not just context.
+
+Merging to the main branch is a user decision: `goalx keep` from outside the run. Master merges sessions into the run worktree but does not merge to main.
 
 ## Advanced Control
 
