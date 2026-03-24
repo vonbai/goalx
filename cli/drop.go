@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Drop cleans up a run so the same name can be reused safely.
@@ -50,18 +51,63 @@ func Drop(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, num := range sessionIndexes {
-		wtPath := WorktreePath(rc.RunDir, rc.Config.Name, num)
-		branch := fmt.Sprintf("goalx/%s/%d", rc.Config.Name, num)
-		if err := RemoveWorktree(rc.ProjectRoot, wtPath); err != nil {
-			fmt.Printf("Warning: remove worktree %s: %v\n", wtPath, err)
-		} else {
-			fmt.Printf("Removed worktree: %s\n", wtPath)
+	sessionState, err := EnsureSessionsRuntimeState(rc.RunDir)
+	if err != nil {
+		return fmt.Errorf("load session runtime state: %w", err)
+	}
+	removedWorktrees := map[string]bool{}
+	removedBranches := map[string]bool{}
+	removeSessionBranch := func(branch string) {
+		if branch == "" || removedBranches[branch] {
+			return
 		}
 		if err := DeleteBranch(rc.ProjectRoot, branch); err != nil {
 			fmt.Printf("Warning: delete branch %s: %v\n", branch, err)
-		} else {
-			fmt.Printf("Deleted branch: %s\n", branch)
+			return
+		}
+		removedBranches[branch] = true
+		fmt.Printf("Deleted branch: %s\n", branch)
+	}
+	for _, num := range sessionIndexes {
+		sessionName := SessionName(num)
+		wtPath := resolvedSessionWorktreePath(rc.RunDir, rc.Config.Name, sessionName, sessionState)
+		branch := resolvedSessionBranch(rc.RunDir, rc.Config.Name, sessionName, sessionState)
+		if wtPath != "" {
+			if err := RemoveWorktree(rc.ProjectRoot, wtPath); err != nil {
+				fmt.Printf("Warning: remove worktree %s: %v\n", wtPath, err)
+			} else {
+				removedWorktrees[wtPath] = true
+				fmt.Printf("Removed worktree: %s\n", wtPath)
+			}
+		}
+		removeSessionBranch(branch)
+	}
+
+	worktreesDir := filepath.Join(rc.RunDir, "worktrees")
+	if entries, err := os.ReadDir(worktreesDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if name == "root" {
+				continue
+			}
+			wtPath := filepath.Join(worktreesDir, name)
+			if removedWorktrees[wtPath] {
+				continue
+			}
+			if err := RemoveWorktree(rc.ProjectRoot, wtPath); err != nil {
+				fmt.Printf("Warning: remove worktree %s: %v\n", wtPath, err)
+			} else {
+				removedWorktrees[wtPath] = true
+				fmt.Printf("Removed worktree: %s\n", wtPath)
+			}
+			if i := strings.LastIndex(name, "-"); i >= 0 {
+				if idx, err := parseSessionIndex("session-" + name[i+1:]); err == nil {
+					removeSessionBranch(fmt.Sprintf("goalx/%s/%d", rc.Config.Name, idx))
+				}
+			}
 		}
 	}
 

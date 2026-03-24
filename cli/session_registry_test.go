@@ -71,3 +71,26 @@ func TestNextAvailableSessionIndexSkipsOccupiedWorktreeSlot(t *testing.T) {
 		t.Fatalf("nextAvailableSessionIndex = %d, want 3", got)
 	}
 }
+
+func TestNextAvailableSessionIndexSkipsSessionIdentityWithoutWorktree(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := initGitRepo(t)
+	writeAndCommit(t, projectRoot, "base.txt", "base", "base commit")
+	runName, runDir := writeLifecycleRunFixture(t, projectRoot)
+	if err := os.Remove(JournalPath(runDir, "session-1")); err != nil {
+		t.Fatalf("remove session journal: %v", err)
+	}
+	if err := os.RemoveAll(WorktreePath(runDir, runName, 1)); err != nil {
+		t.Fatalf("remove session worktree: %v", err)
+	}
+
+	got, err := nextAvailableSessionIndex(projectRoot, runDir, runName)
+	if err != nil {
+		t.Fatalf("nextAvailableSessionIndex: %v", err)
+	}
+	if got != 2 {
+		t.Fatalf("nextAvailableSessionIndex = %d, want 2", got)
+	}
+}

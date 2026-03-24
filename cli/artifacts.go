@@ -181,27 +181,34 @@ func buildRunArtifactsManifest(runDir string, cfg *goalx.Config) *ArtifactsManif
 	if err != nil {
 		return manifest
 	}
+	sessionsState, err := EnsureSessionsRuntimeState(runDir)
+	if err != nil {
+		return manifest
+	}
 	for _, num := range indexes {
 		sessionName := SessionName(num)
 		identity, err := RequireSessionIdentity(runDir, sessionName)
 		if err != nil {
 			continue
 		}
-		sessionState := ensureSessionArtifactsEntry(manifest, sessionName, identity.Mode)
+		sessionArtifacts := ensureSessionArtifactsEntry(manifest, sessionName, identity.Mode)
 		if goalx.Mode(identity.Mode) != goalx.ModeResearch {
 			continue
 		}
 
-		wtPath := WorktreePath(runDir, cfg.Name, num)
-		reportPath := findSessionReport(wtPath, identity.Target.Files)
+		reportRoot := resolvedSessionWorktreePath(runDir, cfg.Name, sessionName, sessionsState)
+		if reportRoot == "" {
+			reportRoot = RunWorktreePath(runDir)
+		}
+		reportPath := findSessionReport(reportRoot, identity.Target.Files)
 		if reportPath == "" {
 			continue
 		}
-		relPath, err := filepath.Rel(wtPath, reportPath)
+		relPath, err := filepath.Rel(reportRoot, reportPath)
 		if err != nil {
 			relPath = filepath.Base(reportPath)
 		}
-		upsertArtifact(sessionState, ArtifactMeta{
+		upsertArtifact(sessionArtifacts, ArtifactMeta{
 			Kind:        "report",
 			Path:        reportPath,
 			RelPath:     relPath,

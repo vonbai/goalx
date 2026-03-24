@@ -168,6 +168,69 @@ func TestResumeRelaunchesParkedSessionAndMarksActive(t *testing.T) {
 	}
 }
 
+func TestResumeUsesRunWorktreeWhenSessionHasNoDedicatedWorktree(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	logPath := installFakeTmux(t, "master")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
+	if err := os.RemoveAll(WorktreePath(runDir, runName, 1)); err != nil {
+		t.Fatalf("remove session worktree: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:       "session-1",
+		State:      "parked",
+		Mode:       string(goalx.ModeDevelop),
+		Branch:     "goalx/" + runName + "/1",
+		OwnerScope: "db race triage",
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+
+	coord, err := EnsureCoordinationState(runDir, "fix pipeline")
+	if err != nil {
+		t.Fatalf("EnsureCoordinationState: %v", err)
+	}
+	coord.Sessions["session-1"] = CoordinationSession{
+		State: "parked",
+		Scope: "db race triage",
+	}
+	coord.Version++
+	if err := SaveCoordinationState(CoordinationPath(runDir), coord); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+
+	if err := Resume(repo, []string{"--run", runName, "session-1"}); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+
+	state, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadSessionsRuntimeState: %v", err)
+	}
+	sess := state.Sessions["session-1"]
+	if sess.WorktreePath != "" {
+		t.Fatalf("session worktree path = %q, want empty", sess.WorktreePath)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	logText := string(logData)
+	wantSession := goalx.TmuxSessionName(repo, runName)
+	if !strings.Contains(logText, "new-window -t "+wantSession+" -n session-1 -c "+runWT+" env ") {
+		t.Fatalf("tmux log missing run worktree launch:\n%s", logText)
+	}
+}
+
 func TestResumeRequiresExistingSessionIdentity(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

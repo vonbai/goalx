@@ -34,7 +34,9 @@ You are **{{.SessionName}}** of {{len .Sessions}} sessions working in parallel o
 
 ### Roster
 {{range $i, $s := .Sessions}}
-- **{{$s.Name}}** ({{$s.Mode}}): worktree `{{$s.WorktreePath}}`
+{{if $s.WorktreePath}}- **{{$s.Name}}** ({{$s.Mode}}): worktree `{{$s.WorktreePath}}`
+{{else}}- **{{$s.Name}}** ({{$s.Mode}}): shared run worktree
+{{end}}
 {{end}}
 
 {{if .GoalPath}}### Goal Boundary

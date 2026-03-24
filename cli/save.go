@@ -122,7 +122,7 @@ func Save(projectRoot string, args []string) error {
 			sessionList = append(sessionList, SessionRuntimeState{
 				Name:         sName,
 				Mode:         identity.Mode,
-				WorktreePath: WorktreePath(rc.RunDir, rc.Config.Name, num),
+				WorktreePath: resolvedSessionWorktreePath(rc.RunDir, rc.Config.Name, sName, sessionState),
 			})
 		}
 	}
@@ -146,14 +146,12 @@ func Save(projectRoot string, args []string) error {
 		if artifact != nil && artifact.Path != "" {
 			reportSource = artifact.Path
 		} else if !manifestFromFile || declaredSession == nil {
-			worktreePath := sess.WorktreePath
-			if worktreePath == "" {
-				if num, parseErr := parseSessionNumber(sName); parseErr == nil {
-					worktreePath = WorktreePath(rc.RunDir, rc.Config.Name, num)
-				}
+			reportRoot := sess.WorktreePath
+			if reportRoot == "" {
+				reportRoot = RunWorktreePath(rc.RunDir)
 			}
-			if worktreePath != "" {
-				reportSource = findSessionReport(worktreePath, targetFiles)
+			if reportRoot != "" {
+				reportSource = findSessionReport(reportRoot, targetFiles)
 			}
 		}
 		if reportSource != "" {

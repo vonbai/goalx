@@ -265,6 +265,9 @@ func SnapshotSessionRuntime(runDir, sessionName, worktreePath string) (SessionRu
 }
 
 func snapshotWorktreeState(worktreePath string) (int, string, error) {
+	if strings.TrimSpace(worktreePath) == "" {
+		return 0, "", nil
+	}
 	statusOut, err := exec.Command("git", "-C", worktreePath, "status", "--porcelain").CombinedOutput()
 	if err != nil {
 		if os.IsNotExist(err) || bytes.Contains(bytes.ToLower(statusOut), []byte("not a git repository")) {

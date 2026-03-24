@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 )
@@ -24,4 +25,53 @@ func RunWorktreePath(runDir string) string {
 // WorktreePath returns the worktree directory for a session.
 func WorktreePath(runDir, cfgName string, num int) string {
 	return filepath.Join(runDir, "worktrees", cfgName+"-"+strconv.Itoa(num))
+}
+
+func sessionStateWorktreePath(state *SessionsRuntimeState, sessionName string) (string, bool) {
+	if state == nil {
+		return "", false
+	}
+	session, ok := state.Sessions[sessionName]
+	if !ok {
+		return "", false
+	}
+	return session.WorktreePath, true
+}
+
+func resolvedSessionWorktreePath(runDir, runName, sessionName string, state *SessionsRuntimeState) string {
+	if worktreePath, ok := sessionStateWorktreePath(state, sessionName); ok {
+		return worktreePath
+	}
+	idx, err := parseSessionIndex(sessionName)
+	if err != nil {
+		return ""
+	}
+	legacyPath := WorktreePath(runDir, runName, idx)
+	if info, err := os.Stat(legacyPath); err == nil && info.IsDir() {
+		return legacyPath
+	}
+	return ""
+}
+
+func sessionWorkdir(runDir, runName, sessionName string, state *SessionsRuntimeState) string {
+	if worktreePath := resolvedSessionWorktreePath(runDir, runName, sessionName, state); worktreePath != "" {
+		return worktreePath
+	}
+	return RunWorktreePath(runDir)
+}
+
+func resolvedSessionBranch(runDir, runName, sessionName string, state *SessionsRuntimeState) string {
+	if state != nil {
+		if session, ok := state.Sessions[sessionName]; ok && session.Branch != "" {
+			return session.Branch
+		}
+	}
+	if resolvedSessionWorktreePath(runDir, runName, sessionName, state) == "" {
+		return ""
+	}
+	idx, err := parseSessionIndex(sessionName)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("goalx/%s/%d", runName, idx)
 }

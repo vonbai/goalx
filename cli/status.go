@@ -50,7 +50,7 @@ func Status(projectRoot string, args []string) error {
 				Name:         sName,
 				State:        "pending",
 				Mode:         identity.Mode,
-				WorktreePath: WorktreePath(rc.RunDir, rc.Config.Name, num),
+				WorktreePath: resolvedSessionWorktreePath(rc.RunDir, rc.Config.Name, sName, sessionState),
 			})
 		}
 	}

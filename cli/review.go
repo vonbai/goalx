@@ -42,14 +42,18 @@ func Review(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
+	sessionState, err := EnsureSessionsRuntimeState(rc.RunDir)
+	if err != nil {
+		return fmt.Errorf("load session runtime state: %w", err)
+	}
 	for _, num := range sessionIndexes {
 		sName := SessionName(num)
-		wtPath := WorktreePath(rc.RunDir, rc.Config.Name, num)
+		workdir := sessionWorkdir(rc.RunDir, rc.Config.Name, sName, sessionState)
 
 		fmt.Printf("--- %s ---\n", sName)
 
 		// Git log summary
-		out, err := exec.Command("git", "-C", wtPath, "log", "--oneline", "-5").Output()
+		out, err := exec.Command("git", "-C", workdir, "log", "--oneline", "-5").Output()
 		if err == nil && len(out) > 0 {
 			fmt.Printf("Recent commits:\n%s\n", string(out))
 		}
@@ -70,13 +74,13 @@ func Review(projectRoot string, args []string) error {
 				reportPath = artifact.Path
 			}
 			if reportPath == "" {
-				reportPath = findSessionReport(wtPath, identity.Target.Files)
+				reportPath = findSessionReport(workdir, identity.Target.Files)
 			}
 			if reportPath != "" {
 				printFirstLines(reportPath, 20)
 			}
 		} else {
-			out, err := exec.Command("git", "-C", wtPath, "diff", "--stat", "HEAD~5").Output()
+			out, err := exec.Command("git", "-C", workdir, "diff", "--stat", "HEAD~5").Output()
 			if err == nil && len(out) > 0 {
 				fmt.Printf("Diff stat:\n%s", string(out))
 			}

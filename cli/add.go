@@ -10,7 +10,7 @@ import (
 	goalx "github.com/vonbai/goalx"
 )
 
-const addUsage = `usage: goalx add "research direction" [--run NAME] [--engine ENGINE] [--model MODEL] [--mode MODE] [--strategy NAME]`
+const addUsage = `usage: goalx add "research direction" [--run NAME] [--engine ENGINE] [--model MODEL] [--mode MODE] [--strategy NAME] [--worktree]`
 
 // Add creates a new subagent session in a running run.
 func Add(projectRoot string, args []string) (err error) {
@@ -30,6 +30,7 @@ func Add(projectRoot string, args []string) (err error) {
 	// Extract flags from rest args
 	var flagEngine, flagModel string
 	var flagMode goalx.Mode
+	useWorktree := false
 	var hintParts []string
 	for i := 0; i < len(rest); i++ {
 		switch rest[i] {
@@ -66,6 +67,8 @@ func Add(projectRoot string, args []string) (err error) {
 				return err
 			}
 			hintParts = append(hintParts, hints...)
+		case "--worktree":
+			useWorktree = true
 		default:
 			hintParts = append(hintParts, rest[i])
 		}
@@ -92,9 +95,7 @@ func Add(projectRoot string, args []string) (err error) {
 	}
 	sName := SessionName(newNum)
 	sessionIdentityPath := SessionIdentityPath(rc.RunDir, sName)
-	wtPath := WorktreePath(rc.RunDir, rc.Config.Name, newNum)
 	journalPath := JournalPath(rc.RunDir, sName)
-	branch := fmt.Sprintf("goalx/%s/%d", rc.Config.Name, newNum)
 	windowName := sessionWindowName(rc.Config.Name, newNum)
 	sessionIdentityWritten := false
 	defer func() {
@@ -157,6 +158,7 @@ func Add(projectRoot string, args []string) (err error) {
 	if err != nil {
 		return fmt.Errorf("load run launch env: %w", err)
 	}
+	runWT := RunWorktreePath(rc.RunDir)
 	goalxBin, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
@@ -180,11 +182,18 @@ func Add(projectRoot string, args []string) (err error) {
 		engineCmd += " --disable-slash-commands"
 	}
 
-	// Create worktree
-	absProjectRoot, _ := filepath.Abs(rc.ProjectRoot)
-	if err := CreateWorktree(absProjectRoot, wtPath, branch); err != nil {
-		return fmt.Errorf("create worktree: %w", err)
+	workdir := runWT
+	wtPath := ""
+	branch := ""
+	if useWorktree {
+		wtPath = WorktreePath(rc.RunDir, rc.Config.Name, newNum)
+		branch = fmt.Sprintf("goalx/%s/%d", rc.Config.Name, newNum)
+		if err := CreateWorktree(runWT, wtPath, branch); err != nil {
+			return fmt.Errorf("create worktree: %w", err)
+		}
+		workdir = wtPath
 	}
+	absProjectRoot, _ := filepath.Abs(rc.ProjectRoot)
 
 	// Create journal + session control files
 	if err := os.WriteFile(journalPath, nil, 0644); err != nil {
@@ -195,10 +204,10 @@ func Add(projectRoot string, args []string) (err error) {
 	}
 
 	// Generate adapter
-	if err := GenerateAdapter(engine, wtPath, ControlInboxPath(rc.RunDir, sName), SessionCursorPath(rc.RunDir, sName)); err != nil {
+	if err := GenerateAdapter(engine, workdir, ControlInboxPath(rc.RunDir, sName), SessionCursorPath(rc.RunDir, sName)); err != nil {
 		return fmt.Errorf("generate adapter: %w", err)
 	}
-	if err := EnsureEngineTrusted(engine, wtPath); err != nil {
+	if err := EnsureEngineTrusted(engine, workdir); err != nil {
 		return fmt.Errorf("trust bootstrap: %w", err)
 	}
 
@@ -256,7 +265,7 @@ func Add(projectRoot string, args []string) (err error) {
 	// Launch in tmux
 	prompt := goalx.ResolvePrompt(engines, engine, protocolPath)
 	launchCmd := buildLeaseWrappedLaunchCommandWithEnv(launchEnv.Env, goalxBin, rc.Name, rc.RunDir, sName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
-	if err := NewWindowWithCommand(rc.TmuxSession, windowName, wtPath, launchCmd); err != nil {
+	if err := NewWindowWithCommand(rc.TmuxSession, windowName, workdir, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
 
@@ -277,8 +286,8 @@ func Add(projectRoot string, args []string) (err error) {
 	}
 	// Notify master through durable inbox, then best-effort tmux nudge.
 	masterMsg := fmt.Sprintf(
-		"New %s added to your run. Window: %s, Worktree: %s, Journal: %s, Inbox: %s. Direction: %s. Add it to your check cycle.",
-		sName, windowName, wtPath, journalPath, ControlInboxPath(rc.RunDir, sName), hint,
+		"New %s added to your run. Window: %s, Workdir: %s, Journal: %s, Inbox: %s. Direction: %s. Add it to your check cycle.",
+		sName, windowName, workdir, journalPath, ControlInboxPath(rc.RunDir, sName), hint,
 	)
 	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_added", "goalx add", masterMsg); err != nil {
 		return fmt.Errorf("notify master inbox: %w", err)
@@ -298,6 +307,10 @@ func buildSessionDataList(runDir string, cfg *goalx.Config, engines map[string]g
 	indexes, err := existingSessionIndexes(runDir)
 	if err != nil {
 		return nil, err
+	}
+	sessionState, err := EnsureSessionsRuntimeState(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("load session runtime state: %w", err)
 	}
 
 	list := make([]SessionData, 0, len(indexes))
@@ -324,10 +337,11 @@ func buildSessionDataList(runDir string, cfg *goalx.Config, engines map[string]g
 		if err != nil {
 			return nil, fmt.Errorf("resolve session-%d engine: %w", num, err)
 		}
+		worktreePath := resolvedSessionWorktreePath(runDir, cfg.Name, sName, sessionState)
 		list = append(list, SessionData{
 			Name:              sName,
 			WindowName:        sessionWindowName(cfg.Name, num),
-			WorktreePath:      WorktreePath(runDir, cfg.Name, num),
+			WorktreePath:      worktreePath,
 			JournalPath:       JournalPath(runDir, sName),
 			SessionInboxPath:  ControlInboxPath(runDir, sName),
 			SessionCursorPath: SessionCursorPath(runDir, sName),

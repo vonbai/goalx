@@ -69,6 +69,9 @@ func isSessionSlotOccupied(projectRoot, runDir, runName string, idx int) bool {
 	if err == nil && ok {
 		return true
 	}
+	if _, err := os.Stat(SessionIdentityPath(runDir, SessionName(idx))); err == nil {
+		return true
+	}
 	if info, err := os.Stat(WorktreePath(runDir, runName, idx)); err == nil && info.IsDir() {
 		return true
 	}
@@ -95,6 +98,9 @@ func discoverSessionIndexesFromFS(runDir string) []int {
 
 	appendFromDir(filepath.Join(runDir, "journals"), func(name string) string {
 		return strings.TrimSuffix(name, ".jsonl")
+	})
+	appendFromDir(filepath.Join(runDir, "sessions"), func(name string) string {
+		return name
 	})
 	appendFromDir(filepath.Join(runDir, "worktrees"), func(name string) string {
 		if i := strings.LastIndex(name, "-"); i >= 0 {

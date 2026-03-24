@@ -106,6 +106,10 @@ harness:
   command: "go test ./..."
 `)
 	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
@@ -163,6 +167,10 @@ harness:
   command: "go test ./..."
 `)
 	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
@@ -250,7 +258,7 @@ acceptance:
 	}
 }
 
-func TestAddLaunchesSessionWithRunLaunchEnv(t *testing.T) {
+func TestAddLaunchesSessionWithRunLaunchEnvInExplicitWorktree(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -297,6 +305,10 @@ harness:
   command: "go test ./..."
 `)
 	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
 	writeTestLaunchEnvSnapshot(t, runDir, map[string]string{
 		"HOME":               home,
 		"PATH":               fakeBin + string(os.PathListSeparator) + "/tmp/goalx-bin:/usr/bin",
@@ -309,7 +321,7 @@ harness:
 	t.Setenv("ANTHROPIC_API_KEY", "anthropic-after")
 	t.Setenv("FOO_TOOLCHAIN_ROOT", "/opt/add-after")
 
-	if err := Add(repo, []string{"--run", runName, "--mode", "research", "audit root cause"}); err != nil {
+	if err := Add(repo, []string{"--run", runName, "--worktree", "--mode", "research", "audit root cause"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -339,6 +351,85 @@ harness:
 	}
 	if strings.Contains(logText, "ANTHROPIC_API_KEY='anthropic-after'") || strings.Contains(logText, "FOO_TOOLCHAIN_ROOT='/opt/add-after'") {
 		t.Fatalf("add should use stored run launch env, not caller env:\n%s", logText)
+	}
+}
+
+func TestAddLaunchesSessionInRunWorktreeByDefault(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	logPath := filepath.Join(fakeBin, "tmux.log")
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := `#!/bin/sh
+echo "$@" >> "$TMUX_LOG"
+case "$1" in
+  has-session)
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("TMUX_LOG", logPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+engine: codex
+model: codex
+parallel: 1
+sessions:
+  - hint: first
+target:
+  files: ["."]
+harness:
+  command: "go test ./..."
+`)
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
+	}
+
+	if err := Add(repo, []string{"--run", runName, "second direction"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	state, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadSessionsRuntimeState: %v", err)
+	}
+	sess, ok := state.Sessions["session-2"]
+	if !ok {
+		t.Fatalf("runtime state missing session-2: %#v", state.Sessions)
+	}
+	if sess.WorktreePath != "" {
+		t.Fatalf("session-2 worktree path = %q, want empty", sess.WorktreePath)
+	}
+	if _, err := os.Stat(WorktreePath(runDir, runName, 2)); !os.IsNotExist(err) {
+		t.Fatalf("session worktree should not exist, stat err = %v", err)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	logText := string(logData)
+	want := "new-window -t " + goalx.TmuxSessionName(repo, runName) + " -n session-2 -c " + runWT + " env "
+	if !strings.Contains(logText, want) {
+		t.Fatalf("tmux log missing run worktree launch:\n%s", logText)
 	}
 }
 
@@ -373,6 +464,10 @@ harness:
   command: "go test ./..."
 `)
 	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
@@ -663,6 +758,10 @@ harness:
   command: "go test ./..."
 `)
 	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
@@ -711,7 +810,7 @@ harness:
 	if !strings.Contains(text, "You are running in Claude Code with access to:") {
 		t.Fatalf("rendered protocol missing claude research engine guidance:\n%s", text)
 	}
-	if _, err := os.Stat(filepath.Join(runDir, "worktrees", "add-run-2", ".claude", "hooks.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(runWT, ".claude", "hooks.json")); err != nil {
 		t.Fatalf("expected claude adapter hook for session-2: %v", err)
 	}
 }

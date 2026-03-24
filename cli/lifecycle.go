@@ -64,13 +64,18 @@ func Park(projectRoot string, args []string) error {
 	coord.Sessions[sessionName] = digest
 	coord.Version++
 	coord.UpdatedAt = now
-	snapshot, err := SnapshotSessionRuntime(rc.RunDir, sessionName, WorktreePath(rc.RunDir, rc.Config.Name, idx))
+	sessionState, err := EnsureSessionsRuntimeState(rc.RunDir)
+	if err != nil {
+		return fmt.Errorf("load session runtime state: %w", err)
+	}
+	worktreePath := resolvedSessionWorktreePath(rc.RunDir, rc.Config.Name, sessionName, sessionState)
+	snapshot, err := SnapshotSessionRuntime(rc.RunDir, sessionName, worktreePath)
 	if err != nil {
 		return fmt.Errorf("snapshot session runtime: %w", err)
 	}
 	snapshot.State = "parked"
 	snapshot.Mode = sessionIdentity.Mode
-	snapshot.Branch = fmt.Sprintf("goalx/%s/%d", rc.Config.Name, idx)
+	snapshot.Branch = resolvedSessionBranch(rc.RunDir, rc.Config.Name, sessionName, sessionState)
 	snapshot.OwnerScope = digest.Scope
 	snapshot.BlockedBy = digest.BlockedBy
 	if err := SaveCoordinationState(CoordinationPath(rc.RunDir), coord); err != nil {
@@ -141,12 +146,17 @@ func Resume(projectRoot string, args []string) error {
 		return fmt.Errorf("%s is already active", sessionName)
 	}
 
-	wtPath := WorktreePath(rc.RunDir, rc.Config.Name, idx)
-	if info, err := os.Stat(wtPath); err != nil || !info.IsDir() {
+	sessionState, err := EnsureSessionsRuntimeState(rc.RunDir)
+	if err != nil {
+		return fmt.Errorf("load session runtime state: %w", err)
+	}
+	wtPath := resolvedSessionWorktreePath(rc.RunDir, rc.Config.Name, sessionName, sessionState)
+	workdir := sessionWorkdir(rc.RunDir, rc.Config.Name, sessionName, sessionState)
+	if info, err := os.Stat(workdir); err != nil || !info.IsDir() {
 		if err == nil {
-			err = fmt.Errorf("%s is not a directory", wtPath)
+			err = fmt.Errorf("%s is not a directory", workdir)
 		}
-		return fmt.Errorf("resume %s requires existing worktree: %w", sessionName, err)
+		return fmt.Errorf("resume %s requires existing workdir: %w", sessionName, err)
 	}
 	if err := EnsureSessionControl(rc.RunDir, sessionName); err != nil {
 		return fmt.Errorf("init session control: %w", err)
@@ -231,7 +241,7 @@ func Resume(projectRoot string, args []string) error {
 	sessionLeaseTTL := time.Duration(checkSec) * time.Second * 2
 
 	launchCmd := buildLeaseWrappedLaunchCommandWithEnv(launchEnv.Env, goalxBin, rc.Name, rc.RunDir, sessionName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
-	if err := NewWindowWithCommand(rc.TmuxSession, windowName, wtPath, launchCmd); err != nil {
+	if err := NewWindowWithCommand(rc.TmuxSession, windowName, workdir, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
 
@@ -252,7 +262,7 @@ func Resume(projectRoot string, args []string) error {
 		Name:         sessionName,
 		State:        "active",
 		Mode:         sessionIdentity.Mode,
-		Branch:       fmt.Sprintf("goalx/%s/%d", rc.Config.Name, idx),
+		Branch:       resolvedSessionBranch(rc.RunDir, rc.Config.Name, sessionName, sessionState),
 		WorktreePath: wtPath,
 		OwnerScope:   current.Scope,
 	}); err != nil {
