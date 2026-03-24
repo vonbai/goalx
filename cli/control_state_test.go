@@ -25,6 +25,23 @@ func TestEnsureControlStateMapsRunMetadataIntoRunIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
+	charter, err := NewRunCharter(runDir, cfg.Name, meta)
+	if err != nil {
+		t.Fatalf("NewRunCharter: %v", err)
+	}
+	if err := SaveRunCharter(RunCharterPath(runDir), charter); err != nil {
+		t.Fatalf("SaveRunCharter: %v", err)
+	}
+	meta.PhaseKind = "develop"
+	meta.CharterID = charter.CharterID
+	charterHash, err := hashRunCharter(charter)
+	if err != nil {
+		t.Fatalf("hashRunCharter: %v", err)
+	}
+	meta.CharterHash = charterHash
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -51,6 +68,24 @@ func TestEnsureControlStateMapsRunMetadataIntoRunIdentity(t *testing.T) {
 	}
 	if identity.Epoch != meta.Epoch {
 		t.Fatalf("run identity epoch = %d, want %d", identity.Epoch, meta.Epoch)
+	}
+	if identity.CharterPath != RunCharterPath(runDir) {
+		t.Fatalf("run identity charter_path = %q, want %q", identity.CharterPath, RunCharterPath(runDir))
+	}
+	if identity.CharterDigest == "" {
+		t.Fatal("run identity charter digest empty")
+	}
+	if identity.CharterID != meta.CharterID {
+		t.Fatalf("run identity charter id = %q, want %q", identity.CharterID, meta.CharterID)
+	}
+	if identity.CharterDigest != meta.CharterHash {
+		t.Fatalf("run identity charter digest = %q, want %q", identity.CharterDigest, meta.CharterHash)
+	}
+	if identity.Mode != string(cfg.Mode) {
+		t.Fatalf("run identity mode = %q, want %q", identity.Mode, cfg.Mode)
+	}
+	if identity.PhaseKind != meta.PhaseKind {
+		t.Fatalf("run identity phase_kind = %q, want %q", identity.PhaseKind, meta.PhaseKind)
 	}
 
 	runState, err := LoadControlRunState(ControlRunStatePath(runDir))

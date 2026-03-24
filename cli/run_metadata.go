@@ -22,12 +22,15 @@ type RunMetadata struct {
 	ProjectRoot     string `json:"project_root,omitempty"`
 	ProtocolVersion int    `json:"protocol_version,omitempty"`
 	RunID           string `json:"run_id,omitempty"`
+	RootRunID       string `json:"root_run_id,omitempty"`
 	Epoch           int    `json:"epoch,omitempty"`
 	BaseRevision    string `json:"base_revision,omitempty"`
 	PhaseKind       string `json:"phase_kind,omitempty"`
 	SourceRun       string `json:"source_run,omitempty"`
 	SourcePhase     string `json:"source_phase,omitempty"`
 	ParentRun       string `json:"parent_run,omitempty"`
+	CharterID       string `json:"charter_id,omitempty"`
+	CharterHash     string `json:"charter_hash,omitempty"`
 	StartedAt       string `json:"started_at,omitempty"`
 	UpdatedAt       string `json:"updated_at,omitempty"`
 }
@@ -90,9 +93,11 @@ func EnsureRunMetadata(runDir, projectRoot, objective string) (*RunMetadata, err
 			ProjectRoot:     projectRoot,
 			ProtocolVersion: currentProtocolVersion,
 			RunID:           newRunID(),
+			RootRunID:       "",
 			Epoch:           1,
 			BaseRevision:    baseRevision,
 		}
+		meta.RootRunID = meta.RunID
 		if err := SaveRunMetadata(path, meta); err != nil {
 			return nil, err
 		}
@@ -118,6 +123,10 @@ func EnsureRunMetadata(runDir, projectRoot, objective string) (*RunMetadata, err
 	if meta.ProtocolVersion >= 2 {
 		if meta.RunID == "" {
 			meta.RunID = newRunID()
+			changed = true
+		}
+		if meta.RootRunID == "" {
+			meta.RootRunID = meta.RunID
 			changed = true
 		}
 		if meta.Epoch <= 0 {

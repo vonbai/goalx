@@ -12,13 +12,18 @@ import (
 )
 
 type ControlRunIdentity struct {
-	Version     int    `json:"version"`
-	RunID       string `json:"run_id,omitempty"`
-	ProjectID   string `json:"project_id,omitempty"`
-	ProjectRoot string `json:"project_root,omitempty"`
-	RunName     string `json:"run_name,omitempty"`
-	Epoch       int    `json:"epoch,omitempty"`
-	CreatedAt   string `json:"created_at,omitempty"`
+	Version       int    `json:"version"`
+	RunID         string `json:"run_id,omitempty"`
+	ProjectID     string `json:"project_id,omitempty"`
+	ProjectRoot   string `json:"project_root,omitempty"`
+	RunName       string `json:"run_name,omitempty"`
+	Epoch         int    `json:"epoch,omitempty"`
+	CreatedAt     string `json:"created_at,omitempty"`
+	CharterID     string `json:"charter_id,omitempty"`
+	CharterPath   string `json:"charter_path,omitempty"`
+	CharterDigest string `json:"charter_hash,omitempty"`
+	Mode          string `json:"mode,omitempty"`
+	PhaseKind     string `json:"phase_kind,omitempty"`
 }
 
 type ControlRunState struct {
@@ -129,7 +134,11 @@ func EnsureControlState(runDir string) error {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		if err := SaveControlRunIdentity(ControlRunIdentityPath(runDir), deriveControlRunIdentity(runDir)); err != nil {
+		identity, err := deriveControlRunIdentity(runDir)
+		if err != nil {
+			return err
+		}
+		if err := SaveControlRunIdentity(ControlRunIdentityPath(runDir), identity); err != nil {
 			return err
 		}
 	}
@@ -380,19 +389,38 @@ func SaveControlDeliveries(path string, state *ControlDeliveries) error {
 	return writeJSONFile(path, state)
 }
 
-func deriveControlRunIdentity(runDir string) *ControlRunIdentity {
+func deriveControlRunIdentity(runDir string) (*ControlRunIdentity, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	identity := &ControlRunIdentity{
-		Version:   1,
-		RunID:     newRunID(),
-		RunName:   filepath.Base(runDir),
-		Epoch:     1,
-		CreatedAt: now,
+		Version:     1,
+		RunID:       newRunID(),
+		RunName:     filepath.Base(runDir),
+		Epoch:       1,
+		CreatedAt:   now,
+		CharterPath: RunCharterPath(runDir),
 	}
 	if cfg, err := LoadRunSpec(runDir); err == nil && cfg != nil && cfg.Name != "" {
 		identity.RunName = cfg.Name
+		identity.Mode = string(cfg.Mode)
 	}
-	if meta, err := LoadRunMetadata(RunMetadataPath(runDir)); err == nil && meta != nil {
+	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
+	if err != nil {
+		return nil, err
+	}
+	charter, err := LoadRunCharter(identity.CharterPath)
+	if err != nil {
+		return nil, err
+	}
+	if charter != nil {
+		if err := ValidateRunCharterLinkage(meta, charter); err != nil {
+			return nil, err
+		}
+		identity.CharterID = charter.CharterID
+		if digest, err := hashRunCharter(charter); err == nil {
+			identity.CharterDigest = digest
+		}
+	}
+	if meta != nil {
 		if meta.RunID != "" {
 			identity.RunID = meta.RunID
 		}
@@ -406,8 +434,28 @@ func deriveControlRunIdentity(runDir string) *ControlRunIdentity {
 		if meta.StartedAt != "" {
 			identity.CreatedAt = meta.StartedAt
 		}
+		if meta.CharterID != "" {
+			identity.CharterID = meta.CharterID
+		}
+		if meta.PhaseKind != "" {
+			identity.PhaseKind = meta.PhaseKind
+		}
+		if meta.CharterHash != "" {
+			identity.CharterDigest = meta.CharterHash
+		}
+		if meta.CharterID != "" || meta.CharterHash != "" {
+			if charter == nil {
+				return nil, fmt.Errorf("run charter missing at %s", identity.CharterPath)
+			}
+			if err := ValidateRunCharterLinkage(meta, charter); err != nil {
+				return nil, err
+			}
+		}
 	}
-	return identity
+	if digest, err := hashFileContents(identity.CharterPath); err == nil {
+		identity.CharterDigest = digest
+	}
+	return identity, nil
 }
 
 func deriveControlRunState(runDir string) *ControlRunState {

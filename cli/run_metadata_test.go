@@ -27,6 +27,9 @@ func TestEnsureRunMetadataCreatesProtocolV2Identity(t *testing.T) {
 	if meta.Epoch != 1 {
 		t.Fatalf("epoch = %d, want 1", meta.Epoch)
 	}
+	if meta.RootRunID != meta.RunID {
+		t.Fatalf("root run id = %q, want %q", meta.RootRunID, meta.RunID)
+	}
 
 	reloaded, err := LoadRunMetadata(RunMetadataPath(runDir))
 	if err != nil {
@@ -40,6 +43,40 @@ func TestEnsureRunMetadataCreatesProtocolV2Identity(t *testing.T) {
 	}
 	if reloaded.Epoch != meta.Epoch {
 		t.Fatalf("reloaded epoch = %d, want %d", reloaded.Epoch, meta.Epoch)
+	}
+}
+
+func TestSaveRunMetadataPreservesCharterFields(t *testing.T) {
+	runDir := t.TempDir()
+	meta := &RunMetadata{
+		Version:         1,
+		Objective:       "ship feature",
+		ProjectRoot:     "/tmp/project",
+		ProtocolVersion: 2,
+		RunID:           "run_abc",
+		RootRunID:       "run_root",
+		Epoch:           3,
+		BaseRevision:    "base",
+		PhaseKind:       "research",
+		CharterID:       "charter_abc",
+		CharterHash:     "sha256:abc",
+	}
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
+
+	reloaded, err := LoadRunMetadata(RunMetadataPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadRunMetadata: %v", err)
+	}
+	if reloaded.RootRunID != meta.RootRunID {
+		t.Fatalf("RootRunID = %q, want %q", reloaded.RootRunID, meta.RootRunID)
+	}
+	if reloaded.CharterID != meta.CharterID {
+		t.Fatalf("CharterID = %q, want %q", reloaded.CharterID, meta.CharterID)
+	}
+	if reloaded.CharterHash != meta.CharterHash {
+		t.Fatalf("CharterHash = %q, want %q", reloaded.CharterHash, meta.CharterHash)
 	}
 }
 
