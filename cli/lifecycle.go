@@ -147,6 +147,10 @@ func Resume(projectRoot string, args []string) error {
 	if err := EnsureSessionControl(rc.RunDir, sessionName); err != nil {
 		return fmt.Errorf("init session control: %w", err)
 	}
+	sessionIdentity, err := RequireSessionIdentity(rc.RunDir, sessionName)
+	if err != nil {
+		return fmt.Errorf("load session identity: %w", err)
+	}
 
 	_, engines, err := goalx.LoadConfig(rc.ProjectRoot)
 	if err != nil {
@@ -155,14 +159,18 @@ func Resume(projectRoot string, args []string) error {
 			return fmt.Errorf("load config for engine resolution: %w", err)
 		}
 	}
-	effective := goalx.EffectiveSessionConfig(rc.Config, idx-1)
-	engineCmd, err := goalx.ResolveEngineCommand(engines, effective.Engine, effective.Model)
+	engineCmd, err := goalx.ResolveEngineCommand(engines, sessionIdentity.Engine, sessionIdentity.Model)
 	if err != nil {
 		return fmt.Errorf("resolve engine: %w", err)
 	}
-	if effective.Engine == "claude-code" {
+	if sessionIdentity.Engine == "claude-code" {
 		engineCmd += " --disable-slash-commands"
 	}
+	coord, err := EnsureCoordinationState(rc.RunDir, rc.Config.Objective)
+	if err != nil {
+		return err
+	}
+	current := coord.Sessions[sessionName]
 
 	sessionDataList, err := buildSessionDataList(rc.RunDir, rc.Config, engines)
 	if err != nil {
@@ -171,11 +179,11 @@ func Resume(projectRoot string, args []string) error {
 	subData := ProtocolData{
 		RunName:             rc.Config.Name,
 		Objective:           rc.Config.Objective,
-		Mode:                effective.Mode,
-		Engine:              effective.Engine,
+		Mode:                goalx.Mode(sessionIdentity.Mode),
+		Engine:              sessionIdentity.Engine,
 		Sessions:            sessionDataList,
-		Target:              *effective.Target,
-		Harness:             *effective.Harness,
+		Target:              sessionIdentity.Target,
+		Harness:             sessionIdentity.Harness,
 		Context:             rc.Config.Context,
 		Budget:              rc.Config.Budget,
 		SessionName:         sessionName,
@@ -193,13 +201,13 @@ func Resume(projectRoot string, args []string) error {
 		SessionsStatePath:   SessionsRuntimeStatePath(rc.RunDir),
 		ProjectRegistryPath: ProjectRegistryPath(rc.ProjectRoot),
 		ProjectRoot:         absProjectRoot,
-		DiversityHint:       effective.Hint,
+		DiversityHint:       current.Scope,
 	}
 	if err := RenderSubagentProtocol(subData, rc.RunDir, idx-1); err != nil {
 		return fmt.Errorf("render protocol: %w", err)
 	}
 	protocolPath := filepath.Join(rc.RunDir, sessionNameToProgramFile(idx))
-	prompt := goalx.ResolvePrompt(engines, effective.Engine, protocolPath)
+	prompt := goalx.ResolvePrompt(engines, sessionIdentity.Engine, protocolPath)
 	meta, err := EnsureRunMetadata(rc.RunDir, rc.ProjectRoot, rc.Config.Objective)
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
@@ -219,17 +227,9 @@ func Resume(projectRoot string, args []string) error {
 		return fmt.Errorf("launch subagent: %w", err)
 	}
 
-	coord, err := EnsureCoordinationState(rc.RunDir, rc.Config.Objective)
-	if err != nil {
-		return err
-	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	current := coord.Sessions[sessionName]
 	current.State = "active"
 	current.BlockedBy = ""
-	if current.Scope == "" {
-		current.Scope = effective.Hint
-	}
 	if current.LastRound == 0 {
 		current.LastRound = inferSessionCoordination(JournalPath(rc.RunDir, sessionName)).LastRound
 	}
@@ -243,7 +243,7 @@ func Resume(projectRoot string, args []string) error {
 	if err := UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
 		Name:         sessionName,
 		State:        "active",
-		Mode:         string(effective.Mode),
+		Mode:         sessionIdentity.Mode,
 		Branch:       fmt.Sprintf("goalx/%s/%d", rc.Config.Name, idx),
 		WorktreePath: wtPath,
 		OwnerScope:   current.Scope,

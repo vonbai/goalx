@@ -255,6 +255,23 @@ func TestDebateHelpPrintsUsage(t *testing.T) {
 	}
 }
 
+func TestDebateStartCreatesFreshCharterWithPreservedRootLineage(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := initGitRepo(t)
+	writeAndCommit(t, projectRoot, "base.txt", "base", "base commit")
+	sourceMeta, sourceCharter := writeSavedPhaseSourceFixture(t, projectRoot, "research-a", "research")
+	installPhaseStartFakeTmux(t)
+	stubLaunchRunSidecar(t)
+
+	if err := Debate(projectRoot, []string{"--from", "research-a"}, nil); err != nil {
+		t.Fatalf("Debate: %v", err)
+	}
+
+	assertPhaseRunLineage(t, projectRoot, derivePhaseRunName("research-a", "debate", ""), "debate", "research-a", sourceMeta, sourceCharter)
+}
+
 func TestPhaseWriteConfigUsesManualDraft(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

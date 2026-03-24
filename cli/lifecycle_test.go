@@ -129,8 +129,12 @@ func TestResumeRelaunchesParkedSessionAndMarksActive(t *testing.T) {
 		t.Fatalf("Resume: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(runDir, "sessions", "session-1", "identity.json")); err != nil {
-		t.Fatalf("expected session identity to exist after resume: %v", err)
+	identity, err := LoadSessionIdentity(SessionIdentityPath(runDir, "session-1"))
+	if err != nil {
+		t.Fatalf("LoadSessionIdentity: %v", err)
+	}
+	if identity == nil {
+		t.Fatal("expected session identity to exist after resume")
 	}
 
 	state, err := LoadCoordinationState(CoordinationPath(runDir))
@@ -161,6 +165,95 @@ func TestResumeRelaunchesParkedSessionAndMarksActive(t *testing.T) {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("tmux log missing %q:\n%s", want, logText)
 		}
+	}
+}
+
+func TestResumeRequiresExistingSessionIdentity(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	installFakeTmux(t, "master")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	if err := os.Remove(SessionIdentityPath(runDir, "session-1")); err != nil {
+		t.Fatalf("remove session identity: %v", err)
+	}
+
+	err := Resume(repo, []string{"--run", runName, "session-1"})
+	if err == nil || !strings.Contains(err.Error(), "session identity") {
+		t.Fatalf("Resume error = %v, want missing session identity", err)
+	}
+}
+
+func TestResumeRejectsMismatchedSessionIdentityCharter(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	installFakeTmux(t, "master")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	identity, err := LoadSessionIdentity(SessionIdentityPath(runDir, "session-1"))
+	if err != nil {
+		t.Fatalf("LoadSessionIdentity: %v", err)
+	}
+	identity.OriginCharterID = "charter_other"
+	if err := writeJSONFile(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
+		t.Fatalf("rewrite session identity: %v", err)
+	}
+
+	err = Resume(repo, []string{"--run", runName, "session-1"})
+	if err == nil || !strings.Contains(err.Error(), "charter linkage") {
+		t.Fatalf("Resume error = %v, want charter linkage failure", err)
+	}
+}
+
+func TestResumeUsesDurableSessionIdentityInsteadOfCurrentConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	logPath := installFakeTmux(t, "master")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	cfg.Engine = "claude-code"
+	cfg.Model = "opus"
+	cfg.Sessions = []goalx.SessionConfig{{
+		Engine: "claude-code",
+		Model:  "opus",
+		Mode:   goalx.ModeResearch,
+		Target: &goalx.TargetConfig{Files: []string{"report.md"}, Readonly: []string{"."}},
+		Harness: &goalx.HarnessConfig{
+			Command: "test -s report.md",
+		},
+		Hint: "mutated after park",
+	}}
+	if err := SaveRunSpec(runDir, cfg); err != nil {
+		t.Fatalf("SaveRunSpec: %v", err)
+	}
+
+	if err := Resume(repo, []string{"--run", runName, "session-1"}); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+
+	out, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	logText := string(out)
+	if strings.Contains(logText, "claude ") {
+		t.Fatalf("resume launch should not recompute current config engine:\n%s", logText)
+	}
+	if !strings.Contains(logText, "exec codex ") {
+		t.Fatalf("resume launch should use durable session identity engine:\n%s", logText)
 	}
 }
 
@@ -324,6 +417,50 @@ func writeLifecycleRunFixture(t *testing.T, repo string) (string, string) {
 	}
 	if err := EnsureMasterControl(runDir); err != nil {
 		t.Fatalf("EnsureMasterControl: %v", err)
+	}
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	goalState, err := EnsureGoalState(runDir)
+	if err != nil {
+		t.Fatalf("EnsureGoalState: %v", err)
+	}
+	if err := EnsureGoalLog(runDir); err != nil {
+		t.Fatalf("EnsureGoalLog: %v", err)
+	}
+	if _, err := EnsureAcceptanceState(runDir, &cfg, goalState.Version); err != nil {
+		t.Fatalf("EnsureAcceptanceState: %v", err)
+	}
+	charter, err := NewRunCharter(runDir, runName, meta)
+	if err != nil {
+		t.Fatalf("NewRunCharter: %v", err)
+	}
+	if err := SaveRunCharter(RunCharterPath(runDir), charter); err != nil {
+		t.Fatalf("SaveRunCharter: %v", err)
+	}
+	digest, err := hashRunCharter(charter)
+	if err != nil {
+		t.Fatalf("hashRunCharter: %v", err)
+	}
+	meta.CharterID = charter.CharterID
+	meta.CharterHash = digest
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
+	fence, err := NewIdentityFence(runDir, meta)
+	if err != nil {
+		t.Fatalf("NewIdentityFence: %v", err)
+	}
+	if err := SaveIdentityFence(IdentityFencePath(runDir), fence); err != nil {
+		t.Fatalf("SaveIdentityFence: %v", err)
+	}
+	identity, err := NewSessionIdentity(runDir, "session-1", "master-derived-develop", goalx.ModeDevelop, "codex", "codex", cfg.Target, cfg.Harness)
+	if err != nil {
+		t.Fatalf("NewSessionIdentity: %v", err)
+	}
+	if err := SaveSessionIdentity(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
+		t.Fatalf("SaveSessionIdentity: %v", err)
 	}
 	return runName, runDir
 }

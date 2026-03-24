@@ -225,6 +225,34 @@ esac
 	}
 
 	runDir := goalx.RunDir(repo, cfg.Name)
+	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadRunMetadata: %v", err)
+	}
+	charter, err := LoadRunCharter(RunCharterPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadRunCharter: %v", err)
+	}
+	if err := ValidateRunCharterLinkage(meta, charter); err != nil {
+		t.Fatalf("ValidateRunCharterLinkage: %v", err)
+	}
+	if meta.CharterID == "" || meta.CharterHash == "" {
+		t.Fatalf("run metadata missing charter linkage: %+v", meta)
+	}
+	controlIdentity, err := LoadControlRunIdentity(ControlRunIdentityPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunIdentity: %v", err)
+	}
+	if controlIdentity.CharterID != meta.CharterID || controlIdentity.CharterDigest != meta.CharterHash {
+		t.Fatalf("control run identity charter linkage = %+v, metadata = %+v", controlIdentity, meta)
+	}
+	fence, err := LoadIdentityFence(IdentityFencePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadIdentityFence: %v", err)
+	}
+	if fence.RunID != meta.RunID || fence.Epoch != meta.Epoch || fence.CharterHash != meta.CharterHash {
+		t.Fatalf("identity fence linkage = %+v, metadata = %+v", fence, meta)
+	}
 	for _, path := range []string{
 		filepath.Join(runDir, "master.md"),
 		filepath.Join(runDir, "master.jsonl"),

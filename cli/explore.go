@@ -61,10 +61,5 @@ func Explore(projectRoot string, args []string) error {
 		return nil
 	}
 
-	return startWithConfig(projectRoot, cfg, engines, &RunMetadata{
-		PhaseKind:   "explore",
-		SourceRun:   source.Run,
-		SourcePhase: phaseSourceKind(source),
-		ParentRun:   source.Run,
-	})
+	return startWithConfig(projectRoot, cfg, engines, phaseRunMetadataPatch(source, "explore"))
 }

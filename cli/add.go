@@ -13,7 +13,7 @@ import (
 const addUsage = `usage: goalx add "research direction" [--run NAME] [--engine ENGINE] [--model MODEL] [--mode MODE] [--strategy NAME]`
 
 // Add creates a new subagent session in a running run.
-func Add(projectRoot string, args []string) error {
+func Add(projectRoot string, args []string) (err error) {
 	// Parse: goalx add "hint/direction" [--run NAME] [--engine ENGINE] [--model MODEL] [--mode MODE] [--strategy NAME]
 	runName, rest, err := extractRunFlag(args)
 	if err != nil {
@@ -91,10 +91,20 @@ func Add(projectRoot string, args []string) error {
 		return err
 	}
 	sName := SessionName(newNum)
+	sessionIdentityPath := SessionIdentityPath(rc.RunDir, sName)
 	wtPath := WorktreePath(rc.RunDir, rc.Config.Name, newNum)
 	journalPath := JournalPath(rc.RunDir, sName)
 	branch := fmt.Sprintf("goalx/%s/%d", rc.Config.Name, newNum)
 	windowName := sessionWindowName(rc.Config.Name, newNum)
+	sessionIdentityWritten := false
+	defer func() {
+		if err == nil || !sessionIdentityWritten {
+			return
+		}
+		if removeErr := os.Remove(sessionIdentityPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			fmt.Fprintf(os.Stderr, "warning: cleanup session identity %s: %v\n", sessionIdentityPath, removeErr)
+		}
+	}()
 
 	newSess := goalx.SessionConfig{Hint: hint}
 	if flagEngine != "" {
@@ -123,8 +133,25 @@ func Add(projectRoot string, args []string) error {
 		renderCfg.Parallel = len(renderCfg.Sessions)
 	}
 	effectiveSession := goalx.EffectiveSessionConfig(&renderCfg, newNum-1)
-	engine := effectiveSession.Engine
-	model := effectiveSession.Model
+	sessionIdentity, err := NewSessionIdentity(
+		rc.RunDir,
+		sName,
+		sessionRoleKind(effectiveSession.Mode),
+		effectiveSession.Mode,
+		effectiveSession.Engine,
+		effectiveSession.Model,
+		*effectiveSession.Target,
+		*effectiveSession.Harness,
+	)
+	if err != nil {
+		return fmt.Errorf("create session identity: %w", err)
+	}
+	if err := SaveSessionIdentity(sessionIdentityPath, sessionIdentity); err != nil {
+		return fmt.Errorf("write session identity: %w", err)
+	}
+	sessionIdentityWritten = true
+	engine := sessionIdentity.Engine
+	model := sessionIdentity.Model
 	meta, err := EnsureRunMetadata(rc.RunDir, rc.ProjectRoot, rc.Config.Objective)
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
@@ -184,7 +211,7 @@ func Add(projectRoot string, args []string) error {
 	if err := UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
 		Name:         sName,
 		State:        "active",
-		Mode:         string(effectiveSession.Mode),
+		Mode:         sessionIdentity.Mode,
 		Branch:       branch,
 		WorktreePath: wtPath,
 		OwnerScope:   hint,
@@ -201,11 +228,11 @@ func Add(projectRoot string, args []string) error {
 	subData := ProtocolData{
 		RunName:             rc.Config.Name,
 		Objective:           rc.Config.Objective,
-		Mode:                effectiveSession.Mode,
-		Engine:              effectiveSession.Engine,
+		Mode:                goalx.Mode(sessionIdentity.Mode),
+		Engine:              sessionIdentity.Engine,
 		Sessions:            sessionDataList,
-		Target:              *effectiveSession.Target,
-		Harness:             *effectiveSession.Harness,
+		Target:              sessionIdentity.Target,
+		Harness:             sessionIdentity.Harness,
 		Context:             rc.Config.Context,
 		Budget:              rc.Config.Budget,
 		SessionName:         sName,
@@ -285,6 +312,20 @@ func buildSessionDataList(runDir string, cfg *goalx.Config, engines map[string]g
 		effective := goalx.EffectiveSessionConfig(cfg, num-1)
 		engine := effective.Engine
 		model := effective.Model
+		mode := effective.Mode
+		identity, err := RequireSessionIdentity(runDir, sName)
+		if err != nil {
+			return nil, fmt.Errorf("load %s identity: %w", sName, err)
+		}
+		if identity.Engine != "" {
+			engine = identity.Engine
+		}
+		if identity.Model != "" {
+			model = identity.Model
+		}
+		if identity.Mode != "" {
+			mode = goalx.Mode(identity.Mode)
+		}
 		engineCmd, err := goalx.ResolveEngineCommand(engines, engine, model)
 		if err != nil {
 			return nil, fmt.Errorf("resolve session-%d engine: %w", num, err)
@@ -298,7 +339,7 @@ func buildSessionDataList(runDir string, cfg *goalx.Config, engines map[string]g
 			SessionCursorPath: SessionCursorPath(runDir, sName),
 			Engine:            engine,
 			Model:             model,
-			Mode:              effective.Mode,
+			Mode:              mode,
 			EngineCommand:     engineCmd,
 		})
 	}

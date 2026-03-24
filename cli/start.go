@@ -129,6 +129,55 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		return fmt.Errorf("generate master adapter: %w", err)
 	}
 
+	// Initialize durable goal boundary and immutable run identity before rendering protocols.
+	goalState, err := EnsureGoalState(runDir)
+	if err != nil {
+		return fmt.Errorf("init goal state: %w", err)
+	}
+	if err := EnsureGoalLog(runDir); err != nil {
+		return fmt.Errorf("init goal log: %w", err)
+	}
+	if _, err := EnsureAcceptanceState(runDir, cfg, goalState.Version); err != nil {
+		return fmt.Errorf("init acceptance state: %w", err)
+	}
+	meta, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective)
+	if err != nil {
+		return fmt.Errorf("init run metadata: %w", err)
+	}
+	applyRunMetadataPatch(meta, metaPatch)
+	charter, err := NewRunCharter(runDir, cfg.Name, meta)
+	if err != nil {
+		return fmt.Errorf("init run charter: %w", err)
+	}
+	if err := SaveRunCharter(RunCharterPath(runDir), charter); err != nil {
+		return fmt.Errorf("write run charter: %w", err)
+	}
+	digest, err := hashRunCharter(charter)
+	if err != nil {
+		return fmt.Errorf("hash run charter: %w", err)
+	}
+	meta.CharterID = charter.CharterID
+	meta.CharterHash = digest
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		return fmt.Errorf("write run metadata: %w", err)
+	}
+	if _, err := EnsureArtifactsManifest(runDir); err != nil {
+		return fmt.Errorf("init artifacts manifest: %w", err)
+	}
+	if _, err := EnsureCoordinationState(runDir, cfg.Objective); err != nil {
+		return fmt.Errorf("init coordination state: %w", err)
+	}
+	if err := EnsureMasterControl(runDir); err != nil {
+		return fmt.Errorf("init master control: %w", err)
+	}
+	fence, err := NewIdentityFence(runDir, meta)
+	if err != nil {
+		return fmt.Errorf("init identity fence: %w", err)
+	}
+	if err := SaveIdentityFence(IdentityFencePath(runDir), fence); err != nil {
+		return fmt.Errorf("write identity fence: %w", err)
+	}
+
 	// 11. Render protocols
 	masterData := ProtocolData{
 		RunName:                cfg.Name,
@@ -174,46 +223,6 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	// 12. Initialize master journal
 	if err := os.WriteFile(filepath.Join(runDir, "master.jsonl"), nil, 0644); err != nil {
 		return fmt.Errorf("init master journal: %w", err)
-	}
-	goalState, err := EnsureGoalState(runDir)
-	if err != nil {
-		return fmt.Errorf("init goal state: %w", err)
-	}
-	if err := EnsureGoalLog(runDir); err != nil {
-		return fmt.Errorf("init goal log: %w", err)
-	}
-	if _, err := EnsureAcceptanceState(runDir, cfg, goalState.Version); err != nil {
-		return fmt.Errorf("init acceptance state: %w", err)
-	}
-	meta, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective)
-	if err != nil {
-		return fmt.Errorf("init run metadata: %w", err)
-	}
-	if metaPatch != nil {
-		if metaPatch.PhaseKind != "" {
-			meta.PhaseKind = metaPatch.PhaseKind
-		}
-		if metaPatch.SourceRun != "" {
-			meta.SourceRun = metaPatch.SourceRun
-		}
-		if metaPatch.SourcePhase != "" {
-			meta.SourcePhase = metaPatch.SourcePhase
-		}
-		if metaPatch.ParentRun != "" {
-			meta.ParentRun = metaPatch.ParentRun
-		}
-		if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
-			return fmt.Errorf("write run metadata: %w", err)
-		}
-	}
-	if _, err := EnsureArtifactsManifest(runDir); err != nil {
-		return fmt.Errorf("init artifacts manifest: %w", err)
-	}
-	if _, err := EnsureCoordinationState(runDir, cfg.Objective); err != nil {
-		return fmt.Errorf("init coordination state: %w", err)
-	}
-	if err := EnsureMasterControl(runDir); err != nil {
-		return fmt.Errorf("init master control: %w", err)
 	}
 	runState, err := EnsureRuntimeState(runDir, cfg)
 	if err != nil {
@@ -268,4 +277,25 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	fmt.Printf("  run dir: %s\n", runDir)
 	fmt.Printf("  attach: goalx attach [--run %s] [master|session-N]\n", cfg.Name)
 	return nil
+}
+
+func applyRunMetadataPatch(meta *RunMetadata, patch *RunMetadata) {
+	if meta == nil || patch == nil {
+		return
+	}
+	if patch.RootRunID != "" {
+		meta.RootRunID = patch.RootRunID
+	}
+	if patch.PhaseKind != "" {
+		meta.PhaseKind = patch.PhaseKind
+	}
+	if patch.SourceRun != "" {
+		meta.SourceRun = patch.SourceRun
+	}
+	if patch.SourcePhase != "" {
+		meta.SourcePhase = patch.SourcePhase
+	}
+	if patch.ParentRun != "" {
+		meta.ParentRun = patch.ParentRun
+	}
 }

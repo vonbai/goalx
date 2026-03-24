@@ -63,12 +63,7 @@ func Debate(projectRoot string, args []string, nc *nextConfigJSON) error {
 		return nil
 	}
 
-	return startWithConfig(projectRoot, cfg, engines, &RunMetadata{
-		PhaseKind:   "debate",
-		SourceRun:   source.Run,
-		SourcePhase: phaseSourceKind(source),
-		ParentRun:   source.Run,
-	})
+	return startWithConfig(projectRoot, cfg, engines, phaseRunMetadataPatch(source, "debate"))
 }
 
 func debateDefaultHints(sessionNames []string) []string {

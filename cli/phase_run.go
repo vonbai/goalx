@@ -76,6 +76,25 @@ func phaseSourceKind(source *savedPhaseSource) string {
 	return ""
 }
 
+func phaseRunMetadataPatch(source *savedPhaseSource, phaseKind string) *RunMetadata {
+	patch := &RunMetadata{PhaseKind: phaseKind}
+	if source == nil {
+		return patch
+	}
+	patch.SourceRun = source.Run
+	patch.SourcePhase = phaseSourceKind(source)
+	patch.ParentRun = source.Run
+	if source.Metadata == nil {
+		return patch
+	}
+	if source.Metadata.RootRunID != "" {
+		patch.RootRunID = source.Metadata.RootRunID
+	} else if source.Metadata.RunID != "" {
+		patch.RootRunID = source.Metadata.RunID
+	}
+	return patch
+}
+
 func buildPhaseConfigFromSource(projectRoot string, phaseKind string, mode goalx.Mode, source *savedPhaseSource, opts phaseOptions) (*goalx.Config, map[string]goalx.EngineConfig, error) {
 	if source == nil || source.Config == nil {
 		return nil, nil, fmt.Errorf("saved phase source is required")

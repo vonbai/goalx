@@ -23,18 +23,6 @@ func TestAddExtendsExplicitSessionsSnapshot(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	runName := "add-run"
-	runDir := goalx.RunDir(repo, runName)
-	for _, dir := range []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "worktrees"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
@@ -49,9 +37,7 @@ target:
 harness:
   command: "go test ./..."
 `)
-	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
-		t.Fatalf("write run snapshot: %v", err)
-	}
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 	for _, name := range []string{"session-1.jsonl", "session-2.jsonl"} {
 		if err := os.WriteFile(filepath.Join(runDir, "journals", name), nil, 0o644); err != nil {
 			t.Fatalf("seed %s: %v", name, err)
@@ -60,6 +46,16 @@ harness:
 
 	if err := Add(repo, []string{"third direction", "--run", runName}); err != nil {
 		t.Fatalf("Add: %v", err)
+	}
+	identity, err := LoadSessionIdentity(SessionIdentityPath(runDir, "session-3"))
+	if err != nil {
+		t.Fatalf("LoadSessionIdentity: %v", err)
+	}
+	if identity == nil {
+		t.Fatal("session-3 identity missing")
+	}
+	if identity.RoleKind != "master-derived-develop" || identity.Mode != string(goalx.ModeDevelop) {
+		t.Fatalf("session-3 identity role/mode = %+v", identity)
 	}
 
 	cfg, err := LoadRunSpec(runDir)
@@ -96,18 +92,6 @@ func TestAddUsesBuiltinStrategyAsHint(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	runName := "add-run"
-	runDir := goalx.RunDir(repo, runName)
-	for _, dir := range []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "worktrees"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
@@ -121,9 +105,7 @@ target:
 harness:
   command: "go test ./..."
 `)
-	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
-		t.Fatalf("write run snapshot: %v", err)
-	}
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
@@ -160,18 +142,6 @@ func TestAddPropagatesEngineToRenderedProtocol(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	runName := "add-run"
-	runDir := goalx.RunDir(repo, runName)
-	for _, dir := range []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "worktrees"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
@@ -192,9 +162,7 @@ target:
 harness:
   command: "go test ./..."
 `)
-	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
-		t.Fatalf("write run snapshot: %v", err)
-	}
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
@@ -226,18 +194,6 @@ func TestAddRendersAcceptanceContractAndTeamContext(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	runName := "add-run"
-	runDir := goalx.RunDir(repo, runName)
-	for _, dir := range []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "worktrees"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
@@ -260,9 +216,7 @@ harness:
 acceptance:
   command: "go test -run E2E ./..."
 `)
-	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
-		t.Fatalf("write run snapshot: %v", err)
-	}
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 	if err := os.WriteFile(filepath.Join(runDir, "acceptance.md"), []byte("- deploy succeeds\n- e2e passes\n"), 0o644); err != nil {
 		t.Fatalf("write acceptance checklist: %v", err)
 	}
@@ -324,18 +278,6 @@ esac
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+"/tmp/goalx-bin:/usr/bin")
 	t.Setenv("ANTHROPIC_API_KEY", "anthropic-test")
 
-	runName := "add-run"
-	runDir := goalx.RunDir(repo, runName)
-	for _, dir := range []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "worktrees"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
@@ -353,14 +295,9 @@ target:
 harness:
   command: "go test ./..."
 `)
-	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
-		t.Fatalf("write run snapshot: %v", err)
-	}
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
-	}
-	if err := EnsureMasterControl(runDir); err != nil {
-		t.Fatalf("EnsureMasterControl: %v", err)
 	}
 
 	if err := Add(repo, []string{"--run", runName, "--mode", "research", "audit root cause"}); err != nil {
@@ -403,18 +340,6 @@ func TestAddNotifiesMasterViaInbox(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	runName := "add-run"
-	runDir := goalx.RunDir(repo, runName)
-	for _, dir := range []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "worktrees"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
@@ -431,9 +356,7 @@ target:
 harness:
   command: "go test ./..."
 `)
-	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
-		t.Fatalf("write run snapshot: %v", err)
-	}
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
@@ -475,18 +398,6 @@ func TestAddStartsNumberingFromExistingRunArtifacts(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	runName := "add-run"
-	runDir := goalx.RunDir(repo, runName)
-	for _, dir := range []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "worktrees"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
@@ -498,9 +409,7 @@ target:
 harness:
   command: "go test ./..."
 `)
-	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
-		t.Fatalf("write run snapshot: %v", err)
-	}
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 
 	if err := Add(repo, []string{"first direction", "--run", runName}); err != nil {
 		t.Fatalf("Add first: %v", err)
@@ -543,18 +452,6 @@ func TestAddSupportsResearchModeOverride(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	runName := "add-run"
-	runDir := goalx.RunDir(repo, runName)
-	for _, dir := range []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "worktrees"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
@@ -575,15 +472,26 @@ target:
 harness:
   command: "go test ./..."
 `)
-	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
-		t.Fatalf("write run snapshot: %v", err)
-	}
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
 
 	if err := Add(repo, []string{"investigate failing auth flow", "--mode", "research", "--run", runName}); err != nil {
 		t.Fatalf("Add: %v", err)
+	}
+	identity, err := LoadSessionIdentity(SessionIdentityPath(runDir, "session-2"))
+	if err != nil {
+		t.Fatalf("LoadSessionIdentity: %v", err)
+	}
+	if identity == nil {
+		t.Fatal("session-2 identity missing")
+	}
+	if identity.RoleKind != "master-derived-research" || identity.Engine != "claude-code" || identity.Model != "opus" {
+		t.Fatalf("session-2 identity = %+v", identity)
+	}
+	if len(identity.Target.Files) != 1 || identity.Target.Files[0] != "report.md" {
+		t.Fatalf("session-2 identity target = %#v", identity.Target.Files)
 	}
 
 	state, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
@@ -615,7 +523,7 @@ harness:
 	}
 }
 
-func TestAddResearchModeOverrideUsesResearchRoleWithoutExplicitSessions(t *testing.T) {
+func TestAddRequiresDurableIdentityForExistingSessions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -629,17 +537,100 @@ func TestAddResearchModeOverrideUsesResearchRoleWithoutExplicitSessions(t *testi
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	runName := "add-run"
-	runDir := goalx.RunDir(repo, runName)
-	for _, dir := range []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "worktrees"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+engine: codex
+model: codex
+parallel: 1
+sessions:
+  - hint: first
+target:
+  files: ["src/"]
+harness:
+  command: "go test ./..."
+`)
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
 	}
+	if err := os.Remove(SessionIdentityPath(runDir, "session-1")); err != nil {
+		t.Fatalf("remove session identity: %v", err)
+	}
+
+	err := Add(repo, []string{"second direction", "--run", runName})
+	if err == nil || !strings.Contains(err.Error(), "session identity") {
+		t.Fatalf("Add error = %v, want missing session identity", err)
+	}
+}
+
+func TestAddDoesNotLeaveSessionIdentityWhenLaunchFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := `#!/bin/sh
+case "$1" in
+  has-session)
+    exit 0
+    ;;
+  new-window)
+    exit 1
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+engine: codex
+model: codex
+parallel: 1
+sessions:
+  - hint: first
+target:
+  files: ["src/"]
+harness:
+  command: "go test ./..."
+`)
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
+	}
+
+	err := Add(repo, []string{"first direction", "--run", runName})
+	if err == nil || !strings.Contains(err.Error(), "create tmux window") {
+		t.Fatalf("Add error = %v, want tmux window failure", err)
+	}
+	if _, statErr := os.Stat(SessionIdentityPath(runDir, "session-2")); !os.IsNotExist(statErr) {
+		t.Fatalf("session identity should not remain after failed add, stat err = %v", statErr)
+	}
+}
+
+func TestAddResearchModeOverrideUsesResearchRoleWithoutExplicitSessions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
 mode: develop
@@ -659,11 +650,30 @@ target:
 harness:
   command: "go test ./..."
 `)
-	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
-		t.Fatalf("write run snapshot: %v", err)
-	}
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
+	}
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	effective := goalx.EffectiveSessionConfig(cfg, 0)
+	identity, err := NewSessionIdentity(
+		runDir,
+		"session-1",
+		sessionRoleKind(effective.Mode),
+		effective.Mode,
+		effective.Engine,
+		effective.Model,
+		*effective.Target,
+		*effective.Harness,
+	)
+	if err != nil {
+		t.Fatalf("NewSessionIdentity session-1: %v", err)
+	}
+	if err := SaveSessionIdentity(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
+		t.Fatalf("SaveSessionIdentity session-1: %v", err)
 	}
 
 	if err := Add(repo, []string{"audit root cause", "--mode", "research", "--run", runName}); err != nil {
@@ -709,18 +719,6 @@ func TestAddHelpDoesNotCreateSession(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	runName := "add-run"
-	runDir := goalx.RunDir(repo, runName)
-	for _, dir := range []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		filepath.Join(runDir, "worktrees"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
-	}
-
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
@@ -734,9 +732,7 @@ target:
 harness:
   command: "go test ./..."
 `)
-	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
-		t.Fatalf("write run snapshot: %v", err)
-	}
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
@@ -760,4 +756,90 @@ harness:
 			t.Fatalf("expected %s to be absent after --help, stat err = %v", path, statErr)
 		}
 	}
+}
+
+func writeAddRunFixture(t *testing.T, repo, snapshot string) (string, string) {
+	t.Helper()
+
+	runName := "add-run"
+	runDir := goalx.RunDir(repo, runName)
+	for _, dir := range []string{
+		runDir,
+		filepath.Join(runDir, "journals"),
+		filepath.Join(runDir, "worktrees"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), []byte(snapshot), 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	goalState, err := EnsureGoalState(runDir)
+	if err != nil {
+		t.Fatalf("EnsureGoalState: %v", err)
+	}
+	if err := EnsureGoalLog(runDir); err != nil {
+		t.Fatalf("EnsureGoalLog: %v", err)
+	}
+	if _, err := EnsureAcceptanceState(runDir, cfg, goalState.Version); err != nil {
+		t.Fatalf("EnsureAcceptanceState: %v", err)
+	}
+	charter, err := NewRunCharter(runDir, cfg.Name, meta)
+	if err != nil {
+		t.Fatalf("NewRunCharter: %v", err)
+	}
+	if err := SaveRunCharter(RunCharterPath(runDir), charter); err != nil {
+		t.Fatalf("SaveRunCharter: %v", err)
+	}
+	digest, err := hashRunCharter(charter)
+	if err != nil {
+		t.Fatalf("hashRunCharter: %v", err)
+	}
+	meta.CharterID = charter.CharterID
+	meta.CharterHash = digest
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
+	if _, err := EnsureCoordinationState(runDir, cfg.Objective); err != nil {
+		t.Fatalf("EnsureCoordinationState: %v", err)
+	}
+	if err := EnsureMasterControl(runDir); err != nil {
+		t.Fatalf("EnsureMasterControl: %v", err)
+	}
+	fence, err := NewIdentityFence(runDir, meta)
+	if err != nil {
+		t.Fatalf("NewIdentityFence: %v", err)
+	}
+	if err := SaveIdentityFence(IdentityFencePath(runDir), fence); err != nil {
+		t.Fatalf("SaveIdentityFence: %v", err)
+	}
+	for i := range cfg.Sessions {
+		effective := goalx.EffectiveSessionConfig(cfg, i)
+		identity, err := NewSessionIdentity(
+			runDir,
+			SessionName(i+1),
+			sessionRoleKind(effective.Mode),
+			effective.Mode,
+			effective.Engine,
+			effective.Model,
+			*effective.Target,
+			*effective.Harness,
+		)
+		if err != nil {
+			t.Fatalf("NewSessionIdentity %s: %v", SessionName(i+1), err)
+		}
+		if err := SaveSessionIdentity(SessionIdentityPath(runDir, SessionName(i+1)), identity); err != nil {
+			t.Fatalf("SaveSessionIdentity %s: %v", SessionName(i+1), err)
+		}
+	}
+	return runName, runDir
 }

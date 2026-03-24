@@ -224,3 +224,20 @@ func TestImplementUsesSavedManifestReportArtifacts(t *testing.T) {
 		t.Fatalf("context.files = %#v, want %q from artifacts manifest", cfg.Context.Files, reportPath)
 	}
 }
+
+func TestImplementStartCreatesFreshCharterWithPreservedRootLineage(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := initGitRepo(t)
+	writeAndCommit(t, projectRoot, "base.txt", "base", "base commit")
+	sourceMeta, sourceCharter := writeSavedPhaseSourceFixture(t, projectRoot, "debate", "debate")
+	installPhaseStartFakeTmux(t)
+	stubLaunchRunSidecar(t)
+
+	if err := Implement(projectRoot, []string{"--from", "debate"}, nil); err != nil {
+		t.Fatalf("Implement: %v", err)
+	}
+
+	assertPhaseRunLineage(t, projectRoot, derivePhaseRunName("debate", "implement", ""), "implement", "debate", sourceMeta, sourceCharter)
+}

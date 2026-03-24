@@ -28,6 +28,24 @@ func SessionIdentityPath(runDir, sessionName string) string {
 	return filepath.Join(runDir, "sessions", sessionName, "identity.json")
 }
 
+func RequireSessionIdentity(runDir, sessionName string) (*SessionIdentity, error) {
+	identity, err := LoadSessionIdentity(SessionIdentityPath(runDir, sessionName))
+	if err != nil {
+		return nil, err
+	}
+	if identity == nil {
+		return nil, fmt.Errorf("session identity missing at %s", SessionIdentityPath(runDir, sessionName))
+	}
+	charter, err := RequireRunCharter(runDir)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateSessionIdentityLinkage(identity, charter); err != nil {
+		return nil, err
+	}
+	return identity, nil
+}
+
 func NewSessionIdentity(runDir, sessionName, roleKind string, mode goalx.Mode, engine, model string, target goalx.TargetConfig, harness goalx.HarnessConfig) (*SessionIdentity, error) {
 	charter, err := RequireRunCharter(runDir)
 	if err != nil {
@@ -117,5 +135,19 @@ func normalizeSessionIdentity(identity *SessionIdentity) {
 	}
 	if strings.TrimSpace(identity.Mode) == "" {
 		identity.Mode = string(goalx.ModeDevelop)
+	}
+}
+
+func sessionRoleKind(mode goalx.Mode) string {
+	switch mode {
+	case goalx.ModeResearch:
+		return "master-derived-research"
+	case goalx.ModeDevelop:
+		return "master-derived-develop"
+	default:
+		if trimmed := strings.TrimSpace(string(mode)); trimmed != "" {
+			return "master-derived-" + trimmed
+		}
+		return "master-derived"
 	}
 }
