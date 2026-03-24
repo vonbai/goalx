@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -327,6 +328,127 @@ esac
 	} {
 		if !strings.Contains(stateText, want) {
 			t.Fatalf("acceptance state missing %q:\n%s", want, stateText)
+		}
+	}
+}
+
+func TestStartAddsClaudeMasterInboxHook(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	goalxDir := filepath.Join(repo, ".goalx")
+	if err := os.MkdirAll(goalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	cfg := goalx.Config{
+		Name:      "claude-master",
+		Mode:      goalx.ModeResearch,
+		Objective: "audit auth flow",
+		Engine:    "codex",
+		Model:     "codex",
+		Target: goalx.TargetConfig{
+			Files: []string{"README.md"},
+		},
+		Harness: goalx.HarnessConfig{Command: "test -f README.md"},
+		Master: goalx.MasterConfig{
+			Engine: "claude-code",
+			Model:  "opus",
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(goalxDir, "goalx.yaml"), data, 0o644); err != nil {
+		t.Fatalf("write goalx.yaml: %v", err)
+	}
+
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	tmuxPath := filepath.Join(binDir, "tmux")
+	script := `#!/bin/sh
+set -eu
+state="${GOALX_FAKE_TMUX_STATE:?}"
+mkdir -p "$state"
+cmd="$1"
+shift
+case "$cmd" in
+  has-session)
+    target="$2"
+    if [ -f "$state/session_$target" ]; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  new-session)
+    name=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "-s" ]; then
+        shift
+        name="$1"
+        break
+      fi
+      shift
+    done
+    : > "$state/session_$name"
+    exit 0
+    ;;
+  kill-session)
+    target="$2"
+    rm -f "$state/session_$target"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
+
+	origLaunchSidecar := launchRunSidecar
+	defer func() { launchRunSidecar = origLaunchSidecar }()
+	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+
+	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	runDir := goalx.RunDir(repo, cfg.Name)
+	hooksPath := filepath.Join(RunWorktreePath(runDir), ".claude", "hooks.json")
+	data, err = os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatalf("read hooks.json: %v", err)
+	}
+
+	var doc struct {
+		Hooks []struct {
+			Event   string `json:"event"`
+			Command string `json:"command"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("unmarshal hooks.json: %v", err)
+	}
+	if len(doc.Hooks) != 1 {
+		t.Fatalf("len(Hooks) = %d, want 1", len(doc.Hooks))
+	}
+	if doc.Hooks[0].Event != "Stop" {
+		t.Fatalf("hook event = %q, want Stop", doc.Hooks[0].Event)
+	}
+	for _, want := range []string{
+		"INBOX PENDING",
+		MasterInboxPath(runDir),
+		MasterCursorPath(runDir),
+	} {
+		if !strings.Contains(doc.Hooks[0].Command, want) {
+			t.Fatalf("hook command missing %q:\n%s", want, doc.Hooks[0].Command)
 		}
 	}
 }

@@ -41,6 +41,7 @@ Usage:
   goalx add     "direction" [--run RUN] Add a session to a running run
   goalx tell    [--run RUN] [target] "message" Send a durable instruction to master or a session
   goalx ack-session [--run RUN] <session>      Acknowledge latest processed session inbox entry
+  goalx wait    [--run RUN] [target] [--timeout DURATION] Block on unread inbox entries or timeout
   goalx observe [RUN]                  Capture live output from all tmux windows
   goalx auto    "objective" [flags]   Init and start one master-led run, then exit
   goalx serve                         Start the GoalX HTTP control server
@@ -60,6 +61,7 @@ var (
 	mainStart            = cli.Start
 	mainAuto             = cli.Auto
 	mainStop             = cli.Stop
+	mainWait             = cli.Wait
 	mainSidecar          = cli.Sidecar
 	mainLeaseLoop        = cli.LeaseLoop
 	notifySignalsContext = signal.NotifyContext
@@ -159,6 +161,8 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.Tell(cwd, args)
 	case "ack-session":
 		return cli.AckSession(cwd, args)
+	case "wait":
+		return mainWait(cwd, args)
 	case "observe":
 		return cli.Observe(cwd, args)
 	case "serve":

@@ -122,6 +122,18 @@ CLI overrides take precedence. You may deviate if circumstances warrant it.
 - Check session journal: `cat <journal-path>`
 - If you must kill a stuck transport target, use the engine/transport tool directly. Prefer `goalx park`, `goalx resume`, or `goalx stop` before raw terminal intervention.
 
+## Idle Waiting
+
+If you need to pause between control cycles, do not use blind `sleep`.
+Use:
+```bash
+goalx wait --run {{.RunName}} master --timeout 30s
+```
+It polls the master inbox every second, returns early when unread inbox items arrive, and reports when the run stops.
+{{if eq .Master.Engine "claude-code"}}
+Claude Code Stop hook is only a safety net. Your normal idle path should still be `goalx wait`.
+{{end}}
+
 ## Your Job
 
 **Before first control cycle**: read `{{.CharterPath}}` first. It is the immutable structural anchor for the run. Then launch sessions, initialize the current goal boundary in `{{.GoalPath}}`, append the first path-comparison decision to `{{.GoalLogPath}}`, keep `{{.AcceptanceStatePath}}` synchronized with the current verification gate, {{if .CoordinationPath}}write a current coordination digest to `{{.CoordinationPath}}`, {{end}}initialize `{{.MasterCursorPath}}` if needed, then log to `{{.MasterJournalPath}}`.

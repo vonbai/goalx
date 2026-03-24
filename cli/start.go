@@ -199,6 +199,9 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	if err := EnsureMasterControl(runDir); err != nil {
 		return fmt.Errorf("init master control: %w", err)
 	}
+	if err := GenerateAdapter(cfg.Master.Engine, runWT, MasterInboxPath(runDir), MasterCursorPath(runDir)); err != nil {
+		return fmt.Errorf("generate master adapter: %w", err)
+	}
 	if err := SaveLaunchEnvSnapshot(ControlLaunchEnvPath(runDir), CaptureCurrentLaunchEnvSnapshot()); err != nil {
 		return fmt.Errorf("write launch env snapshot: %w", err)
 	}

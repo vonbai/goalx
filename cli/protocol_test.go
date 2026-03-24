@@ -601,13 +601,13 @@ func TestRenderMasterProtocolDefinesGenericLastMileAutonomy(t *testing.T) {
 func TestRenderMasterProtocolIncludesResearchModeLaunchGuidance(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective:      "audit auth",
-		RunName:        "demo",
-		Mode:           goalx.ModeResearch,
-		TmuxSession:    "ar-demo",
-		SummaryPath:    "/tmp/summary.md",
+		Objective:           "audit auth",
+		RunName:             "demo",
+		Mode:                goalx.ModeResearch,
+		TmuxSession:         "ar-demo",
+		SummaryPath:         "/tmp/summary.md",
 		AcceptanceNotesPath: "/tmp/acceptance.md",
-		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
+		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -750,16 +750,16 @@ func TestRenderMasterProtocolOmitsLegacyPlannedSessionsAndPresetDisplays(t *test
 func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective:      "ship it",
-		RunName:        "demo",
-		Mode:           goalx.ModeDevelop,
-		Engines:        goalx.BuiltinEngines,
-		Master:         goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
-		TmuxSession:    "ar-demo",
-		SummaryPath:    "/tmp/summary.md",
+		Objective:           "ship it",
+		RunName:             "demo",
+		Mode:                goalx.ModeDevelop,
+		Engines:             goalx.BuiltinEngines,
+		Master:              goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		TmuxSession:         "ar-demo",
+		SummaryPath:         "/tmp/summary.md",
 		AcceptanceNotesPath: "/tmp/acceptance.md",
-		StatusPath:     "/tmp/status.json",
-		EngineCommand:  "claude --model claude-opus-4-6 --permission-mode auto",
+		StatusPath:          "/tmp/status.json",
+		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -786,6 +786,68 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
 		}
+	}
+}
+
+func TestRenderMasterProtocolIncludesGoalxWaitLoopGuidance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:     "ship it",
+		RunName:       "demo",
+		Mode:          goalx.ModeDevelop,
+		Master:        goalx.MasterConfig{Engine: "codex", Model: "best"},
+		TmuxSession:   "ar-demo",
+		SummaryPath:   "/tmp/summary.md",
+		StatusPath:    "/tmp/status.json",
+		EngineCommand: "codex exec",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"do not use blind `sleep`",
+		"goalx wait --run demo master --timeout 30s",
+		"polls the master inbox every second",
+		"returns early when unread inbox items arrive",
+		"reports when the run stops",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q", want)
+		}
+	}
+}
+
+func TestRenderMasterProtocolIncludesClaudeWaitSafetyNetGuidance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:     "ship it",
+		RunName:       "demo",
+		Mode:          goalx.ModeDevelop,
+		Master:        goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		TmuxSession:   "ar-demo",
+		SummaryPath:   "/tmp/summary.md",
+		StatusPath:    "/tmp/status.json",
+		EngineCommand: "claude --model claude-opus-4-6 --permission-mode auto",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	if !strings.Contains(text, "Claude Code Stop hook is only a safety net") {
+		t.Fatalf("rendered master protocol missing Claude wait safety-net guidance:\n%s", text)
 	}
 }
 
