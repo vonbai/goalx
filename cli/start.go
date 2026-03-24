@@ -115,6 +115,7 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	dirs := []string{
 		runDir,
 		filepath.Join(runDir, "journals"),
+		ReportsDir(runDir),
 		filepath.Join(runDir, "worktrees"),
 		filepath.Join(projectRoot, ".goalx"),
 	}
@@ -253,6 +254,8 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		Target:                 cfg.Target,
 		Context:                cfg.Context,
 		Preferences:            cfg.Preferences,
+		Routing:                cfg.Routing,
+		DimensionsCatalog:      goalx.BuiltinDimensions,
 		TmuxSession:            tmuxSess,
 		ProjectRoot:            runWT,
 		SummaryPath:            filepath.Join(runDir, "summary.md"),

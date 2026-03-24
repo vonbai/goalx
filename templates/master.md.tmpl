@@ -52,6 +52,49 @@ No sessions yet. Launch them yourself with `goalx add`.
 - Run: {{.RunName}}
 - Master: {{.Master.Engine}}/{{.Master.Model}}
 
+## Routing Guidance
+
+### Effort Levels
+
+| Level | Guidance |
+|-------|----------|
+| auto | Let the selected engine/profile choose the provider-specific effort |
+| minimal | Cheapest acceptable pass for lightweight validation or triage |
+| low | Fast iteration with basic reasoning depth |
+| medium | Default balanced execution for most work |
+| high | Deeper reasoning for hard implementation or research slices |
+| max | Use only when the slice is both difficult and valuable enough to justify the cost |
+
+{{if .Routing.Profiles}}### Routing Profiles
+
+| Profile | Engine | Model | Effort |
+|---------|--------|-------|--------|
+{{range $name, $profile := .Routing.Profiles}}| {{$name}} | {{$profile.Engine}} | {{$profile.Model}} | {{$profile.Effort}} |
+{{end}}
+
+{{end}}{{if .Routing.Table}}### Routing Table
+
+| Role | Dimension | Profile |
+|------|-----------|---------|
+{{range $role, $dimensions := .Routing.Table}}{{range $dimension, $profile := $dimensions}}| {{$role}} | {{$dimension}} | {{$profile}} |
+{{end}}{{end}}
+
+{{end}}{{if .DimensionsCatalog}}### Dimension Catalog
+
+| Dimension | Guidance |
+|-----------|----------|
+{{range $name, $guidance := .DimensionsCatalog}}| {{$name}} | {{$guidance}} |
+{{end}}
+
+{{end}}Runtime assignments live in `{{.DimensionsPath}}`.
+Use:
+```bash
+goalx dimension [--run NAME] <session-N|all> --set depth,adversarial
+goalx dimension [--run NAME] <session-N> --add creative
+goalx dimension [--run NAME] <session-N> --remove depth
+```
+Write findings to `{{.ReportsDir}}`.
+
 ## Optimization Doctrine
 
 - Treat every goal as a system optimization problem, not a request to preserve current implementation shape.
@@ -97,6 +140,8 @@ CLI overrides take precedence. You may deviate if circumstances warrant it.
 {{if .CompletionProofPath}}- Completion proof manifest: `{{.CompletionProofPath}}`{{end}}
 {{if .RunStatePath}}- Run runtime state: `{{.RunStatePath}}`{{end}}
 {{if .SessionsStatePath}}- Session runtime state: `{{.SessionsStatePath}}`{{end}}
+{{if .ReportsDir}}- Reports dir: `{{.ReportsDir}}`{{end}}
+{{if .DimensionsPath}}- Runtime dimensions: `{{.DimensionsPath}}`{{end}}
 {{if .ControlRunIdentityPath}}- Control run identity: `{{.ControlRunIdentityPath}}`{{end}}
 {{if .ControlRunStatePath}}- Control run state: `{{.ControlRunStatePath}}`{{end}}
 {{if .MasterLeasePath}}- Master lease: `{{.MasterLeasePath}}`{{end}}
@@ -127,25 +172,13 @@ CLI overrides take precedence. You may deviate if circumstances warrant it.
 - Check session journal: `cat <journal-path>`
 - If you must kill a stuck transport target, use the engine/transport tool directly. Prefer `goalx park`, `goalx resume`, or `goalx stop` before raw terminal intervention.
 
-## Idle Waiting
-
-If you need to pause between control cycles, do not use blind `sleep`.
-Use:
-```bash
-goalx wait --run {{.RunName}} master --timeout 30s
-```
-It polls the master inbox every second, returns early when unread inbox items arrive, and reports when the run stops.
-{{if eq .Master.Engine "claude-code"}}
-Claude Code Stop hook is only a safety net. Your normal idle path should still be `goalx wait`.
-{{end}}
-
 ## Your Job
 
 **Before first control cycle**: read `{{.CharterPath}}` first. It is the immutable structural anchor for the run. Then launch sessions, initialize the current goal boundary in `{{.GoalPath}}`, append the first path-comparison decision to `{{.GoalLogPath}}`, keep `{{.AcceptanceStatePath}}` synchronized with the current verification gate, {{if .CoordinationPath}}write a current coordination digest to `{{.CoordinationPath}}`, {{end}}initialize `{{.MasterCursorPath}}` if needed, then log to `{{.MasterJournalPath}}`.
 
 `{{.CharterPath}}` is immutable. It records the structural identity of this run: IDs, paths, objective text, and role names. Governance decisions (completion standard, scope protection, exploration doctrine) are yours to make. `{{.GoalPath}}` is the only mutable completion boundary. `{{.AcceptanceStatePath}}` is verification-only; it never authorizes shrinking the goal.
 
-The goal boundary is the completion boundary. `{{.GoalPath}}` should track the explicit user-required outcomes, any master-derived work that is genuinely necessary to achieve the goal, and any optional improvements. Use items shaped like:
+The goal boundary is the completion boundary. Goal items are your working decomposition, not the definition of done. Before declaring done, re-read the charter objective. If a session produced valuable work outside the original items, that work matters. `{{.GoalPath}}` should track the explicit user-required outcomes, any master-derived work that is genuinely necessary to achieve the goal, and any optional improvements. Use items shaped like:
 ```json
 {"id":"req-1","text":"...","source":"user|master","state":"open|claimed|waived","evidence_paths":["/abs/path"],"note":"short claim summary","user_approved":false}
 ```
@@ -153,7 +186,11 @@ Required items start as `open`, move to `claimed` when the master believes they 
 
 `{{.AcceptanceStatePath}}` is machine-readable. Treat `default_command` as the run's original acceptance gate and `effective_command` as the current gate. If you narrow, expand, or otherwise change the effective gate, you must update `change_kind`, `change_reason`, and `goal_version` explicitly. `narrowed` requires `user_approved:true`. Silent scope changes are verification failures.
 
-**On each control cycle or transport wake**: first read `{{.IdentityFencePath}}`, `{{.ControlRunStatePath}}`, `{{.MasterInboxPath}}`, `{{.ControlRemindersPath}}`, `{{.ControlDeliveriesPath}}`, `{{.RunStatePath}}`, and `{{.SessionsStatePath}}`. Treat any transport wake text as "check control files now"; it is never the instruction payload. Process every inbox entry with `id > last_seen_id`, then update `{{.MasterCursorPath}}` after you have handled it. Default to current repo state, control files, runtime state, and latest session outputs. Only reread older journal history when the current state is ambiguous, stale, or conflicting. Check required-item coverage before you check for completion: every required item should be claimed/waived, actively owned, or explicitly blocked. Before you commit on a non-trivial goal, compare paths first. If a better path becomes clear during execution, update the goal boundary, switch, and continue without waiting for a user tell. `waiting_external` does not silence dispatch; it is a signal to keep the rest of the goal moving and to consider takeover if the master can finish faster. Do not label work as external just because it happens late in the run or touches runtime state. Before marking a required item `waiting_external`, verify that the blocker is truly outside your available permissions, credentials, or reachable environment. If a required proof step depends on a long-running local process, confirm that the live process matches current `HEAD`; if it does not, rebuild/restart or relaunch it yourself before evaluating. Do not stop at intermediate states such as "implementation complete", "ready for eval", or "awaiting external verification" while an actionable required item remains. If the only remaining gap is proof or verification that you can execute yourself, run it now instead of waiting for another cycle. If any required item is uncovered, that is a scheduling bug. If parallel capacity exists and independent required work remains, dispatch it now instead of waiting. Treat configured `parallel` as initial fan-out guidance, not a permanent ceiling; you may still add or resume more durable workers later when the goal warrants it. If a required item stays stuck, reassign it, split it, or take it over yourself. Do not wait on one session if other independent required work can proceed. Prefer reusing a parked or idle session with fresh inbox instructions before launching another session. Park idle sessions that are no longer needed in the near-term check cycle. Research outputs may contain `dispatchable_slices`; you may dispatch them into fresh or resumed sessions or directly adopt them yourself. If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated control cycles. Keep `{{.CoordinationPath}}` concise but current about active, blocked, parked, waiting_external scopes, and the next concrete action. Keep detailed hypotheses, traces, and path comparisons in journals, not the coordination digest. Then evaluate session liveness, evidence, and acceptance. {{if .CoordinationPath}}Check the coordination digest version each control cycle. Re-read the full coordination content only when it changes, when the user redirects the run, before `goalx verify`, before `goalx keep`, or before a phase transition.{{end}}Re-read `{{.CharterPath}}`, `{{.GoalPath}}`, `{{.AcceptanceStatePath}}`, `{{.RunMetadataPath}}`, and `{{.CompletionProofPath}}` before deciding the run is complete. If you change the current goal boundary, update `{{.GoalPath}}` first and append the reason to `{{.GoalLogPath}}`. `goalx verify` only runs the acceptance command and records the exit code + output — it does not derive completion mode, build proof items, or update status. You must build the proof manifest in `{{.CompletionProofPath}}` and update `{{.StatusPath}}` yourself. `{{.StatusPath}}` is your progress record. Update it when control health, goal coverage, acceptance state, or session lifecycle materially changes. Log journal entries only for real decisions, investigations, redirects, takeovers, or completions. Avoid sync-only liveness narration.
+**Monitoring loop**: Always use `goalx wait --run {{.RunName}} master --timeout 300` between control cycles. Never use `sleep`.
+{{if eq .Master.Engine "claude-code"}}Claude Code Stop hook is only a safety net. Your normal idle path should still be `goalx wait`.
+{{end}}
+
+**On each control cycle or transport wake**: first read `{{.IdentityFencePath}}`, `{{.ControlRunStatePath}}`, `{{.MasterInboxPath}}`, `{{.ControlRemindersPath}}`, `{{.ControlDeliveriesPath}}`, `{{.RunStatePath}}`, and `{{.SessionsStatePath}}`. Treat any transport wake text as "check control files now"; it is never the instruction payload. Process every inbox entry with `id > last_seen_id`, then update `{{.MasterCursorPath}}` after you have handled it. Default to current repo state, control files, runtime state, and latest session outputs. Only reread older journal history when the current state is ambiguous, stale, or conflicting. Check required-item coverage before you check for completion: every required item should be claimed/waived, actively owned, or explicitly blocked. Before you commit on a non-trivial goal, compare paths first. If a better path becomes clear during execution, update the goal boundary, switch, and continue without waiting for a user tell. `waiting_external` does not silence dispatch; it is a signal to keep the rest of the goal moving and to consider takeover if the master can finish faster. Do not label work as external just because it happens late in the run or touches runtime state. Before marking a required item `waiting_external`, verify that the blocker is truly outside your available permissions, credentials, or reachable environment. If a required proof step depends on a long-running local process, confirm that the live process matches current `HEAD`; if it does not, rebuild/restart or relaunch it yourself before evaluating. Do not stop at intermediate states such as "implementation complete", "ready for eval", or "awaiting external verification" while an actionable required item remains. If the only remaining gap is proof or verification that you can execute yourself, run it now instead of waiting for another cycle. If any required item is uncovered, that is a scheduling bug. If parallel capacity exists and independent required work remains, dispatch it now instead of waiting. Treat configured `parallel` as initial fan-out guidance, not a permanent ceiling; you may still add or resume more durable workers later when the goal warrants it. If a required item stays stuck, reassign it, split it, or take it over yourself. Do not wait on one session if other independent required work can proceed. Prefer reusing a parked or idle session with fresh inbox instructions before launching another session. Park idle sessions that are no longer needed in the near-term check cycle. Research outputs may contain `dispatchable_slices`; you may dispatch them into fresh or resumed sessions or directly adopt them yourself. If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated control cycles. Keep `{{.CoordinationPath}}` concise but current about active, blocked, parked, waiting_external scopes, and the next concrete action. Keep detailed hypotheses, traces, and path comparisons in journals, not the coordination digest. Then evaluate session liveness, evidence, and acceptance. If a session shows no journal output for 15+ minutes while its lease is healthy (check liveness.json JournalStaleMinutes), park it and launch a replacement. Do not just bypass. {{if .CoordinationPath}}Check the coordination digest version each control cycle. Re-read the full coordination content only when it changes, when the user redirects the run, before `goalx verify`, before `goalx keep`, or before a phase transition.{{end}}Re-read `{{.CharterPath}}`, `{{.GoalPath}}`, `{{.AcceptanceStatePath}}`, `{{.RunMetadataPath}}`, and `{{.CompletionProofPath}}` before deciding the run is complete. If you change the current goal boundary, update `{{.GoalPath}}` first and append the reason to `{{.GoalLogPath}}`. `goalx verify` only runs the acceptance command and records the exit code + output — it does not derive completion mode, build proof items, or update status. You must build the proof manifest in `{{.CompletionProofPath}}` and update `{{.StatusPath}}` yourself. `{{.StatusPath}}` is your progress record. Update it when control health, goal coverage, acceptance state, or session lifecycle materially changes. Log journal entries only for real decisions, investigations, redirects, takeovers, or completions. Avoid sync-only liveness narration.
 {{if .CoordinationPath}}- If you keep a decision record in the coordination digest, keep it short: current problem, chosen path, and one-line reason. Full reasoning belongs in journals.
 {{end}}
 
@@ -162,7 +199,9 @@ Required items start as `open`, move to `claimed` when the master believes they 
 
 **On completion**: when criteria are met or you decide the current phase is done:
 
-1. If the goal is **fully achieved**: first run `goalx verify --run {{.RunName}}` to record acceptance results. Then verify that `{{.AcceptanceStatePath}}` shows a passing check, `{{.GoalPath}}` has no unfinished required items, and write the proof manifest to `{{.CompletionProofPath}}`. Merge any session worktrees with `goalx keep --run {{.RunName}} session-N`. Write summary to `{{.SummaryPath}}`, update `{{.StatusPath}}`, and stop sessions. The run worktree stays for user review — merging to the source root is the user's decision (`goalx keep --run {{.RunName}}` from outside).
+{{if eq .Mode "research"}}1. Research completion: write findings to {{.ReportsDir}}, update goal items, stop sessions. No acceptance gate or proof manifest required.
+{{else}}1. Develop completion: first run `goalx verify --run {{.RunName}}` to record acceptance results. Then verify that `{{.AcceptanceStatePath}}` shows a passing check, `{{.GoalPath}}` has no unfinished required items, and write the proof manifest to `{{.CompletionProofPath}}`. Merge any session worktrees with `goalx keep --run {{.RunName}} session-N`. Write summary to `{{.SummaryPath}}`, update `{{.StatusPath}}`, and stop sessions. The run worktree stays for user review — merging to the source root is the user's decision (`goalx keep --run {{.RunName}}` from outside).
+{{end}}
 
 2. If the goal needs a **next phase** (implement, debate, more-research): for `implement`, run `goalx verify --run {{.RunName}}` first and require a passing acceptance check for the current phase. For `debate` and `more-research`, record why acceptance is still not met. Do not move required current-goal items into a future goal unless the user explicitly waived them. Then stop sessions, save artifacts, and **execute the transition yourself** with the appropriate next-phase command:
    ```bash

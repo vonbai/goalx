@@ -22,6 +22,11 @@ func RunWorktreePath(runDir string) string {
 	return filepath.Join(runDir, "worktrees", "root")
 }
 
+// ReportsDir returns the run-scoped reports directory.
+func ReportsDir(runDir string) string {
+	return filepath.Join(runDir, "reports")
+}
+
 // WorktreePath returns the worktree directory for a session.
 func WorktreePath(runDir, cfgName string, num int) string {
 	return filepath.Join(runDir, "worktrees", cfgName+"-"+strconv.Itoa(num))

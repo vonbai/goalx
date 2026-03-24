@@ -381,6 +381,60 @@ func TestSaveDoesNotCreateActiveRunArtifactsManifest(t *testing.T) {
 	}
 }
 
+func TestSavePrefersRunReportsDirOverWorktreeFallback(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	runName := "demo"
+	runDir := goalx.RunDir(projectRoot, runName)
+	wtPath := WorktreePath(runDir, runName, 1)
+	reportsDir := filepath.Join(runDir, "reports")
+	for _, dir := range []string{wtPath, reportsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	cfg := goalx.Config{
+		Name:      runName,
+		Mode:      goalx.ModeResearch,
+		Objective: "inspect",
+		Target: goalx.TargetConfig{
+			Files: []string{"notes.md"},
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
+	seedSaveSessionIdentity(t, runDir, "session-1", goalx.ModeResearch, "codex", "", cfg.Target, goalx.HarnessConfig{})
+
+	if err := os.WriteFile(filepath.Join(wtPath, "notes.md"), []byte("legacy worktree report\n"), 0o644); err != nil {
+		t.Fatalf("write notes.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(reportsDir, "session-1-report.md"), []byte("run reports dir report\n"), 0o644); err != nil {
+		t.Fatalf("write reports dir report: %v", err)
+	}
+
+	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	savedPath := filepath.Join(SavedRunDir(projectRoot, runName), "session-1-report.md")
+	got, err := os.ReadFile(savedPath)
+	if err != nil {
+		t.Fatalf("read saved report: %v", err)
+	}
+	if string(got) != "run reports dir report\n" {
+		t.Fatalf("saved report = %q, want %q", string(got), "run reports dir report\n")
+	}
+}
+
 func seedSaveRunProvenance(t *testing.T, projectRoot, runDir, runName, objective string) {
 	t.Helper()
 

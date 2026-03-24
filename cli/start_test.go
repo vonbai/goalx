@@ -266,6 +266,7 @@ esac
 		filepath.Join(runDir, "acceptance.json"),
 		filepath.Join(runDir, "goal.json"),
 		filepath.Join(runDir, "goal-log.jsonl"),
+		filepath.Join(runDir, "reports"),
 		RunMetadataPath(runDir),
 		filepath.Join(runDir, "control", "identity-fence.json"),
 		filepath.Join(runDir, "artifacts.json"),

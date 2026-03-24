@@ -269,7 +269,6 @@ func Add(projectRoot string, args []string) (err error) {
 		SessionsStatePath:   SessionsRuntimeStatePath(rc.RunDir),
 		ProjectRegistryPath: ProjectRegistryPath(rc.ProjectRoot),
 		ProjectRoot:         absProjectRoot,
-		DiversityHint:       hint,
 	}
 	if err := RenderSubagentProtocol(subData, rc.RunDir, newNum-1); err != nil {
 		return fmt.Errorf("render protocol: %w", err)

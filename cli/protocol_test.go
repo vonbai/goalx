@@ -775,6 +775,52 @@ func TestRenderSubagentProtocolTreatsAutoModeAsDevelop(t *testing.T) {
 	}
 }
 
+func TestRenderSubagentProtocolUsesRuntimeDimensionsAndReportsDir(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		RunName:           "demo",
+		Objective:         "investigate auth",
+		Mode:              goalx.ModeResearch,
+		Engine:            "codex",
+		ProjectRoot:       "/tmp/project",
+		SessionName:       "session-1",
+		Target:            goalx.TargetConfig{Files: []string{"report.md"}},
+		JournalPath:       "/tmp/journal.jsonl",
+		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath: "/tmp/control/session-1-cursor.json",
+		ReportsDir:        "/tmp/run/reports",
+		DimensionsPath:    "/tmp/control/dimensions.json",
+	}
+
+	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
+		t.Fatalf("RenderSubagentProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "program-1.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"Write reports to `/tmp/run/reports`",
+		"read `/tmp/control/dimensions.json` for the current dimension assignment",
+		"Dimensions can change while the run is active",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered protocol missing %q:\n%s", want, text)
+		}
+	}
+	for _, unwanted := range []string{
+		"## Your Approach",
+		"DiversityHint",
+		"--strategy",
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("rendered protocol should omit legacy guidance %q:\n%s", unwanted, text)
+		}
+	}
+}
+
 func TestRenderMasterProtocolOmitsLegacyPlannedSessionsAndPresetDisplays(t *testing.T) {
 	runDir := t.TempDir()
 	outPath := filepath.Join(runDir, "master.md")
@@ -880,15 +926,73 @@ func TestRenderMasterProtocolIncludesGoalxWaitLoopGuidance(t *testing.T) {
 	}
 	text := string(out)
 	for _, want := range []string{
-		"do not use blind `sleep`",
-		"goalx wait --run demo master --timeout 30s",
-		"polls the master inbox every second",
-		"returns early when unread inbox items arrive",
-		"reports when the run stops",
+		"**Monitoring loop**: Always use `goalx wait --run demo master --timeout 300` between control cycles.",
+		"Never use `sleep`.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
 		}
+	}
+}
+
+func TestRenderMasterProtocolIncludesReportsRoutingAndResearchCompletionGuidance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:      "audit auth",
+		RunName:        "demo",
+		Mode:           goalx.ModeResearch,
+		Master:         goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		TmuxSession:    "ar-demo",
+		SummaryPath:    "/tmp/summary.md",
+		StatusPath:     "/tmp/status.json",
+		ReportsDir:     "/tmp/run/reports",
+		DimensionsPath: "/tmp/control/dimensions.json",
+		Routing: goalx.RoutingTableConfig{
+			Profiles: map[string]goalx.ExecutionProfile{
+				"deep-research": {Engine: "codex", Model: "gpt-5.4", Effort: goalx.EffortHigh},
+			},
+			Table: map[string]map[string]string{
+				"research": {"depth": "deep-research"},
+			},
+		},
+		DimensionsCatalog: map[string]string{
+			"depth":    "Depth focus",
+			"evidence": "Evidence focus",
+		},
+		EngineCommand: "codex exec",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"Goal items are your working decomposition, not the definition of done.",
+		"If a session produced valuable work outside the original items, that work matters.",
+		"If a session shows no journal output for 15+ minutes while its lease is healthy",
+		"Research completion: write findings to /tmp/run/reports, update goal items, stop sessions. No acceptance gate or proof manifest required.",
+		"goalx dimension [--run NAME] <session-N|all> --set depth,adversarial",
+		"goalx dimension [--run NAME] <session-N> --add creative",
+		"goalx dimension [--run NAME] <session-N> --remove depth",
+		"deep-research",
+		"gpt-5.4",
+		"high",
+		"depth",
+		"evidence",
+		"/tmp/run/reports",
+		"/tmp/control/dimensions.json",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "--strategy") {
+		t.Fatalf("rendered master protocol should omit legacy strategy guidance:\n%s", text)
 	}
 }
 

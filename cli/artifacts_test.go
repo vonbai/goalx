@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 func TestEnsureArtifactsManifestCreatesEmptyRunManifest(t *testing.T) {
@@ -104,5 +106,66 @@ func TestCopyManifestToSavedRun(t *testing.T) {
 	}
 	if len(manifest.Sessions) != 1 {
 		t.Fatalf("saved manifest sessions = %d, want 1", len(manifest.Sessions))
+	}
+}
+
+func TestBuildRunArtifactsManifestPrefersRunReportsDir(t *testing.T) {
+	runName := "demo"
+	runDir := filepath.Join(t.TempDir(), runName)
+	reportsDir := filepath.Join(runDir, "reports")
+	wtPath := WorktreePath(runDir, runName, 1)
+	for _, dir := range []string{reportsDir, wtPath} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	seedSaveRunProvenance(t, t.TempDir(), runDir, runName, "collect reports")
+	seedSaveSessionIdentity(t, runDir, "session-1", goalx.ModeResearch, "codex", "", goalx.TargetConfig{Files: []string{"report.md"}}, goalx.HarnessConfig{})
+
+	runReport := filepath.Join(reportsDir, "session-1-report.md")
+	if err := os.WriteFile(runReport, []byte("run report\n"), 0o644); err != nil {
+		t.Fatalf("write run report: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wtPath, "report.md"), []byte("legacy report\n"), 0o644); err != nil {
+		t.Fatalf("write worktree report: %v", err)
+	}
+
+	manifest := buildRunArtifactsManifest(runDir, &goalx.Config{Name: runName})
+	artifact := FindSessionArtifact(manifest, "session-1", "report")
+	if artifact == nil {
+		t.Fatalf("expected report artifact in manifest: %#v", manifest)
+	}
+	if artifact.Path != runReport {
+		t.Fatalf("artifact path = %q, want %q", artifact.Path, runReport)
+	}
+	if artifact.DurableName != "session-1-report.md" {
+		t.Fatalf("artifact durable name = %q, want session-1-report.md", artifact.DurableName)
+	}
+}
+
+func TestBuildRunArtifactsManifestFallsBackToSessionWorktree(t *testing.T) {
+	runName := "demo"
+	runDir := filepath.Join(t.TempDir(), runName)
+	wtPath := WorktreePath(runDir, runName, 1)
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+
+	seedSaveRunProvenance(t, t.TempDir(), runDir, runName, "collect reports")
+	seedSaveSessionIdentity(t, runDir, "session-1", goalx.ModeResearch, "codex", "", goalx.TargetConfig{Files: []string{"report.md"}}, goalx.HarnessConfig{})
+
+	legacyReport := filepath.Join(wtPath, "report.md")
+	if err := os.WriteFile(legacyReport, []byte("legacy report\n"), 0o644); err != nil {
+		t.Fatalf("write worktree report: %v", err)
+	}
+
+	manifest := buildRunArtifactsManifest(runDir, &goalx.Config{Name: runName})
+	artifact := FindSessionArtifact(manifest, "session-1", "report")
+	if artifact == nil {
+		t.Fatalf("expected report artifact in manifest: %#v", manifest)
+	}
+	if artifact.Path != legacyReport {
+		t.Fatalf("artifact path = %q, want %q", artifact.Path, legacyReport)
 	}
 }

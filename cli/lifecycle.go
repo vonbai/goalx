@@ -223,7 +223,6 @@ func Resume(projectRoot string, args []string) error {
 		SessionsStatePath:   SessionsRuntimeStatePath(rc.RunDir),
 		ProjectRegistryPath: ProjectRegistryPath(rc.ProjectRoot),
 		ProjectRoot:         absProjectRoot,
-		DiversityHint:       current.Scope,
 	}
 	if err := RenderSubagentProtocol(subData, rc.RunDir, idx-1); err != nil {
 		return fmt.Errorf("render protocol: %w", err)

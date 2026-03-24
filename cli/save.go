@@ -145,6 +145,8 @@ func Save(projectRoot string, args []string) error {
 		artifact := FindSessionArtifact(manifest, sName, "report")
 		if artifact != nil && artifact.Path != "" {
 			reportSource = artifact.Path
+		} else if runReport := findRunScopedReport(rc.RunDir, sName); runReport != "" {
+			reportSource = runReport
 		} else if !manifestFromFile || declaredSession == nil {
 			reportRoot := sess.WorktreePath
 			if reportRoot == "" {

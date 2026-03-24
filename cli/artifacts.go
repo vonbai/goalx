@@ -196,17 +196,9 @@ func buildRunArtifactsManifest(runDir string, cfg *goalx.Config) *ArtifactsManif
 			continue
 		}
 
-		reportRoot := resolvedSessionWorktreePath(runDir, cfg.Name, sessionName, sessionsState)
-		if reportRoot == "" {
-			reportRoot = RunWorktreePath(runDir)
-		}
-		reportPath := findSessionReport(reportRoot, identity.Target.Files)
+		reportPath, relPath := resolveSessionReportArtifact(runDir, cfg.Name, sessionName, identity.Target.Files, sessionsState)
 		if reportPath == "" {
 			continue
-		}
-		relPath, err := filepath.Rel(reportRoot, reportPath)
-		if err != nil {
-			relPath = filepath.Base(reportPath)
 		}
 		upsertArtifact(sessionArtifacts, ArtifactMeta{
 			Kind:        "report",
@@ -216,6 +208,35 @@ func buildRunArtifactsManifest(runDir string, cfg *goalx.Config) *ArtifactsManif
 		})
 	}
 	return manifest
+}
+
+func resolveSessionReportArtifact(runDir, runName, sessionName string, targetFiles []string, sessionsState *SessionsRuntimeState) (string, string) {
+	if reportPath := findRunScopedReport(runDir, sessionName); reportPath != "" {
+		return reportPath, filepath.Base(reportPath)
+	}
+
+	reportRoot := resolvedSessionWorktreePath(runDir, runName, sessionName, sessionsState)
+	if reportRoot == "" {
+		reportRoot = RunWorktreePath(runDir)
+	}
+	reportPath := findSessionReport(reportRoot, targetFiles)
+	if reportPath == "" {
+		return "", ""
+	}
+	relPath, err := filepath.Rel(reportRoot, reportPath)
+	if err != nil {
+		relPath = filepath.Base(reportPath)
+	}
+	return reportPath, relPath
+}
+
+func findRunScopedReport(runDir, sessionName string) string {
+	candidate := filepath.Join(ReportsDir(runDir), fmt.Sprintf("%s-report.md", sessionName))
+	info, err := os.Stat(candidate)
+	if err != nil || info.IsDir() || info.Size() == 0 {
+		return ""
+	}
+	return candidate
 }
 
 func FindSessionArtifacts(manifest *ArtifactsManifest, sessionName string) *SessionArtifacts {

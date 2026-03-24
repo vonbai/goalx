@@ -38,6 +38,10 @@ type ProtocolData struct {
 	CompletionProofPath    string
 	RunStatePath           string
 	SessionsStatePath      string
+	ReportsDir             string
+	DimensionsPath         string
+	Routing                goalx.RoutingTableConfig
+	DimensionsCatalog      map[string]string
 	ProjectRegistryPath    string
 	RunMetadataPath        string
 	CoordinationPath       string
@@ -63,7 +67,6 @@ type ProtocolData struct {
 	SessionInboxPath    string
 	SessionCursorPath   string
 	WorktreePath        string
-	DiversityHint       string
 }
 
 // SessionData is per-session info for the master protocol.
@@ -107,6 +110,12 @@ func normalizeProtocolData(data ProtocolData, runDir string) ProtocolData {
 	}
 	if data.SessionIdentityPath == "" && runDir != "" && data.SessionName != "" {
 		data.SessionIdentityPath = SessionIdentityPath(runDir, data.SessionName)
+	}
+	if data.ReportsDir == "" && runDir != "" {
+		data.ReportsDir = ReportsDir(runDir)
+	}
+	if data.DimensionsPath == "" && runDir != "" {
+		data.DimensionsPath = ControlDimensionsPath(runDir)
 	}
 	return data
 }

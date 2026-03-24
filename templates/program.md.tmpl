@@ -11,6 +11,8 @@
 - Journal: `{{.JournalPath}}` — append concise status; when resuming, start with the recent tail, not the whole file
 - Session inbox: `{{.SessionInboxPath}}` — latest assignment and direction changes
 - Session cursor: `{{.SessionCursorPath}}` — durable ack for the latest processed inbox entry
+{{if .ReportsDir}}- Reports dir: `{{.ReportsDir}}` — Write reports to `{{.ReportsDir}}` using stable per-session filenames such as `session-N-report.md`{{end}}
+{{if .DimensionsPath}}- Runtime dimensions: `{{.DimensionsPath}}` — read `{{.DimensionsPath}}` for the current dimension assignment. Dimensions can change while the run is active.{{end}}
 {{if .RunStatePath}}- Run runtime state: `{{.RunStatePath}}`{{end}}
 {{if .SessionsStatePath}}- Session runtime state: `{{.SessionsStatePath}}`{{end}}
 - Objective: {{.Objective}}
@@ -120,6 +122,10 @@ Good development here looks like:
 - If the current inbox assignment or evidence suggests a likely root cause, verify it with a failing regression test or decisive counter-evidence before treating it as confirmed.
 {{end}}
 
+{{if eq .Mode "auto"}}
+Auto-mode runs are routed by the master. Follow your session identity and current assignment instead of re-deciding the overall mode yourself.
+{{end}}
+
 {{if or .Context.Files .Context.Refs}}
 ## Context
 
@@ -127,12 +133,6 @@ Use these references for background (files: `cat`, URLs: fetch, text: read as-is
 {{range .Context.Files}}- `{{.}}`
 {{end}}{{range .Context.Refs}}- {{.}}
 {{end}}
-{{end}}
-
-{{if .DiversityHint}}
-## Your Approach
-
-{{.DiversityHint}}
 {{end}}
 
 {{if eq .Engine "claude-code"}}
