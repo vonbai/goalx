@@ -2,7 +2,7 @@ package cli
 
 import "fmt"
 
-const tellUsage = `usage: goalx tell [--run NAME] [master|session-N] "message"`
+const tellUsage = `usage: goalx tell [--run NAME] [--urgent] [master|session-N] "message"`
 
 // Tell writes a durable instruction for the master or a session, then best-effort nudges the target pane.
 func Tell(projectRoot string, args []string) error {
@@ -10,14 +10,14 @@ func Tell(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	target, message, err := parseTellArgs(rest)
+	target, message, urgent, err := parseTellArgs(rest)
 	if err != nil {
 		return err
 	}
 	if target == "" && message == "" {
 		return nil
 	}
-	resolvedRun, deliveredTarget, err := deliverTell(projectRoot, runName, target, message, sendAgentNudge)
+	resolvedRun, deliveredTarget, err := deliverTell(projectRoot, runName, target, message, urgent, sendAgentNudge)
 	if err != nil {
 		return err
 	}
@@ -62,26 +62,32 @@ func AckSession(projectRoot string, args []string) error {
 	return nil
 }
 
-func parseTellArgs(args []string) (string, string, error) {
-	switch len(args) {
+func parseTellArgs(args []string) (string, string, bool, error) {
+	filtered := make([]string, 0, len(args))
+	urgent := false
+	for _, arg := range args {
+		switch {
+		case isHelpToken(arg):
+			fmt.Println(tellUsage)
+			return "", "", false, nil
+		case arg == "--urgent":
+			urgent = true
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+
+	switch len(filtered) {
 	case 1:
-		if isHelpToken(args[0]) {
-			fmt.Println(tellUsage)
-			return "", "", nil
-		}
-		return "master", args[0], nil
+		return "master", filtered[0], urgent, nil
 	case 2:
-		if isHelpToken(args[0]) || isHelpToken(args[1]) {
-			fmt.Println(tellUsage)
-			return "", "", nil
-		}
-		return args[0], args[1], nil
+		return filtered[0], filtered[1], urgent, nil
 	default:
-		return "", "", fmt.Errorf(tellUsage)
+		return "", "", false, fmt.Errorf(tellUsage)
 	}
 }
 
-func deliverTell(projectRoot, runName, target, message string, nudge func(target, engine string) error) (string, string, error) {
+func deliverTell(projectRoot, runName, target, message string, urgent bool, nudge func(target, engine string) error) (string, string, error) {
 	if target == "" && message == "" {
 		return "", "", nil
 	}
@@ -90,7 +96,7 @@ func deliverTell(projectRoot, runName, target, message string, nudge func(target
 		return "", "", err
 	}
 	if target == "" || target == "master" {
-		msg, err := AppendMasterInboxMessage(rc.RunDir, "tell", "user", message)
+		msg, err := appendControlInboxMessage(rc.RunDir, "master", "tell", "user", message, urgent)
 		if err != nil {
 			return "", "", err
 		}
@@ -114,7 +120,7 @@ func deliverTell(projectRoot, runName, target, message string, nudge func(target
 	if !ok {
 		return "", "", fmt.Errorf("session %q out of range for run %q", target, rc.Name)
 	}
-	msg, err := AppendControlInboxMessage(rc.RunDir, target, "tell", "user", message)
+	msg, err := appendControlInboxMessage(rc.RunDir, target, "tell", "user", message, urgent)
 	if err != nil {
 		return "", "", err
 	}

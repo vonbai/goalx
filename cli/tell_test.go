@@ -118,6 +118,50 @@ func TestTellResolvesExplicitProjectSelectorOutsideProjectRoot(t *testing.T) {
 	}
 }
 
+func TestTellUrgentWritesUrgentMasterInboxMessage(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+
+	orig := sendAgentNudge
+	defer func() { sendAgentNudge = orig }()
+
+	var gotTarget, gotEngine string
+	sendAgentNudge = func(target, engine string) error {
+		gotTarget, gotEngine = target, engine
+		return nil
+	}
+
+	out := captureStdout(t, func() {
+		if err := Tell(repo, []string{"--run", runName, "--urgent", "drop everything and triage"}); err != nil {
+			t.Fatalf("Tell urgent: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "Told master") {
+		t.Fatalf("tell output = %q, want master target", out)
+	}
+
+	data, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{`"type":"tell"`, `"source":"user"`, `"body":"drop everything and triage"`, `"urgent":true`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("master inbox missing %q:\n%s", want, text)
+		}
+	}
+
+	wantTarget := goalx.TmuxSessionName(repo, runName) + ":master"
+	if gotTarget != wantTarget || gotEngine != "codex" {
+		t.Fatalf("sendAgentNudge target=%q engine=%q, want %q codex", gotTarget, gotEngine, wantTarget)
+	}
+}
+
 func TestTellHelpDoesNotDeliverAnything(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
