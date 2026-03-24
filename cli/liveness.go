@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -14,9 +15,10 @@ type LivenessState struct {
 }
 
 type LivenessEntry struct {
-	Lease       string `json:"lease"`
-	PIDAlive    bool   `json:"pid_alive"`
-	HasWorktree bool   `json:"has_worktree"`
+	Lease               string `json:"lease"`
+	PIDAlive            bool   `json:"pid_alive"`
+	HasWorktree         bool   `json:"has_worktree"`
+	JournalStaleMinutes int    `json:"journal_stale_minutes,omitempty"`
 }
 
 func ScanLiveness(runDir string) (*LivenessState, error) {
@@ -96,6 +98,9 @@ func scanLivenessEntry(runDir, holder string, hasWorktree bool, now time.Time) L
 		Lease:       "expired",
 		HasWorktree: hasWorktree,
 	}
+	if stale, ok := journalStaleMinutes(runDir, holder, now); ok {
+		entry.JournalStaleMinutes = stale
+	}
 	lease, err := LoadControlLease(ControlLeasePath(runDir, holder))
 	if err != nil {
 		return entry
@@ -132,4 +137,20 @@ func shouldNotifySessionDied(previous *LivenessState, sessionName string, curren
 func pathDirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+func journalStaleMinutes(runDir, holder string, now time.Time) (int, bool) {
+	journalPath := JournalPath(runDir, holder)
+	if holder == "master" {
+		journalPath = filepath.Join(runDir, "master.jsonl")
+	}
+	info, err := os.Stat(journalPath)
+	if err != nil || info.IsDir() {
+		return 0, false
+	}
+	modTime := info.ModTime()
+	if modTime.IsZero() || modTime.After(now) {
+		return 0, true
+	}
+	return int(now.Sub(modTime).Minutes()), true
 }

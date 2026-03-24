@@ -36,6 +36,7 @@ func Drop(projectRoot string, args []string) error {
 	if err := stopRunSidecar(rc.RunDir); err != nil {
 		return err
 	}
+	killRunPaneProcessTrees(rc.RunDir, rc.TmuxSession)
 	_ = FinalizeControlRun(rc.RunDir, "dropped")
 
 	// Kill tmux session if still active

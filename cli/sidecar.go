@@ -80,12 +80,23 @@ func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID str
 		interval = 5 * time.Minute
 	}
 	shouldExpire := true
+	exitReason := "completed"
+	appendAuditLog(runDir, "sidecar started pid=%d runID=%s epoch=%d", os.Getpid(), runID, epoch)
+	defer func() {
+		appendAuditLog(runDir, "sidecar exiting reason=%s", exitReason)
+	}()
+	reportError := func(err error) error {
+		appendAuditLog(runDir, "sidecar error: %v", err)
+		exitReason = err.Error()
+		return err
+	}
 	if err := runSidecarTick(projectRoot, runName, runDir, runID, epoch, interval, os.Getpid()); err != nil {
 		if errors.Is(err, errSidecarStale) {
 			shouldExpire = false
+			exitReason = errSidecarStale.Error()
 			return nil
 		}
-		return err
+		return reportError(err)
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -98,14 +109,16 @@ func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID str
 	for {
 		select {
 		case <-ctx.Done():
+			exitReason = ctx.Err().Error()
 			return nil
 		case <-ticker.C:
 			if err := runSidecarTick(projectRoot, runName, runDir, runID, epoch, interval, os.Getpid()); err != nil {
 				if errors.Is(err, errSidecarStale) {
 					shouldExpire = false
+					exitReason = errSidecarStale.Error()
 					return nil
 				}
-				return err
+				return reportError(err)
 			}
 		}
 	}

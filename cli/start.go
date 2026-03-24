@@ -320,6 +320,9 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		return fmt.Errorf("tmux new-session: %w", err)
 	}
 	tmuxCreated = true
+	if err := PersistPanePIDsFromTmux(runDir, "master", tmuxSess+":master"); err != nil {
+		return fmt.Errorf("persist master pane pid: %w", err)
+	}
 
 	// Launch the run-scoped sidecar for lease renewal and supervision.
 	if err := launchRunSidecar(projectRoot, cfg.Name, time.Duration(checkSec)*time.Second); err != nil {

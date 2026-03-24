@@ -281,6 +281,9 @@ func Add(projectRoot string, args []string) (err error) {
 	if err := NewWindowWithCommand(rc.TmuxSession, windowName, workdir, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
+	if err := PersistPanePIDsFromTmux(rc.RunDir, sName, rc.TmuxSession+":"+windowName); err != nil {
+		return fmt.Errorf("persist %s pane pid: %w", sName, err)
+	}
 
 	if coord, err := EnsureCoordinationState(rc.RunDir, rc.Config.Objective); err == nil {
 		now := time.Now().UTC().Format(time.RFC3339)

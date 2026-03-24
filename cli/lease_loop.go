@@ -117,14 +117,21 @@ func runLeaseLoop(ctx context.Context, runDir, holder, runID string, epoch int, 
 	}
 
 	shouldExpire := true
+	exitReason := "completed"
+	defer func() {
+		appendAuditLog(runDir, "lease-loop exiting holder=%s reason=%s", holder, exitReason)
+	}()
 	if err := renewLeaseLoopOnce(runDir, holder, runID, epoch, ttl, transport, pid); err != nil {
 		switch {
 		case errors.Is(err, errLeaseLoopStale):
 			shouldExpire = false
+			exitReason = errLeaseLoopStale.Error()
 			return nil
 		case errors.Is(err, errLeaseTargetExited):
+			exitReason = errLeaseTargetExited.Error()
 			return nil
 		default:
+			exitReason = err.Error()
 			return err
 		}
 	}
@@ -144,16 +151,20 @@ func runLeaseLoop(ctx context.Context, runDir, holder, runID string, epoch int, 
 	for {
 		select {
 		case <-ctx.Done():
+			exitReason = ctx.Err().Error()
 			return nil
 		case <-ticker.C:
 			if err := renewLeaseLoopOnce(runDir, holder, runID, epoch, ttl, transport, pid); err != nil {
 				switch {
 				case errors.Is(err, errLeaseLoopStale):
 					shouldExpire = false
+					exitReason = errLeaseLoopStale.Error()
 					return nil
 				case errors.Is(err, errLeaseTargetExited):
+					exitReason = errLeaseTargetExited.Error()
 					return nil
 				default:
+					exitReason = err.Error()
 					return err
 				}
 			}
