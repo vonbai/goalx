@@ -158,13 +158,36 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 	if err != nil {
 		return err
 	}
-	if hasUrgentUnread(runDir) {
+	runState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		return err
+	}
+	urgentUnread := hasUrgentUnread(runDir)
+	urgentTicks := runState.UrgentUnreadTicks
+	if urgentUnread {
+		urgentTicks++
 		tmuxTarget := goalx.TmuxSessionName(projectRoot, runName) + ":master"
-		if err := SendEscape(tmuxTarget); err != nil {
-			return err
+		if urgentTicks == 1 {
+			if err := SendEscape(tmuxTarget); err != nil {
+				return err
+			}
+			time.Sleep(500 * time.Millisecond)
+			if err := sendAgentNudge(tmuxTarget, cfg.Master.Engine); err != nil {
+				return err
+			}
+		} else if urgentTicks >= 3 {
+			if err := relaunchMaster(projectRoot, runDir, goalx.TmuxSessionName(projectRoot, runName), cfg); err != nil {
+				return err
+			}
+			urgentTicks = 0
 		}
-		time.Sleep(500 * time.Millisecond)
-		if err := sendAgentNudge(tmuxTarget, cfg.Master.Engine); err != nil {
+	} else {
+		urgentTicks = 0
+	}
+	if urgentTicks != runState.UrgentUnreadTicks {
+		runState.UrgentUnreadTicks = urgentTicks
+		runState.UpdatedAt = ""
+		if err := SaveControlRunState(ControlRunStatePath(runDir), runState); err != nil {
 			return err
 		}
 	}

@@ -32,6 +32,7 @@ type ControlRunState struct {
 	Phase              string `json:"phase,omitempty"`
 	Recommendation     string `json:"recommendation,omitempty"`
 	ActiveSessionCount int    `json:"active_session_count,omitempty"`
+	UrgentUnreadTicks  int    `json:"urgent_unread_ticks,omitempty"`
 	UpdatedAt          string `json:"updated_at,omitempty"`
 }
 
