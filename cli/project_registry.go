@@ -79,6 +79,14 @@ func SaveProjectRegistry(projectRoot string, reg *ProjectRegistry) error {
 	if reg.SavedRuns == nil {
 		reg.SavedRuns = map[string]ProjectRunRef{}
 	}
+	for name, ref := range reg.ActiveRuns {
+		ref.Objective = ""
+		reg.ActiveRuns[name] = ref
+	}
+	for name, ref := range reg.SavedRuns {
+		ref.Objective = ""
+		reg.SavedRuns[name] = ref
+	}
 	reg.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	data, err := json.MarshalIndent(reg, "", "  ")
 	if err != nil {
@@ -105,7 +113,6 @@ func RegisterActiveRun(projectRoot string, cfg *goalx.Config) error {
 	reg.ActiveRuns[cfg.Name] = ProjectRunRef{
 		Name:      cfg.Name,
 		Mode:      string(cfg.Mode),
-		Objective: cfg.Objective,
 		State:     "active",
 		UpdatedAt: now,
 	}
@@ -149,7 +156,6 @@ func RegisterSavedRun(projectRoot string, cfg *goalx.Config) error {
 	reg.SavedRuns[cfg.Name] = ProjectRunRef{
 		Name:      cfg.Name,
 		Mode:      string(cfg.Mode),
-		Objective: cfg.Objective,
 		State:     "saved",
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 	}

@@ -100,7 +100,6 @@ func EnsureCoordinationState(runDir, objective string) (*CoordinationState, erro
 	if state == nil {
 		state = &CoordinationState{
 			Version:   1,
-			Objective: objective,
 			Owners:    map[string]string{},
 			Sessions:  map[string]CoordinationSession{},
 			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
@@ -112,9 +111,6 @@ func EnsureCoordinationState(runDir, objective string) (*CoordinationState, erro
 	}
 	if state.Version <= 0 {
 		state.Version = 1
-	}
-	if state.Objective == "" {
-		state.Objective = objective
 	}
 	if state.Owners == nil {
 		state.Owners = map[string]string{}
@@ -279,7 +275,7 @@ func normalizeCoordinationState(state *CoordinationState) {
 	if state == nil {
 		return
 	}
-	state.Objective = strings.TrimSpace(state.Objective)
+	state.Objective = ""
 	state.PlanSummary = dedupeNonEmptyStrings(state.PlanSummary, maxCoordinationReasonLen)
 	state.Blocked = dedupeNonEmptyStrings(state.Blocked, maxCoordinationReasonLen)
 	state.OpenQuestions = dedupeNonEmptyStrings(state.OpenQuestions, maxCoordinationReasonLen)

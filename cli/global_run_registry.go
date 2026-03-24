@@ -76,6 +76,10 @@ func SaveGlobalRunRegistry(reg *GlobalRunRegistry) error {
 	if reg.Runs == nil {
 		reg.Runs = map[string]GlobalRunRef{}
 	}
+	for key, ref := range reg.Runs {
+		ref.Objective = ""
+		reg.Runs[key] = ref
+	}
 	reg.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	data, err := json.MarshalIndent(reg, "", "  ")
 	if err != nil {
@@ -111,7 +115,6 @@ func UpsertGlobalRun(projectRoot string, cfg *goalx.Config, state string) error 
 		RunDir:      goalx.RunDir(projectRoot, cfg.Name),
 		TmuxSession: goalx.TmuxSessionName(projectRoot, cfg.Name),
 		Mode:        string(cfg.Mode),
-		Objective:   cfg.Objective,
 		State:       state,
 		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
 	}
@@ -137,7 +140,6 @@ func UpdateGlobalRunState(projectRoot, runName, state string) error {
 		}
 		if cfg, err := LoadRunSpec(ref.RunDir); err == nil && cfg != nil {
 			ref.Mode = string(cfg.Mode)
-			ref.Objective = cfg.Objective
 		}
 	}
 	ref.State = state

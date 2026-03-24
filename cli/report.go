@@ -29,9 +29,10 @@ func Report(projectRoot string, args []string) error {
 		return err
 	}
 
+	_, _, _, objective := deriveRunIdentitySurface(rc.RunDir, rc.Config.Objective)
 	fmt.Printf("=== Report: %s ===\n", rc.Name)
 	fmt.Printf("Mode: %s\n", rc.Config.Mode)
-	fmt.Printf("Objective: %s\n\n", rc.Config.Objective)
+	fmt.Printf("Objective: %s\n\n", objective)
 
 	// Per-session progress
 	sessionIndexes, err := existingSessionIndexes(rc.RunDir)

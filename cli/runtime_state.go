@@ -89,7 +89,6 @@ func EnsureRuntimeState(runDir string, cfg *goalx.Config) (*RunRuntimeState, err
 			Version:   1,
 			Run:       cfg.Name,
 			Mode:      string(cfg.Mode),
-			Objective: cfg.Objective,
 			Active:    true,
 			StartedAt: now,
 			UpdatedAt: now,
@@ -129,6 +128,7 @@ func SaveRunRuntimeState(path string, state *RunRuntimeState) error {
 	if state.Version == 0 {
 		state.Version = 1
 	}
+	state.Objective = ""
 	if state.UpdatedAt == "" {
 		state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
