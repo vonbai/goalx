@@ -145,6 +145,24 @@ func TestRunCommandDispatchesLeaseLoop(t *testing.T) {
 	}
 }
 
+func TestRunCommandDispatchesWait(t *testing.T) {
+	oldWait := mainWait
+	defer func() { mainWait = oldWait }()
+
+	called := false
+	mainWait = func(string, []string) error {
+		called = true
+		return nil
+	}
+
+	if err := runCommand(t.TempDir(), "wait", []string{"--run", "demo", "--timeout", "30s"}); err != nil {
+		t.Fatalf("runCommand wait: %v", err)
+	}
+	if !called {
+		t.Fatal("wait command was not dispatched")
+	}
+}
+
 func TestUsageDocumentsExplicitCrossProjectSelectors(t *testing.T) {
 	if !strings.Contains(usage, "project-id/run") {
 		t.Fatalf("usage missing project-id/run selector guidance:\n%s", usage)
