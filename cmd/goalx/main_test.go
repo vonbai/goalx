@@ -163,11 +163,23 @@ func TestRunCommandDispatchesWait(t *testing.T) {
 	}
 }
 
+func TestRunCommandSupportsDimension(t *testing.T) {
+	if err := runCommand(t.TempDir(), "dimension", []string{"--help"}); err != nil {
+		t.Fatalf("runCommand dimension --help: %v", err)
+	}
+}
+
 func TestUsageDocumentsExplicitCrossProjectSelectors(t *testing.T) {
 	if !strings.Contains(usage, "project-id/run") {
 		t.Fatalf("usage missing project-id/run selector guidance:\n%s", usage)
 	}
 	if !strings.Contains(usage, "run_id") {
 		t.Fatalf("usage missing run_id selector guidance:\n%s", usage)
+	}
+}
+
+func TestUsageDocumentsDimensionCommand(t *testing.T) {
+	if !strings.Contains(usage, "goalx dimension") {
+		t.Fatalf("usage missing dimension command:\n%s", usage)
 	}
 }

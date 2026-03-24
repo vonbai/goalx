@@ -39,6 +39,7 @@ Usage:
   goalx report  [--run RUN]           Generate markdown report from journal
   goalx result  [NAME]                 Show saved summary or merged result details
   goalx add     "direction" [--run RUN] Add a session to a running run
+  goalx dimension [--run RUN] <session-N|all> Adjust runtime dimension assignments
   goalx tell    [--run RUN] [target] "message" Send a durable instruction to master or a session
   goalx ack-session [--run RUN] <session>      Acknowledge latest processed session inbox entry
   goalx wait    [--run RUN] [target] [--timeout DURATION] Block on unread inbox entries or timeout
@@ -157,6 +158,8 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.Explore(cwd, args)
 	case "add":
 		return cli.Add(cwd, args)
+	case "dimension":
+		return cli.Dimension(cwd, args)
 	case "tell":
 		return cli.Tell(cwd, args)
 	case "ack-session":
