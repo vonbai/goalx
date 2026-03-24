@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -10,6 +11,7 @@ func FinalizeControlRun(runDir, lifecycle string) error {
 	if err := EnsureControlState(runDir); err != nil {
 		return err
 	}
+	killAllLeasedProcesses(runDir)
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -56,6 +58,22 @@ func FinalizeControlRun(runDir, lifecycle string) error {
 		}
 	}
 	return SaveControlDeliveries(ControlDeliveriesPath(runDir), deliveries)
+}
+
+func killAllLeasedProcesses(runDir string) {
+	entries, err := os.ReadDir(ControlLeasesDir(runDir))
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		lease, err := LoadControlLease(filepath.Join(ControlLeasesDir(runDir), entry.Name()))
+		if err == nil && lease.PID > 0 {
+			KillProcessTree(lease.PID)
+		}
+	}
 }
 
 func finalizeSessionRuntimeStates(runDir, lifecycle, now string) error {
