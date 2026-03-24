@@ -12,20 +12,8 @@ import (
 )
 
 func TestKillProcessTree(t *testing.T) {
-	pidPath := filepath.Join(t.TempDir(), "child.pid")
-	cmd := exec.Command("bash", "-c", "sleep 30 & echo $! >\"$1\"; wait", "bash", pidPath)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start shell: %v", err)
-	}
-
-	waitDone := make(chan error, 1)
-	go func() {
-		waitDone <- cmd.Wait()
-	}()
-
-	childPID := waitForPIDFile(t, pidPath)
-	KillProcessTree(cmd.Process.Pid)
+	shellPID, childPID, waitDone := startSleepProcessTree(t)
+	KillProcessTree(shellPID)
 
 	select {
 	case <-waitDone:
@@ -33,8 +21,8 @@ func TestKillProcessTree(t *testing.T) {
 		t.Fatal("process tree did not exit")
 	}
 
-	if processAlive(cmd.Process.Pid) {
-		t.Fatalf("shell pid %d still alive", cmd.Process.Pid)
+	if processAlive(shellPID) {
+		t.Fatalf("shell pid %d still alive", shellPID)
 	}
 	waitForProcessExit(t, childPID)
 }
@@ -50,6 +38,38 @@ func TestKillProcessTreeHandlesDeadProcess(t *testing.T) {
 	}
 
 	KillProcessTree(pid)
+}
+
+func startSleepProcessTree(t *testing.T) (int, int, <-chan error) {
+	t.Helper()
+
+	pidPath := filepath.Join(t.TempDir(), "child.pid")
+	cmd := exec.Command("bash", "-c", "sleep 30 & echo $! >\"$1\"; wait", "bash", pidPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start shell: %v", err)
+	}
+
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- cmd.Wait()
+	}()
+
+	return cmd.Process.Pid, waitForPIDFile(t, pidPath), waitDone
+}
+
+func exitedProcessPID(t *testing.T) int {
+	t.Helper()
+
+	cmd := exec.Command("sleep", "0.1")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start sleep: %v", err)
+	}
+	pid := cmd.Process.Pid
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("wait sleep: %v", err)
+	}
+	return pid
 }
 
 func waitForPIDFile(t *testing.T, path string) int {

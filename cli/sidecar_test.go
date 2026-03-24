@@ -289,10 +289,10 @@ func TestStopTerminalizesControlStateWhenRunIsAlreadyInactive(t *testing.T) {
 	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
-	if err := RenewControlLease(runDir, "master", "run_demo", 1, time.Minute, "tmux", 123); err != nil {
+	if err := RenewControlLease(runDir, "master", "run_demo", 1, time.Minute, "tmux", exitedProcessPID(t)); err != nil {
 		t.Fatalf("RenewControlLease master: %v", err)
 	}
-	if err := RenewControlLease(runDir, "session-1", "run_demo", 1, time.Minute, "tmux", 456); err != nil {
+	if err := RenewControlLease(runDir, "session-1", "run_demo", 1, time.Minute, "tmux", exitedProcessPID(t)); err != nil {
 		t.Fatalf("RenewControlLease session-1: %v", err)
 	}
 	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
