@@ -307,3 +307,130 @@ harness:
 		t.Fatalf("harness.timeout = %v, want %v", resolvedCfg.Config.Harness.Timeout, 30*time.Second)
 	}
 }
+
+func TestResolveLaunchConfigPreservesConfiguredParallelWhenFlagOmitted(t *testing.T) {
+	projectRoot := t.TempDir()
+	writeLaunchConfigProjectFile(t, projectRoot, `
+preset: hybrid
+parallel: 4
+master:
+  engine: codex
+  model: best
+roles:
+  research:
+    engine: claude-code
+    model: opus
+  develop:
+    engine: codex
+    model: fast
+target:
+  files: ["."]
+harness:
+  command: go test ./...
+`)
+
+	resolvedCfg, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "audit auth",
+		Mode:      goalx.ModeResearch,
+	})
+	if err != nil {
+		t.Fatalf("resolveLaunchConfig: %v", err)
+	}
+	if resolvedCfg.Config.Parallel != 4 {
+		t.Fatalf("parallel = %d, want 4", resolvedCfg.Config.Parallel)
+	}
+}
+
+func TestResolveLaunchConfigResearchDoesNotHardcodeReportDefaults(t *testing.T) {
+	projectRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module example.com/demo\n\ngo 1.24\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+
+	resolvedCfg, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "audit auth",
+		Mode:      goalx.ModeResearch,
+	})
+	if err != nil {
+		t.Fatalf("resolveLaunchConfig: %v", err)
+	}
+	cfg := resolvedCfg.Config
+	if len(cfg.Target.Readonly) != 0 {
+		t.Fatalf("research launch should not hardcode readonly target, got %#v", cfg.Target.Readonly)
+	}
+	if len(cfg.Target.Files) == 1 && cfg.Target.Files[0] == "report.md" {
+		t.Fatalf("research launch should not hardcode report.md target: %#v", cfg.Target.Files)
+	}
+	if cfg.Harness.Command == "test -s report.md && echo 'ok'" {
+		t.Fatalf("research launch should not hardcode report harness")
+	}
+}
+
+func TestResolveLaunchConfigAutoDefaultsPreconfiguredSessionsToDevelopMode(t *testing.T) {
+	projectRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module example.com/demo\n\ngo 1.24\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+
+	resolvedCfg, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeAuto,
+		Subs:      []string{"codex/codex"},
+		Auditor:   "codex/codex",
+	})
+	if err != nil {
+		t.Fatalf("resolveLaunchConfig: %v", err)
+	}
+	if len(resolvedCfg.Config.Sessions) != 2 {
+		t.Fatalf("sessions = %#v, want 2 preconfigured sessions", resolvedCfg.Config.Sessions)
+	}
+	for i, sess := range resolvedCfg.Config.Sessions {
+		if sess.Mode != goalx.ModeDevelop {
+			t.Fatalf("session[%d].Mode = %q, want %q", i, sess.Mode, goalx.ModeDevelop)
+		}
+	}
+}
+
+func TestResolveLaunchConfigAutoPreservesConfiguredEffortDefaults(t *testing.T) {
+	projectRoot := t.TempDir()
+	writeLaunchConfigProjectFile(t, projectRoot, `
+master:
+  effort: high
+roles:
+  research:
+    effort: high
+  develop:
+    effort: medium
+harness:
+  command: go test ./...
+target:
+  files: ["."]
+`)
+
+	resolvedCfg, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeAuto,
+	})
+	if err != nil {
+		t.Fatalf("resolveLaunchConfig: %v", err)
+	}
+	cfg := resolvedCfg.Config
+	if cfg.Mode != goalx.ModeAuto {
+		t.Fatalf("cfg.Mode = %q, want %q", cfg.Mode, goalx.ModeAuto)
+	}
+	if cfg.Master.Effort != goalx.EffortHigh {
+		t.Fatalf("master effort = %q, want %q", cfg.Master.Effort, goalx.EffortHigh)
+	}
+	if cfg.Roles.Research.Effort != goalx.EffortHigh {
+		t.Fatalf("research effort = %q, want %q", cfg.Roles.Research.Effort, goalx.EffortHigh)
+	}
+	if cfg.Roles.Develop.Effort != goalx.EffortMedium {
+		t.Fatalf("develop effort = %q, want %q", cfg.Roles.Develop.Effort, goalx.EffortMedium)
+	}
+}
