@@ -11,6 +11,7 @@ docs/
 
 # AI agent configs (user-specific)
 CLAUDE.md
+claude.md
 AGENTS.md
 .claude/
 .factory/
