@@ -1,34 +1,31 @@
-package goalx_test
+package goalx
 
 import (
 	"errors"
 	"testing"
-
-	goalx "github.com/vonbai/goalx"
 )
 
-type ConfigLayers struct {
-	Base goalx.Config
+type resolverTestLayers struct {
+	Base           Config
+	DetectedPreset string
 }
 
-type ResolveRequest struct {
-	Preset  string
-	Mode    goalx.Mode
-	Source  string
-	Comment string
-}
-
-type ResolvedConfig struct {
+type resolverTestRequest struct {
 	Preset string
-	Config goalx.Config
+	Mode   Mode
+}
+
+type resolverTestResult struct {
+	Preset string
+	Config Config
 }
 
 var errResolverNotImplemented = errors.New("resolver not implemented")
 
-func resolveConfigFixture(layers ConfigLayers, req ResolveRequest) (ResolvedConfig, error) {
+func resolveConfigFixture(layers resolverTestLayers, req resolverTestRequest) (resolverTestResult, error) {
 	_ = layers
 	_ = req
-	return ResolvedConfig{}, errResolverNotImplemented
+	return resolverTestResult{}, errResolverNotImplemented
 }
 
 func TestResolveConfigSemantics(t *testing.T) {
@@ -36,54 +33,56 @@ func TestResolveConfigSemantics(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		layers ConfigLayers
-		req    ResolveRequest
-		want   ResolvedConfig
+		layers resolverTestLayers
+		req    resolverTestRequest
+		want   resolverTestResult
 	}{
 		{
 			name: "explicit codex preset stays codex even with both engines present",
-			layers: ConfigLayers{
-				Base: goalx.Config{
+			layers: resolverTestLayers{
+				Base: Config{
 					Name:      "demo",
-					Mode:      goalx.ModeDevelop,
+					Mode:      ModeDevelop,
 					Objective: "lock config state",
-					Target:    goalx.TargetConfig{Files: []string{"README.md"}},
-					Harness:   goalx.HarnessConfig{Command: "go test ./..."},
+					Target:    TargetConfig{Files: []string{"README.md"}},
+					Harness:   HarnessConfig{Command: "go test ./..."},
 				},
+				DetectedPreset: "hybrid",
 			},
-			req: ResolveRequest{
+			req: resolverTestRequest{
 				Preset: "codex",
-				Mode:   goalx.ModeDevelop,
+				Mode:   ModeDevelop,
 			},
-			want: ResolvedConfig{
+			want: resolverTestResult{
 				Preset: "codex",
-				Config: goalx.Config{
+				Config: Config{
 					Preset: "codex",
-					Mode:   goalx.ModeDevelop,
-					Master: goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+					Mode:   ModeDevelop,
+					Master: MasterConfig{Engine: "codex", Model: "gpt-5.4"},
 				},
 			},
 		},
 		{
-			name: "unset preset auto-detects the best installed preset",
-			layers: ConfigLayers{
-				Base: goalx.Config{
+			name: "unset preset uses the discovered preset",
+			layers: resolverTestLayers{
+				Base: Config{
 					Name:      "demo",
-					Mode:      goalx.ModeDevelop,
+					Mode:      ModeDevelop,
 					Objective: "lock config state",
-					Target:    goalx.TargetConfig{Files: []string{"README.md"}},
-					Harness:   goalx.HarnessConfig{Command: "go test ./..."},
+					Target:    TargetConfig{Files: []string{"README.md"}},
+					Harness:   HarnessConfig{Command: "go test ./..."},
 				},
+				DetectedPreset: "claude",
 			},
-			req: ResolveRequest{
-				Mode: goalx.ModeDevelop,
+			req: resolverTestRequest{
+				Mode: ModeDevelop,
 			},
-			want: ResolvedConfig{
-				Preset: "hybrid",
-				Config: goalx.Config{
-					Preset: "hybrid",
-					Mode:   goalx.ModeDevelop,
-					Master: goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+			want: resolverTestResult{
+				Preset: "claude",
+				Config: Config{
+					Preset: "claude",
+					Mode:   ModeDevelop,
+					Master: MasterConfig{Engine: "claude-code", Model: "opus"},
 				},
 			},
 		},
