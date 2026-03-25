@@ -239,7 +239,7 @@ var BuiltinEngines = map[string]EngineConfig{
 
 // BuiltinDefaults are the hardcoded default values.
 var BuiltinDefaults = Config{
-	Preset:   "codex",
+	Preset:   "", // empty: auto-detected from installed engines at runtime
 	Mode:     ModeDevelop,
 	Parallel: 1,
 	Master: MasterConfig{
