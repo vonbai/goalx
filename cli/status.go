@@ -107,14 +107,19 @@ func Status(projectRoot string, args []string) error {
 				}
 			}
 		}
-		if unreadControlInboxCount(ControlInboxPath(rc.RunDir, sName), SessionCursorPath(rc.RunDir, sName)) > 0 {
+		inboxState := readControlInboxState(ControlInboxPath(rc.RunDir, sName), SessionCursorPath(rc.RunDir, sName))
+		if inboxState.Unread > 0 {
 			if status == "idle" || status == "pending" {
 				status = "inbox-pending"
 			}
+			queueSummary := fmt.Sprintf("unread=%d cursor=%d/%d", inboxState.Unread, inboxState.LastSeenID, inboxState.LastID)
+			if delivery, ok := latestSessionDelivery(rc.RunDir, sName); ok && delivery.AttemptedAt != "" {
+				queueSummary += " last_nudge=" + delivery.AttemptedAt
+			}
 			if summary == "no entries" {
-				summary = "inbox pending"
-			} else if summary != "inbox pending" {
-				summary += " | inbox pending"
+				summary = queueSummary
+			} else {
+				summary += " | " + queueSummary
 			}
 		}
 		if sess.DirtyFiles > 0 {

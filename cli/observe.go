@@ -75,6 +75,7 @@ func Observe(projectRoot string, args []string) error {
 	for _, num := range sessionIndexes {
 		windowName := sessionWindowName(rc.Config.Name, num)
 		fmt.Printf("### %s\n", SessionName(num))
+		printObserveSessionQueue(rc.RunDir, SessionName(num))
 		printPaneCapture(rc.TmuxSession, windowName)
 		fmt.Println()
 	}
@@ -110,6 +111,20 @@ func printObserveStatusSection(title, path string) {
 	}
 	fmt.Println(title)
 	fmt.Println(strings.TrimSpace(string(data)))
+	fmt.Println()
+}
+
+func printObserveSessionQueue(runDir, sessionName string) {
+	state := readControlInboxState(ControlInboxPath(runDir, sessionName), SessionCursorPath(runDir, sessionName))
+	fmt.Printf("Queue: unread=%d cursor=%d/%d", state.Unread, state.LastSeenID, state.LastID)
+	if delivery, ok := latestSessionDelivery(runDir, sessionName); ok {
+		if delivery.AttemptedAt != "" {
+			fmt.Printf(" last_nudge_at=%s", delivery.AttemptedAt)
+		}
+		if delivery.Status != "" {
+			fmt.Printf(" last_delivery=%s", delivery.Status)
+		}
+	}
 	fmt.Println()
 }
 

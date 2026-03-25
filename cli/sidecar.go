@@ -150,6 +150,10 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 		}
 		return err
 	}
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		return err
+	}
 	tmuxSession := goalx.TmuxSessionName(projectRoot, runName)
 	runState, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
 	if err != nil {
@@ -173,7 +177,7 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 		return err
 	}
 	if changed {
-		if err := queueRefreshContextReminder(runDir, tmuxSession); err != nil {
+		if err := queueRefreshContextReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
 			return err
 		}
 	}
@@ -186,10 +190,6 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 		if err := SaveWorktreeSnapshot(runDir, snapshot); err != nil {
 			return err
 		}
-	}
-	cfg, err := LoadRunSpec(runDir)
-	if err != nil {
-		return err
 	}
 	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
 	if err != nil {
@@ -224,7 +224,10 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 			return err
 		}
 	}
-	if err := queueMasterWakeReminder(runDir, tmuxSession); err != nil {
+	if err := queueUnreadSessionWakeReminders(runDir, tmuxSession, runName); err != nil {
+		return err
+	}
+	if err := queueMasterWakeReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
 		return err
 	}
 	if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudge); err != nil {
@@ -236,12 +239,42 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 	return nil
 }
 
-func queueRefreshContextReminder(runDir, tmuxSession string) error {
+func queueRefreshContextReminder(runDir, tmuxSession, engine string) error {
 	if !SessionExists(tmuxSession) {
 		return nil
 	}
-	_, err := QueueControlReminder(runDir, "refresh-context", "identity-fence-changed", tmuxSession+":master")
+	_, err := QueueControlReminderWithEngine(runDir, "refresh-context", "identity-fence-changed", tmuxSession+":master", engine)
 	return err
+}
+
+func queueUnreadSessionWakeReminders(runDir, tmuxSession, runName string) error {
+	indexes, err := existingSessionIndexes(runDir)
+	if err != nil {
+		return err
+	}
+	for _, idx := range indexes {
+		sessionName := SessionName(idx)
+		inboxState := readControlInboxState(ControlInboxPath(runDir, sessionName), SessionCursorPath(runDir, sessionName))
+		dedupeKey := "session-wake:" + sessionName
+		if inboxState.Unread == 0 {
+			if err := SuppressControlReminder(runDir, dedupeKey); err != nil {
+				return err
+			}
+			continue
+		}
+		windowName, err := resolveWindowName(runName, sessionName)
+		if err != nil {
+			return err
+		}
+		identity, err := RequireSessionIdentity(runDir, sessionName)
+		if err != nil {
+			return err
+		}
+		if err := queueSessionWakeReminder(runDir, tmuxSession, sessionName, windowName, identity.Engine); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func defaultLaunchRunSidecar(projectRoot, runName string, interval time.Duration) error {

@@ -52,6 +52,7 @@ type ControlReminder struct {
 	DedupeKey     string `json:"dedupe_key,omitempty"`
 	Reason        string `json:"reason,omitempty"`
 	Target        string `json:"target,omitempty"`
+	Engine        string `json:"engine,omitempty"`
 	CooldownUntil string `json:"cooldown_until,omitempty"`
 	Attempts      int    `json:"attempts,omitempty"`
 	AckedAt       string `json:"acked_at,omitempty"`

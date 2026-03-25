@@ -12,18 +12,18 @@ import (
 func TestRenderSubagentProtocolIncludesResumeInstructions(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:           "demo",
-		Objective:         "ship it",
-		Mode:              goalx.ModeDevelop,
-		Engine:            "codex",
-		ProjectRoot:       "/tmp/project",
-		Target:            goalx.TargetConfig{Files: []string{"main.go"}},
+		RunName:                "demo",
+		Objective:              "ship it",
+		Mode:                   goalx.ModeDevelop,
+		Engine:                 "codex",
+		ProjectRoot:            "/tmp/project",
+		Target:                 goalx.TargetConfig{Files: []string{"main.go"}},
 		LocalValidationCommand: "go test ./...",
-		SessionName:       "session-1",
-		JournalPath:       "/tmp/journal.jsonl",
-		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
-		SessionCursorPath: "/tmp/control/session-1-cursor.json",
-		WorktreePath:      "/tmp/worktree",
+		SessionName:            "session-1",
+		JournalPath:            "/tmp/journal.jsonl",
+		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
+		WorktreePath:           "/tmp/worktree",
 	}
 
 	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
@@ -102,17 +102,17 @@ func TestRenderSubagentProtocolIncludesEngineSpecificGuidance(t *testing.T) {
 func TestRenderSubagentProtocolIncludesCodexGuidance(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:           "demo",
-		Objective:         "ship it",
-		Mode:              goalx.ModeDevelop,
-		Engine:            "codex",
-		ProjectRoot:       "/tmp/project",
-		SessionName:       "session-1",
-		Target:            goalx.TargetConfig{Files: []string{"main.go"}},
+		RunName:                "demo",
+		Objective:              "ship it",
+		Mode:                   goalx.ModeDevelop,
+		Engine:                 "codex",
+		ProjectRoot:            "/tmp/project",
+		SessionName:            "session-1",
+		Target:                 goalx.TargetConfig{Files: []string{"main.go"}},
 		LocalValidationCommand: "go test ./...",
-		JournalPath:       "/tmp/journal.jsonl",
-		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
-		SessionCursorPath: "/tmp/control/session-1-cursor.json",
+		JournalPath:            "/tmp/journal.jsonl",
+		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
 	}
 
 	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
@@ -150,17 +150,17 @@ func TestRenderSubagentProtocolIncludesCodexGuidance(t *testing.T) {
 func TestRenderSubagentProtocolIncludesOptimizerDoctrineInDevelopMode(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:           "demo",
-		Objective:         "optimize discovery pipeline",
-		Mode:              goalx.ModeDevelop,
-		Engine:            "codex",
-		ProjectRoot:       "/tmp/project",
-		SessionName:       "session-1",
-		Target:            goalx.TargetConfig{Files: []string{"main.go"}},
+		RunName:                "demo",
+		Objective:              "optimize discovery pipeline",
+		Mode:                   goalx.ModeDevelop,
+		Engine:                 "codex",
+		ProjectRoot:            "/tmp/project",
+		SessionName:            "session-1",
+		Target:                 goalx.TargetConfig{Files: []string{"main.go"}},
 		LocalValidationCommand: "go test ./...",
-		JournalPath:       "/tmp/journal.jsonl",
-		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
-		SessionCursorPath: "/tmp/control/session-1-cursor.json",
+		JournalPath:            "/tmp/journal.jsonl",
+		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
 	}
 
 	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
@@ -266,18 +266,18 @@ func TestRenderSubagentProtocolResearchModeUsesGuidanceNotHardBan(t *testing.T) 
 func TestRenderSubagentProtocolKeepsDevelopMethodologyConcise(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:           "demo",
-		Objective:         "ship it",
-		Mode:              goalx.ModeDevelop,
-		Engine:            "codex",
-		ProjectRoot:       "/tmp/project",
-		SessionName:       "session-1",
-		Target:            goalx.TargetConfig{Files: []string{"main.go"}},
+		RunName:                "demo",
+		Objective:              "ship it",
+		Mode:                   goalx.ModeDevelop,
+		Engine:                 "codex",
+		ProjectRoot:            "/tmp/project",
+		SessionName:            "session-1",
+		Target:                 goalx.TargetConfig{Files: []string{"main.go"}},
 		LocalValidationCommand: "go test ./...",
-		JournalPath:       "/tmp/journal.jsonl",
-		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
-		SessionCursorPath: "/tmp/control/session-1-cursor.json",
-		Context:           goalx.ContextConfig{Files: []string{"/tmp/context.md"}},
+		JournalPath:            "/tmp/journal.jsonl",
+		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
+		Context:                goalx.ContextConfig{Files: []string{"/tmp/context.md"}},
 	}
 
 	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
@@ -312,17 +312,17 @@ func TestRenderSubagentProtocolKeepsDevelopMethodologyConcise(t *testing.T) {
 func TestRenderSubagentProtocolIncludesQualityJournalAndSelfCheck(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:           "demo",
-		Objective:         "ship it",
-		Mode:              goalx.ModeDevelop,
-		Engine:            "codex",
-		ProjectRoot:       "/tmp/project",
-		SessionName:       "session-1",
-		Target:            goalx.TargetConfig{Files: []string{"main.go"}},
+		RunName:                "demo",
+		Objective:              "ship it",
+		Mode:                   goalx.ModeDevelop,
+		Engine:                 "codex",
+		ProjectRoot:            "/tmp/project",
+		SessionName:            "session-1",
+		Target:                 goalx.TargetConfig{Files: []string{"main.go"}},
 		LocalValidationCommand: "go test ./...",
-		JournalPath:       "/tmp/journal.jsonl",
-		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
-		SessionCursorPath: "/tmp/control/session-1-cursor.json",
+		JournalPath:            "/tmp/journal.jsonl",
+		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
 	}
 
 	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
@@ -403,19 +403,19 @@ func TestRenderSubagentProtocolIncludesTeamContext(t *testing.T) {
 func TestRenderSubagentProtocolMakesGoalBoundaryExplicit(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:             "demo",
-		Objective:           "ship it",
-		Mode:                goalx.ModeDevelop,
-		Engine:              "codex",
-		ProjectRoot:         "/tmp/project",
-		SessionName:         "session-1",
-		Target:              goalx.TargetConfig{Files: []string{"main.go"}},
+		RunName:                "demo",
+		Objective:              "ship it",
+		Mode:                   goalx.ModeDevelop,
+		Engine:                 "codex",
+		ProjectRoot:            "/tmp/project",
+		SessionName:            "session-1",
+		Target:                 goalx.TargetConfig{Files: []string{"main.go"}},
 		LocalValidationCommand: "go test ./...",
-		JournalPath:         "/tmp/journal.jsonl",
-		SessionInboxPath:    "/tmp/control/inbox/session-1.jsonl",
-		SessionCursorPath:   "/tmp/control/session-1-cursor.json",
-		GoalPath:            "/tmp/goal.json",
-		AcceptanceStatePath: "/tmp/acceptance.json",
+		JournalPath:            "/tmp/journal.jsonl",
+		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
+		GoalPath:               "/tmp/goal.json",
+		AcceptanceStatePath:    "/tmp/acceptance.json",
 		Sessions: []SessionData{
 			{Name: "session-1", WorktreePath: "/tmp/worktree-1", Mode: goalx.ModeDevelop},
 		},
@@ -715,17 +715,17 @@ func TestRenderSubagentProtocolIncludesOptimizerDoctrineInResearchMode(t *testin
 func TestRenderSubagentProtocolEncouragesBetterArchitecturePathsInDevelopMode(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:           "demo",
-		Objective:         "ship it",
-		Mode:              goalx.ModeDevelop,
-		Engine:            "codex",
-		ProjectRoot:       "/tmp/project",
-		SessionName:       "session-1",
-		Target:            goalx.TargetConfig{Files: []string{"main.go"}},
+		RunName:                "demo",
+		Objective:              "ship it",
+		Mode:                   goalx.ModeDevelop,
+		Engine:                 "codex",
+		ProjectRoot:            "/tmp/project",
+		SessionName:            "session-1",
+		Target:                 goalx.TargetConfig{Files: []string{"main.go"}},
 		LocalValidationCommand: "go test ./...",
-		JournalPath:       "/tmp/journal.jsonl",
-		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
-		SessionCursorPath: "/tmp/control/session-1-cursor.json",
+		JournalPath:            "/tmp/journal.jsonl",
+		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
 	}
 
 	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
@@ -751,17 +751,17 @@ func TestRenderSubagentProtocolEncouragesBetterArchitecturePathsInDevelopMode(t 
 func TestRenderSubagentProtocolTreatsAutoModeAsDevelop(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:           "demo",
-		Objective:         "ship it",
-		Mode:              goalx.ModeAuto,
-		Engine:            "codex",
-		ProjectRoot:       "/tmp/project",
-		SessionName:       "session-1",
-		Target:            goalx.TargetConfig{Files: []string{"main.go"}},
+		RunName:                "demo",
+		Objective:              "ship it",
+		Mode:                   goalx.ModeAuto,
+		Engine:                 "codex",
+		ProjectRoot:            "/tmp/project",
+		SessionName:            "session-1",
+		Target:                 goalx.TargetConfig{Files: []string{"main.go"}},
 		LocalValidationCommand: "go test ./...",
-		JournalPath:       "/tmp/journal.jsonl",
-		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
-		SessionCursorPath: "/tmp/control/session-1-cursor.json",
+		JournalPath:            "/tmp/journal.jsonl",
+		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
 	}
 
 	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
@@ -1364,6 +1364,35 @@ func TestRenderMasterProtocolReferencesGoalxContextAndAfford(t *testing.T) {
 		"`/tmp/control/context-index.json`",
 		"`/tmp/control/activity.json`",
 		"`/tmp/control/affordances.md`",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestRenderMasterProtocolRoutesSessionDispatchThroughTell(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective: "ship it",
+		RunName:   "demo",
+		Mode:      goalx.ModeDevelop,
+		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"`goalx tell --run demo session-N \"...\"`",
+		"Do not write `control/inbox/session-N.jsonl` directly.",
+		"`goalx attach --run demo session-N`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)

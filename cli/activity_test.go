@@ -172,3 +172,51 @@ func TestActivitySnapshotContainsNoJudgmentFields(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildActivitySnapshotIncludesSessionQueueFacts(t *testing.T) {
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	seedGuidanceSessionFixture(t, runDir, cfg)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	sessionCapture := filepath.Join(t.TempDir(), "session-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	if err := os.WriteFile(sessionCapture, []byte("session\n"), 0o644); err != nil {
+		t.Fatalf("write session capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
+	installGuidanceFakeTmux(t, []string{"session-1"})
+
+	if err := RenewControlLease(runDir, "master", meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease master: %v", err)
+	}
+	if err := RenewControlLease(runDir, "session-1", meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease session-1: %v", err)
+	}
+	if _, err := AppendControlInboxMessage(runDir, "session-1", "develop", "master", "take the next slice"); err != nil {
+		t.Fatalf("AppendControlInboxMessage: %v", err)
+	}
+	if err := SaveControlDeliveries(ControlDeliveriesPath(runDir), &ControlDeliveries{
+		Version: 1,
+		Items: []ControlDelivery{
+			{DeliveryID: "del-1", DedupeKey: "session-wake:session-1", Status: "sent", Target: "gx-demo:session-1", AttemptedAt: "2026-03-25T00:00:00Z"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlDeliveries: %v", err)
+	}
+
+	snapshot, err := BuildActivitySnapshot(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildActivitySnapshot: %v", err)
+	}
+
+	session := snapshot.Sessions["session-1"]
+	if session.InboxLastID != 1 || session.CursorLastSeenID != 0 || session.Unread != 1 {
+		t.Fatalf("unexpected session queue facts: %+v", session)
+	}
+	if session.LastNudgeAt != "2026-03-25T00:00:00Z" || session.LastDeliveryStatus != "sent" {
+		t.Fatalf("unexpected session delivery facts: %+v", session)
+	}
+}

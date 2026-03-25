@@ -72,6 +72,11 @@ type ActivitySession struct {
 	PanePresent        bool   `json:"pane_present,omitempty"`
 	PaneHash           string `json:"pane_hash,omitempty"`
 	LastOutputChangeAt string `json:"last_output_change_at,omitempty"`
+	InboxLastID        int64  `json:"inbox_last_id,omitempty"`
+	CursorLastSeenID   int64  `json:"cursor_last_seen_id,omitempty"`
+	Unread             int    `json:"unread,omitempty"`
+	LastNudgeAt        string `json:"last_nudge_at,omitempty"`
+	LastDeliveryStatus string `json:"last_delivery_status,omitempty"`
 }
 
 func ActivityPath(runDir string) string {
@@ -203,6 +208,14 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 				session.Deletions = diff.Deletions
 			}
 		}
+		inboxState := readControlInboxState(ControlInboxPath(runDir, name), SessionCursorPath(runDir, name))
+		session.InboxLastID = inboxState.LastID
+		session.CursorLastSeenID = inboxState.LastSeenID
+		session.Unread = inboxState.Unread
+		if delivery, ok := latestSessionDelivery(runDir, name); ok {
+			session.LastNudgeAt = delivery.AttemptedAt
+			session.LastDeliveryStatus = delivery.Status
+		}
 		paneHash, panePresent := capturePaneHash(tmuxSession, name)
 		session.PanePresent = panePresent
 		session.PaneHash = paneHash
@@ -247,7 +260,10 @@ func previousSession(previous *ActivitySnapshot, name string) ActivitySession {
 	return previous.Sessions[name]
 }
 
-func carryPaneChangeTime[T interface{ getPaneHash() string; getLastOutputChangeAt() string }](previous T, paneHash string, panePresent bool, fallback string) string {
+func carryPaneChangeTime[T interface {
+	getPaneHash() string
+	getLastOutputChangeAt() string
+}](previous T, paneHash string, panePresent bool, fallback string) string {
 	if !panePresent {
 		return ""
 	}

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,6 +64,47 @@ func TestTellWritesSessionInboxAndNudges(t *testing.T) {
 	}
 	if deliveries.Items[0].Status != "sent" || deliveries.Items[0].Target != wantTarget {
 		t.Fatalf("unexpected delivery: %+v", deliveries.Items[0])
+	}
+}
+
+func TestTellKeepsDurableSessionMessageWhenImmediateNudgeFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+
+	orig := sendAgentNudge
+	defer func() { sendAgentNudge = orig }()
+	sendAgentNudge = func(target, engine string) error {
+		return fmt.Errorf("tmux target missing")
+	}
+
+	out := captureStdout(t, func() {
+		if err := Tell(repo, []string{"--run", runName, "session-1", "focus on db race triage"}); err != nil {
+			t.Fatalf("Tell: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "session-1") {
+		t.Fatalf("tell output = %q, want session target", out)
+	}
+
+	inboxData, err := os.ReadFile(ControlInboxPath(runDir, "session-1"))
+	if err != nil {
+		t.Fatalf("read session inbox: %v", err)
+	}
+	if !strings.Contains(string(inboxData), `"body":"focus on db race triage"`) {
+		t.Fatalf("session inbox missing message:\n%s", string(inboxData))
+	}
+
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	if len(deliveries.Items) != 1 || deliveries.Items[0].Status != "failed" {
+		t.Fatalf("unexpected deliveries: %+v", deliveries.Items)
 	}
 }
 
@@ -259,15 +301,15 @@ func TestStatusShowsInboxPendingForSession(t *testing.T) {
 func TestRenderSubagentProtocolIncludesSessionInboxAckPath(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:           "demo",
-		Objective:         "ship it",
-		Mode:              goalx.ModeDevelop,
-		ProjectRoot:       "/tmp/project",
-		SessionName:       "session-1",
-		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
-		SessionCursorPath: "/tmp/control/session-1-cursor.json",
-		JournalPath:       "/tmp/journals/session-1.jsonl",
-		Target:            goalx.TargetConfig{Files: []string{"."}},
+		RunName:                "demo",
+		Objective:              "ship it",
+		Mode:                   goalx.ModeDevelop,
+		ProjectRoot:            "/tmp/project",
+		SessionName:            "session-1",
+		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
+		JournalPath:            "/tmp/journals/session-1.jsonl",
+		Target:                 goalx.TargetConfig{Files: []string{"."}},
 		LocalValidationCommand: "go test ./...",
 	}
 

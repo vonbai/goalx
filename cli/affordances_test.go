@@ -88,3 +88,26 @@ func TestBuildAffordancesDoesNotDefaultTargetToMaster(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildAffordancesIncludesSessionTellAndAttachCommands(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	doc, err := BuildAffordances(repo, cfg.Name, runDir, "")
+	if err != nil {
+		t.Fatalf("BuildAffordances: %v", err)
+	}
+
+	commands := make([]string, 0, len(doc.Items))
+	for _, item := range doc.Items {
+		commands = append(commands, item.Command)
+	}
+	joined := strings.Join(commands, "\n")
+	for _, want := range []string{
+		`goalx tell --run guidance-run session-N "message"`,
+		`goalx attach --run guidance-run session-N`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("affordance commands missing %q:\n%s", want, joined)
+		}
+	}
+}

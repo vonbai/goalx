@@ -26,6 +26,12 @@ type MasterCursorState struct {
 	UpdatedAt  string `json:"updated_at,omitempty"`
 }
 
+type ControlInboxState struct {
+	LastID     int64
+	LastSeenID int64
+	Unread     int
+}
+
 var sendAgentNudge = SendAgentNudge
 var sendAgentKeys = sendKeysWithSubmit
 
@@ -176,31 +182,40 @@ func AckControlInbox(runDir, target string) (*MasterCursorState, error) {
 }
 
 func unreadControlInboxCount(inboxPath, cursorPath string) int {
+	return readControlInboxState(inboxPath, cursorPath).Unread
+}
+
+func readControlInboxState(inboxPath, cursorPath string) ControlInboxState {
 	cursor, _ := LoadMasterCursorState(cursorPath)
+	state := ControlInboxState{}
+	if cursor != nil {
+		state.LastSeenID = cursor.LastSeenID
+	}
 	f, err := os.ReadFile(inboxPath)
 	if err != nil {
-		return 0
+		return state
 	}
-	lastID := int64(0)
 	for _, line := range splitNonEmptyLines(string(f)) {
 		var msg MasterInboxMessage
 		if err := json.Unmarshal([]byte(line), &msg); err != nil {
 			continue
 		}
-		if msg.ID > lastID {
-			lastID = msg.ID
+		if msg.ID > state.LastID {
+			state.LastID = msg.ID
 		}
 	}
-	if lastID == 0 {
-		return 0
+	if state.LastID == 0 {
+		return state
 	}
 	if cursor == nil {
-		return int(lastID)
+		state.Unread = int(state.LastID)
+		return state
 	}
-	if lastID <= cursor.LastSeenID {
-		return 0
+	if state.LastID <= state.LastSeenID {
+		return state
 	}
-	return int(lastID - cursor.LastSeenID)
+	state.Unread = int(state.LastID - state.LastSeenID)
+	return state
 }
 
 func hasUrgentUnread(runDir string) bool {

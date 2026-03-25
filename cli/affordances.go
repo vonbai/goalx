@@ -119,9 +119,15 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 		{
 			ID:      "tell",
 			Kind:    "control",
-			Summary: "Send a durable instruction through the control plane.",
+			Summary: "Dispatch or redirect durable session work through the control plane.",
 			Command: buildTellCommand(runName, normalizedTarget),
 			Paths:   []string{ControlInboxDir(runDir)},
+		},
+		{
+			ID:      "attach",
+			Kind:    "control",
+			Summary: "Attach to a tmux window for inspection or emergency manual intervention.",
+			Command: buildAttachCommand(runName, normalizedTarget),
 		},
 	}
 	if index != nil {
@@ -215,7 +221,19 @@ func buildTellCommand(runName, target string) string {
 	args := []string{"goalx", "tell", "--run", runName}
 	if normalized := normalizedAffordanceTarget(target); normalized != "" {
 		args = append(args, normalized)
+	} else {
+		args = append(args, "session-N")
 	}
 	args = append(args, "\"message\"")
+	return strings.Join(args, " ")
+}
+
+func buildAttachCommand(runName, target string) string {
+	args := []string{"goalx", "attach", "--run", runName}
+	if normalized := normalizedAffordanceTarget(target); normalized != "" {
+		args = append(args, normalized)
+	} else {
+		args = append(args, "session-N")
+	}
 	return strings.Join(args, " ")
 }

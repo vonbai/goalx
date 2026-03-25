@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -740,6 +741,220 @@ func TestSidecarFinalizesCompletedRunWhenMasterSessionIsGone(t *testing.T) {
 	}
 	if _, ok := reg.ActiveRuns[runName]; ok {
 		t.Fatalf("run %q still registered active after completion", runName)
+	}
+}
+
+func TestRunSidecarTickQueuesSessionWakeForUnreadSessionInbox(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if _, err := EnsureSessionsRuntimeState(runDir); err != nil {
+		t.Fatalf("EnsureSessionsRuntimeState: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if _, err := AppendControlInboxMessage(runDir, "session-1", "develop", "master", "take the next slice"); err != nil {
+		t.Fatalf("AppendControlInboxMessage: %v", err)
+	}
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"has-session\" ]; then exit 0; fi\n" +
+		"if [ \"$1\" = \"list-windows\" ]; then printf '%s\n' master session-1; exit 0; fi\n" +
+		"if [ \"$1\" = \"capture-pane\" ]; then exit 0; fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	orig := sendAgentNudge
+	defer func() { sendAgentNudge = orig }()
+	var nudges []string
+	sendAgentNudge = func(target, engine string) error {
+		nudges = append(nudges, target+"|"+engine)
+		return nil
+	}
+
+	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick: %v", err)
+	}
+
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	found := false
+	wantTarget := goalx.TmuxSessionName(repo, runName) + ":session-1"
+	for _, item := range deliveries.Items {
+		if item.DedupeKey == "session-wake:session-1" {
+			found = true
+			if item.Target != wantTarget || item.Status != "sent" {
+				t.Fatalf("unexpected session wake delivery: %+v", item)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected session wake delivery, got %+v", deliveries.Items)
+	}
+	found = false
+	for _, nudge := range nudges {
+		if nudge == wantTarget+"|codex" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected session wake nudge to %q, got %v", wantTarget, nudges)
+	}
+}
+
+func TestRunSidecarTickDoesNotQueueSessionWakeWhenCursorCaughtUp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if _, err := AppendControlInboxMessage(runDir, "session-1", "develop", "master", "take the next slice"); err != nil {
+		t.Fatalf("AppendControlInboxMessage: %v", err)
+	}
+	if err := SaveMasterCursorState(SessionCursorPath(runDir, "session-1"), &MasterCursorState{LastSeenID: 1}); err != nil {
+		t.Fatalf("SaveMasterCursorState: %v", err)
+	}
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"has-session\" ]; then exit 0; fi\n" +
+		"if [ \"$1\" = \"list-windows\" ]; then printf '%s\n' master session-1; exit 0; fi\n" +
+		"if [ \"$1\" = \"capture-pane\" ]; then exit 0; fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	orig := sendAgentNudge
+	defer func() { sendAgentNudge = orig }()
+	var nudges []string
+	sendAgentNudge = func(target, engine string) error {
+		nudges = append(nudges, target+"|"+engine)
+		return nil
+	}
+
+	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick: %v", err)
+	}
+
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	for _, item := range deliveries.Items {
+		if item.DedupeKey == "session-wake:session-1" {
+			t.Fatalf("unexpected session wake delivery after cursor caught up: %+v", item)
+		}
+	}
+	for _, nudge := range nudges {
+		if strings.Contains(nudge, ":session-1|") {
+			t.Fatalf("unexpected session wake nudge after cursor caught up: %v", nudges)
+		}
+	}
+}
+
+func TestRunSidecarTickSkipsSessionWakeWhenWindowMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if _, err := AppendControlInboxMessage(runDir, "session-1", "develop", "master", "take the next slice"); err != nil {
+		t.Fatalf("AppendControlInboxMessage: %v", err)
+	}
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"has-session\" ]; then exit 0; fi\n" +
+		"if [ \"$1\" = \"list-windows\" ]; then printf '%s\n' master; exit 0; fi\n" +
+		"if [ \"$1\" = \"capture-pane\" ]; then exit 0; fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	orig := sendAgentNudge
+	defer func() { sendAgentNudge = orig }()
+	var nudges []string
+	sendAgentNudge = func(target, engine string) error {
+		nudges = append(nudges, target+"|"+engine)
+		return nil
+	}
+
+	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick: %v", err)
+	}
+
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	for _, item := range deliveries.Items {
+		if item.DedupeKey == "session-wake:session-1" {
+			t.Fatalf("unexpected session wake delivery with missing window: %+v", item)
+		}
+	}
+	for _, nudge := range nudges {
+		if strings.Contains(nudge, ":session-1|") {
+			t.Fatalf("unexpected session wake nudge with missing window: %v", nudges)
+		}
 	}
 }
 

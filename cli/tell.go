@@ -102,9 +102,7 @@ func deliverTell(projectRoot, runName, target, message string, urgent bool, nudg
 		}
 		if nudge != nil {
 			dedupeKey := fmt.Sprintf("master-inbox:%d", msg.ID)
-			if _, err := DeliverControlNudge(rc.RunDir, dedupeKey, dedupeKey, rc.TmuxSession+":master", rc.Config.Master.Engine, nudge); err != nil {
-				return "", "", err
-			}
+			_, _ = DeliverControlNudge(rc.RunDir, dedupeKey, dedupeKey, rc.TmuxSession+":master", rc.Config.Master.Engine, nudge)
 		}
 		return rc.Name, "master", nil
 	}
@@ -134,9 +132,7 @@ func deliverTell(projectRoot, runName, target, message string, urgent bool, nudg
 	}
 	if nudge != nil {
 		messageID := fmt.Sprintf("session-inbox:%s:%d", target, msg.ID)
-		if _, err := DeliverControlNudge(rc.RunDir, messageID, messageID, rc.TmuxSession+":"+windowName, identity.Engine, nudge); err != nil {
-			return "", "", err
-		}
+		_, _ = DeliverControlNudge(rc.RunDir, messageID, messageID, rc.TmuxSession+":"+windowName, identity.Engine, nudge)
 	}
 	return rc.Name, target, nil
 }

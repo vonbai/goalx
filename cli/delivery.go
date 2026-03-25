@@ -6,6 +6,27 @@ import (
 	"time"
 )
 
+func latestSessionDelivery(runDir, sessionName string) (ControlDelivery, bool) {
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil || deliveries == nil {
+		return ControlDelivery{}, false
+	}
+	prefix := "session-inbox:" + sessionName + ":"
+	dedupe := "session-wake:" + sessionName
+	var latest ControlDelivery
+	found := false
+	for _, item := range deliveries.Items {
+		if !strings.HasPrefix(item.DedupeKey, prefix) && item.DedupeKey != dedupe {
+			continue
+		}
+		if !found || item.AttemptedAt > latest.AttemptedAt {
+			latest = item
+			found = true
+		}
+	}
+	return latest, found
+}
+
 func DeliverControlNudge(runDir, messageID, dedupeKey, target, engine string, deliver func(target, engine string) error) (*ControlDelivery, error) {
 	return deliverControlNudge(runDir, messageID, dedupeKey, target, engine, true, deliver)
 }
