@@ -200,6 +200,10 @@ Use routing profiles, routing rules, and these preferences together when choosin
 - On each control cycle or transport wake, first read `{{.IdentityFencePath}}`, `{{.ControlRunStatePath}}`, `{{.MasterInboxPath}}`, `{{.ControlRemindersPath}}`, `{{.ControlDeliveriesPath}}`, `{{.RunStatePath}}`, and `{{.SessionsStatePath}}`.
 - Read the inbox every control cycle before making decisions.
 - Process every inbox entry with `id > last_seen_id`, then update `{{.MasterCursorPath}}` after you have handled it.
+- Treat `status=sent` in `{{.ControlDeliveriesPath}}` as transport success: the input was submitted to the target engine.
+- `status=sent` is not the same as cursor advancement. It means "submitted", not "durably consumed".
+- Do not take over or reassign immediately just because the session cursor has not advanced yet after a `sent` delivery.
+- Judge session trouble from longer-lived facts such as stale journals, unhealthy leases, repeated failed deliveries, or prolonged lack of progress after a prior `sent`.
 - Tell messages are urgent. If a user tell arrives, respond in the current control cycle.
 - Default to current repo state, control files, runtime state, and latest session outputs.
 - Only reread older journal history when the current state is ambiguous, stale, or conflicting.

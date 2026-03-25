@@ -355,6 +355,7 @@ func TestStatusShowsSessionQueueFacts(t *testing.T) {
 		"unread=1",
 		"cursor=0/1",
 		"last_nudge=2026-03-25T00:00:00Z",
+		"last_delivery=sent",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status output missing %q:\n%s", want, out)

@@ -1393,6 +1393,9 @@ func TestRenderMasterProtocolRoutesSessionDispatchThroughTell(t *testing.T) {
 		"`goalx tell --run demo session-N \"...\"`",
 		"Do not write `control/inbox/session-N.jsonl` directly.",
 		"`goalx attach --run demo session-N`",
+		"Treat `status=sent` in `",
+		"as transport success: the input was submitted to the target engine.",
+		"Do not take over or reassign immediately just because the session cursor has not advanced yet after a `sent` delivery.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)

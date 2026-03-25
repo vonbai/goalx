@@ -113,8 +113,13 @@ func Status(projectRoot string, args []string) error {
 				status = "inbox-pending"
 			}
 			queueSummary := fmt.Sprintf("unread=%d cursor=%d/%d", inboxState.Unread, inboxState.LastSeenID, inboxState.LastID)
-			if delivery, ok := latestSessionDelivery(rc.RunDir, sName); ok && delivery.AttemptedAt != "" {
-				queueSummary += " last_nudge=" + delivery.AttemptedAt
+			if delivery, ok := latestSessionDelivery(rc.RunDir, sName); ok {
+				if delivery.AttemptedAt != "" {
+					queueSummary += " last_nudge=" + delivery.AttemptedAt
+				}
+				if delivery.Status != "" {
+					queueSummary += " last_delivery=" + delivery.Status
+				}
 			}
 			if summary == "no entries" {
 				summary = queueSummary

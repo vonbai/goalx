@@ -27,6 +27,37 @@ func latestSessionDelivery(runDir, sessionName string) (ControlDelivery, bool) {
 	return latest, found
 }
 
+func latestSessionInboxDelivery(runDir, sessionName string) (ControlDelivery, bool) {
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil || deliveries == nil {
+		return ControlDelivery{}, false
+	}
+	prefix := "session-inbox:" + sessionName + ":"
+	var latest ControlDelivery
+	found := false
+	for _, item := range deliveries.Items {
+		if !strings.HasPrefix(item.DedupeKey, prefix) {
+			continue
+		}
+		if !found || item.AttemptedAt > latest.AttemptedAt {
+			latest = item
+			found = true
+		}
+	}
+	return latest, found
+}
+
+func deliveryWithin(delivery ControlDelivery, window time.Duration, now time.Time) bool {
+	if window <= 0 || strings.TrimSpace(delivery.AttemptedAt) == "" {
+		return false
+	}
+	at, err := time.Parse(time.RFC3339, delivery.AttemptedAt)
+	if err != nil {
+		return false
+	}
+	return now.Sub(at) < window
+}
+
 func DeliverControlNudge(runDir, messageID, dedupeKey, target, engine string, deliver func(target, engine string) error) (*ControlDelivery, error) {
 	return deliverControlNudge(runDir, messageID, dedupeKey, target, engine, true, deliver)
 }

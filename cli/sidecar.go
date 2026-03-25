@@ -224,7 +224,7 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 			return err
 		}
 	}
-	if err := queueUnreadSessionWakeReminders(runDir, tmuxSession, runName); err != nil {
+	if err := queueUnreadSessionWakeReminders(runDir, tmuxSession, runName, interval); err != nil {
 		return err
 	}
 	if err := queueMasterWakeReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
@@ -247,11 +247,12 @@ func queueRefreshContextReminder(runDir, tmuxSession, engine string) error {
 	return err
 }
 
-func queueUnreadSessionWakeReminders(runDir, tmuxSession, runName string) error {
+func queueUnreadSessionWakeReminders(runDir, tmuxSession, runName string, interval time.Duration) error {
 	indexes, err := existingSessionIndexes(runDir)
 	if err != nil {
 		return err
 	}
+	now := time.Now().UTC()
 	for _, idx := range indexes {
 		sessionName := SessionName(idx)
 		inboxState := readControlInboxState(ControlInboxPath(runDir, sessionName), SessionCursorPath(runDir, sessionName))
@@ -260,6 +261,9 @@ func queueUnreadSessionWakeReminders(runDir, tmuxSession, runName string) error 
 			if err := SuppressControlReminder(runDir, dedupeKey); err != nil {
 				return err
 			}
+			continue
+		}
+		if delivery, ok := latestSessionInboxDelivery(runDir, sessionName); ok && delivery.Status == "sent" && deliveryWithin(delivery, interval, now) {
 			continue
 		}
 		windowName, err := resolveWindowName(runName, sessionName)
