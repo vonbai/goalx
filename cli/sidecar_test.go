@@ -46,6 +46,28 @@ func TestRunSidecarTickRenewsLease(t *testing.T) {
 		t.Fatalf("runSidecarTick: %v", err)
 	}
 
+	activity, err := LoadActivitySnapshot(ActivityPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadActivitySnapshot: %v", err)
+	}
+	if activity == nil || activity.Run.RunName != cfg.Name {
+		t.Fatalf("activity snapshot not written correctly: %+v", activity)
+	}
+	index, err := LoadContextIndex(ContextIndexPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadContextIndex: %v", err)
+	}
+	if index == nil || index.RunName != cfg.Name {
+		t.Fatalf("context index not written correctly: %+v", index)
+	}
+	affordances, err := LoadAffordances(AffordancesJSONPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadAffordances: %v", err)
+	}
+	if affordances == nil || affordances.RunName != cfg.Name {
+		t.Fatalf("affordances not written correctly: %+v", affordances)
+	}
+
 	lease, err := LoadControlLease(ControlLeasePath(runDir, "sidecar"))
 	if err != nil {
 		t.Fatalf("LoadControlLease: %v", err)

@@ -143,6 +143,24 @@ func printStatusControlSummary(rc *RunContext) {
 	unread := unreadControlInboxCount(MasterInboxPath(rc.RunDir), MasterCursorPath(rc.RunDir))
 	masterLease := controlLeaseSummary(rc.RunDir, "master")
 	sidecarLease := controlLeaseSummary(rc.RunDir, "sidecar")
+	remindersDue, deliveriesFailed := controlQueueSummary(rc.RunDir)
+	if activity, err := LoadActivitySnapshot(ActivityPath(rc.RunDir)); err == nil && activity != nil {
+		if masterLease == "missing" {
+			if actor, ok := activity.Actors["master"]; ok && actor.Lease != "" {
+				masterLease = actor.Lease
+			}
+		}
+		if sidecarLease == "missing" {
+			if actor, ok := activity.Actors["sidecar"]; ok && actor.Lease != "" {
+				sidecarLease = actor.Lease
+			}
+		}
+		if unread == 0 && remindersDue == 0 && deliveriesFailed == 0 {
+			unread = activity.Queue.MasterUnread
+			remindersDue = activity.Queue.RemindersDue
+			deliveriesFailed = activity.Queue.DeliveriesFailed
+		}
+	}
 	runID := "-"
 	epoch := "-"
 	charter := "missing"
@@ -161,7 +179,6 @@ func printStatusControlSummary(rc *RunContext) {
 			charter = derived.Charter
 		}
 	}
-	remindersDue, deliveriesFailed := controlQueueSummary(rc.RunDir)
 	fmt.Printf("Control: run_id=%s epoch=%s charter=%s run_status=%s unread_inbox=%d master_lease=%s sidecar_lease=%s reminders_due=%d deliveries_failed=%d\n", runID, epoch, charter, runStatus, unread, masterLease, sidecarLease, remindersDue, deliveriesFailed)
 	fmt.Println()
 }

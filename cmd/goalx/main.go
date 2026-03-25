@@ -21,6 +21,8 @@ Usage:
   goalx develop  "objective" [flags]  Start a develop run directly from CLI flags
   goalx list                          List all runs (active / completed / archived)
   goalx status  [--run RUN] [session] Show current run progress and control summary
+  goalx context [--run RUN] [--json]    Show the run context index
+  goalx afford  [--run RUN] [target] [--json] Show run-scoped command affordances
   goalx attach  [--run RUN] [window]  Attach to tmux session (default: master)
   goalx stop    [--run RUN]           Graceful shutdown
   goalx review  [--run RUN]           Compare all sessions
@@ -66,6 +68,8 @@ var (
 	mainWait             = cli.Wait
 	mainSidecar          = cli.Sidecar
 	mainLeaseLoop        = cli.LeaseLoop
+	mainContext          = cli.Context
+	mainAfford           = cli.Afford
 	notifySignalsContext = signal.NotifyContext
 )
 
@@ -121,6 +125,10 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.List(cwd, args)
 	case "status":
 		return cli.Status(cwd, args)
+	case "context":
+		return mainContext(cwd, args)
+	case "afford":
+		return mainAfford(cwd, args)
 	case "attach":
 		return cli.Attach(cwd, args)
 	case "stop":

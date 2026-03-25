@@ -231,6 +231,28 @@ esac
 	}
 
 	runDir := goalx.RunDir(repo, cfg.Name)
+	activity, err := LoadActivitySnapshot(ActivityPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadActivitySnapshot: %v", err)
+	}
+	if activity == nil || activity.Run.RunName != cfg.Name {
+		t.Fatalf("activity snapshot not written correctly: %+v", activity)
+	}
+	index, err := LoadContextIndex(ContextIndexPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadContextIndex: %v", err)
+	}
+	if index == nil || index.RunName != cfg.Name {
+		t.Fatalf("context index not written correctly: %+v", index)
+	}
+	affordances, err := LoadAffordances(AffordancesJSONPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadAffordances: %v", err)
+	}
+	if affordances == nil || affordances.RunName != cfg.Name {
+		t.Fatalf("affordances not written correctly: %+v", affordances)
+	}
+
 	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
 	if err != nil {
 		t.Fatalf("LoadRunMetadata: %v", err)
@@ -334,6 +356,101 @@ esac
 	// Framework must not auto-derive status or change_kind
 	if strings.Contains(stateText, `"status"`) {
 		t.Fatalf("acceptance state must not contain derived status field:\n%s", stateText)
+	}
+}
+
+func TestStartRefreshesActivityAfterMasterLaunch(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	goalxDir := filepath.Join(repo, ".goalx")
+	if err := os.MkdirAll(goalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	cfg := goalx.Config{
+		Name:      "guidance-start",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship it",
+		Target:    goalx.TargetConfig{Files: []string{"README.md"}},
+		Harness:   goalx.HarnessConfig{Command: "test -f README.md"},
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(goalxDir, "goalx.yaml"), data, 0o644); err != nil {
+		t.Fatalf("write goalx.yaml: %v", err)
+	}
+
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	tmuxPath := filepath.Join(binDir, "tmux")
+	script := `#!/bin/sh
+set -eu
+state="${GOALX_FAKE_TMUX_STATE:?}"
+mkdir -p "$state"
+cmd="$1"
+shift
+case "$cmd" in
+  has-session)
+    target="$2"
+    if [ -f "$state/session_$target" ]; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  new-session)
+    name=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "-s" ]; then
+        shift
+        name="$1"
+        break
+      fi
+      shift
+    done
+    : > "$state/session_$name"
+    exit 0
+    ;;
+  capture-pane)
+    printf 'master launched\n'
+    exit 0
+    ;;
+  kill-session)
+    target="$2"
+    rm -f "$state/session_$target"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
+
+	origLaunchSidecar := launchRunSidecar
+	defer func() { launchRunSidecar = origLaunchSidecar }()
+	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+
+	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	runDir := goalx.RunDir(repo, cfg.Name)
+	activity, err := LoadActivitySnapshot(ActivityPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadActivitySnapshot: %v", err)
+	}
+	if activity == nil || !activity.Actors["master"].PanePresent {
+		t.Fatalf("master pane facts missing after start: %+v", activity)
 	}
 }
 

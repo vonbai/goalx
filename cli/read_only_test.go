@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	goalx "github.com/vonbai/goalx"
 	"gopkg.in/yaml.v3"
@@ -63,6 +64,80 @@ func TestObserveShowsDegradedRunWithoutTmux(t *testing.T) {
 
 	assertFileUnchanged(t, RunRuntimeStatePath(runDir), runStateBefore)
 	assertFileUnchanged(t, ProjectStatusCachePath(repo), statusBefore)
+}
+
+func TestObservePrefersCanonicalControlFactsOverStaleActivitySnapshot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	if _, err := AppendMasterInboxMessage(runDir, "tell", "user", "fresh work"); err != nil {
+		t.Fatalf("AppendMasterInboxMessage: %v", err)
+	}
+	if err := RenewControlLease(runDir, "master", meta.RunID, meta.Epoch, time.Minute, "tmux", 1234); err != nil {
+		t.Fatalf("RenewControlLease master: %v", err)
+	}
+	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
+		t.Fatalf("ExpireControlLease sidecar: %v", err)
+	}
+	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
+		Version: 1,
+		Items: []ControlReminder{
+			{ReminderID: "rem-1", DedupeKey: "master-wake", Reason: "control-cycle", Target: "gx-demo:master"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlReminders: %v", err)
+	}
+	if err := SaveControlDeliveries(ControlDeliveriesPath(runDir), &ControlDeliveries{
+		Version: 1,
+		Items: []ControlDelivery{
+			{DeliveryID: "del-1", DedupeKey: "master-wake", Status: "failed", Target: "gx-demo:master"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlDeliveries: %v", err)
+	}
+	if err := SaveActivitySnapshot(runDir, &ActivitySnapshot{
+		Version:   1,
+		CheckedAt: "2026-03-25T00:00:00Z",
+		Run: ActivityRunInfo{
+			ProjectID:   goalx.ProjectID(repo),
+			RunName:     cfg.Name,
+			RunID:       meta.RunID,
+			Epoch:       meta.Epoch,
+			TmuxSession: goalx.TmuxSessionName(repo, cfg.Name),
+		},
+		Queue: ActivityQueue{
+			MasterUnread:     4,
+			RemindersDue:     2,
+			DeliveriesFailed: 1,
+		},
+		Actors: map[string]ActivityActor{
+			"master":  {Lease: "healthy"},
+			"sidecar": {Lease: "expired"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveActivitySnapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "master.jsonl"), []byte("{\"round\":1,\"desc\":\"master still coordinating\",\"status\":\"active\"}\n"), 0o644); err != nil {
+		t.Fatalf("write master journal: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Observe(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	})
+	for _, want := range []string{
+		"unread_inbox=1",
+		"master_lease=healthy",
+		"sidecar_lease=expired",
+		"reminders_due=1",
+		"deliveries_failed=1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("observe output missing %q:\n%s", want, out)
+		}
+	}
 }
 
 func TestObserveHelpDoesNotResolveRun(t *testing.T) {

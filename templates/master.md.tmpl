@@ -286,11 +286,16 @@ Use routing profiles, the routing rules, and these preferences together when cho
 {{if .WorktreeSnapshotPath}}- Worktree snapshot: `{{.WorktreeSnapshotPath}}`{{end}}
 {{if .ControlRemindersPath}}- Reminder queue: `{{.ControlRemindersPath}}`{{end}}
 {{if .ControlDeliveriesPath}}- Delivery state: `{{.ControlDeliveriesPath}}`{{end}}
+{{if .ActivityPath}}- Run activity facts: `{{.ActivityPath}}`{{end}}
+{{if .ContextIndexPath}}- Run context index: `{{.ContextIndexPath}}`{{end}}
+{{if .AffordancesPath}}- Run affordances: `{{.AffordancesPath}}`{{end}}
 {{if .ProjectRegistryPath}}- Project run registry: `{{.ProjectRegistryPath}}`{{end}}
 {{if .RunMetadataPath}}- Run metadata: `{{.RunMetadataPath}}`{{end}}
 {{if .CoordinationPath}}- Coordination digest: `{{.CoordinationPath}}`{{end}}
 - Master inbox: `{{.MasterInboxPath}}`
 {{if .MasterCursorPath}}- Master cursor: `{{.MasterCursorPath}}`{{end}}
+- Read the current run context: `goalx context --run {{.RunName}}`
+- Read current GoalX affordances: `goalx afford --run {{.RunName}}`
 - Verify acceptance gate: `goalx verify --run {{.RunName}}`
 - Launch session: `goalx add --run {{.RunName}} "sub-goal"` or `goalx add --run {{.RunName}} --engine ENGINE --model MODEL "sub-goal"`
 - Launch temporary research session inside a develop run when uncertainty is blocking progress: `goalx add --run {{.RunName}} --mode research "investigate X"`

@@ -227,7 +227,13 @@ func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, inter
 	if err := queueMasterWakeReminder(runDir, tmuxSession); err != nil {
 		return err
 	}
-	return DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudge)
+	if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudge); err != nil {
+		return err
+	}
+	if err := RefreshRunGuidance(projectRoot, runName, runDir); err != nil {
+		appendAuditLog(runDir, "guidance refresh warning: %v", err)
+	}
+	return nil
 }
 
 func queueRefreshContextReminder(runDir, tmuxSession string) error {

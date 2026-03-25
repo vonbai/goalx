@@ -341,6 +341,9 @@ func Add(projectRoot string, args []string) (err error) {
 	if _, err := DeliverControlNudge(rc.RunDir, "session-added:"+sName, "session-added:"+sName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudge); err != nil {
 		return fmt.Errorf("nudge master: %w", err)
 	}
+	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
+	}
 
 	fmt.Printf("Added %s to run '%s'\n", sName, rc.Name)
 	fmt.Printf("  window: %s\n", windowName)

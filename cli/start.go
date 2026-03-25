@@ -334,6 +334,9 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	if err := launchRunSidecar(projectRoot, cfg.Name, time.Duration(checkSec)*time.Second); err != nil {
 		return fmt.Errorf("launch sidecar: %w", err)
 	}
+	if err := RefreshRunGuidance(projectRoot, cfg.Name, runDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
+	}
 
 	// 14. Print status
 	fmt.Printf("✓ Run '%s' started\n", cfg.Name)

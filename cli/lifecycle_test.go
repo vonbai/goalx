@@ -415,6 +415,41 @@ func TestReplaceCreatesReplacementSessionWithRouteOverrideAndLineage(t *testing.
 		t.Fatalf("Replace: %v", err)
 	}
 
+	activity, err := LoadActivitySnapshot(ActivityPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadActivitySnapshot: %v", err)
+	}
+	if activity == nil {
+		t.Fatal("activity snapshot missing after replace")
+	}
+	if _, ok := activity.Sessions["session-2"]; !ok {
+		t.Fatalf("activity snapshot missing replacement session: %+v", activity.Sessions)
+	}
+	index, err := LoadContextIndex(ContextIndexPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadContextIndex: %v", err)
+	}
+	if index == nil {
+		t.Fatal("context index missing after replace")
+	}
+	found := false
+	for _, sess := range index.Sessions {
+		if sess.Name == "session-2" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("context index missing replacement session: %+v", index.Sessions)
+	}
+	affordances, err := LoadAffordances(AffordancesJSONPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadAffordances: %v", err)
+	}
+	if affordances == nil || affordances.RunName != runName {
+		t.Fatalf("affordances not written correctly after replace: %+v", affordances)
+	}
+
 	oldState, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
 	if err != nil {
 		t.Fatalf("LoadSessionsRuntimeState: %v", err)

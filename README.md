@@ -113,6 +113,8 @@ Default to `goalx auto`. Use `goalx research` / `goalx develop` when you want an
 | `goalx auto` | Init and start one master-led run, then exit |
 | `goalx research` | Start a research run directly from CLI flags (`--effort`, `--dimension`, role overrides) |
 | `goalx develop` | Start a develop run directly from CLI flags (`--effort`, `--dimension`, role overrides) |
+| `goalx context` | Show the run-scoped context index: stable paths, roster, roles, and capability facts |
+| `goalx afford` | Show the run-scoped GoalX command/path affordances in markdown or JSON |
 | `goalx observe` | Live transport capture when available plus control-plane summary |
 | `goalx status` | Progress summary plus run ID, epoch, charter health, lease health, unread inbox, reminders, and delivery failures |
 | `goalx focus` | Set the default run used by commands that omit `--run` |
@@ -172,6 +174,7 @@ Use `goalx init` + `goalx start --config .goalx/goalx.yaml`, direct config edits
 - Saved runs live under `~/.goalx/runs/{projectID}/saved/{run}` after `goalx save`.
 - Active protocol uses immutable `run-spec.yaml` plus `run-charter.json`, with mutable `state/run.json`, `state/sessions.json`, `control/*`, and `proof/completion.json`.
 - The durable control plane is centered on run-scoped files such as `control/run-identity.json`, `control/identity-fence.json`, `control/run-state.json`, `control/inbox/master.jsonl`, `control/reminders.json`, and `control/deliveries.json`.
+- GoalX also writes read-only guidance surfaces under `control/`: `activity.json`, `context-index.json`, and `affordances.{json,md}`. These are derived run facts and command surfaces for humans and agents, not a second source of truth.
 - `goalx save` exports immutable provenance too: `run-charter.json` plus `sessions/session-N/identity.json` for every durable worker.
 - User-scoped `registry.json` and `status.json` under `~/.goalx/runs/{projectID}/` are convenience indexes and external progress summaries, not the source of truth.
 - `artifacts.json` is the durable index for saved reports and other research outputs consumed by `result`, `debate`, `implement`, and `explore`.

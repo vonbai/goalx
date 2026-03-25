@@ -136,3 +136,77 @@ func TestStatusShowsControlQueueAndLeaseSummary(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusPrefersCanonicalControlFactsOverStaleActivitySnapshot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	if _, err := AppendMasterInboxMessage(runDir, "tell", "user", "fresh work"); err != nil {
+		t.Fatalf("AppendMasterInboxMessage: %v", err)
+	}
+	if err := RenewControlLease(runDir, "master", meta.RunID, meta.Epoch, time.Minute, "tmux", 1234); err != nil {
+		t.Fatalf("RenewControlLease master: %v", err)
+	}
+	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
+		t.Fatalf("ExpireControlLease sidecar: %v", err)
+	}
+	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
+		Version: 1,
+		Items: []ControlReminder{
+			{ReminderID: "rem-1", DedupeKey: "master-wake", Reason: "control-cycle", Target: "gx-demo:master"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlReminders: %v", err)
+	}
+	if err := SaveControlDeliveries(ControlDeliveriesPath(runDir), &ControlDeliveries{
+		Version: 1,
+		Items: []ControlDelivery{
+			{DeliveryID: "del-1", DedupeKey: "master-wake", Status: "failed", Target: "gx-demo:master"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlDeliveries: %v", err)
+	}
+	if err := SaveActivitySnapshot(runDir, &ActivitySnapshot{
+		Version:   1,
+		CheckedAt: time.Now().UTC().Format(time.RFC3339),
+		Run: ActivityRunInfo{
+			ProjectID:   goalx.ProjectID(repo),
+			RunName:     cfg.Name,
+			RunID:       meta.RunID,
+			Epoch:       meta.Epoch,
+			TmuxSession: goalx.TmuxSessionName(repo, cfg.Name),
+		},
+		Queue: ActivityQueue{
+			MasterUnread:     7,
+			RemindersDue:     3,
+			DeliveriesFailed: 2,
+		},
+		Actors: map[string]ActivityActor{
+			"master":  {Lease: "expired"},
+			"sidecar": {Lease: "healthy"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveActivitySnapshot: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"run_id=" + meta.RunID,
+		"epoch=1",
+		"unread_inbox=1",
+		"master_lease=healthy",
+		"sidecar_lease=expired",
+		"reminders_due=1",
+		"deliveries_failed=1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+}

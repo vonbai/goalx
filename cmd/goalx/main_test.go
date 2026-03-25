@@ -291,6 +291,42 @@ func TestRunCommandDispatchesWait(t *testing.T) {
 	}
 }
 
+func TestRunCommandDispatchesContext(t *testing.T) {
+	oldContext := mainContext
+	defer func() { mainContext = oldContext }()
+
+	called := false
+	mainContext = func(string, []string) error {
+		called = true
+		return nil
+	}
+
+	if err := runCommand(t.TempDir(), "context", []string{"--run", "demo"}); err != nil {
+		t.Fatalf("runCommand context: %v", err)
+	}
+	if !called {
+		t.Fatal("context command was not dispatched")
+	}
+}
+
+func TestRunCommandDispatchesAfford(t *testing.T) {
+	oldAfford := mainAfford
+	defer func() { mainAfford = oldAfford }()
+
+	called := false
+	mainAfford = func(string, []string) error {
+		called = true
+		return nil
+	}
+
+	if err := runCommand(t.TempDir(), "afford", []string{"--run", "demo", "master"}); err != nil {
+		t.Fatalf("runCommand afford: %v", err)
+	}
+	if !called {
+		t.Fatal("afford command was not dispatched")
+	}
+}
+
 func TestRunCommandSupportsDimension(t *testing.T) {
 	if err := runCommand(t.TempDir(), "dimension", []string{"--help"}); err != nil {
 		t.Fatalf("runCommand dimension --help: %v", err)

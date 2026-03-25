@@ -607,6 +607,14 @@ func (a *serveApp) runServeAction(projectRoot, action string, req serveActionReq
 			return Observe(projectRoot, buildServeRunArgs(req.Run))
 		case "status":
 			return Status(projectRoot, buildServeStatusArgs(req.Run, req.Session))
+		case "context":
+			return Context(projectRoot, buildServeRunArgs(req.Run))
+		case "afford":
+			args := buildServeRunArgs(req.Run)
+			if strings.TrimSpace(req.Session) != "" {
+				args = append(args, req.Session)
+			}
+			return Afford(projectRoot, args)
 		case "add":
 			if strings.TrimSpace(req.Direction) == "" {
 				return fmt.Errorf("direction is required")

@@ -260,6 +260,20 @@ func TestServeHandlerGoalxActionRoutes(t *testing.T) {
 			wantReq:    serveActionRequest{Run: "auth-audit"},
 		},
 		{
+			name:       "context",
+			path:       "/projects/goalx/goalx/context",
+			body:       `{"run":"auth-audit"}`,
+			wantAction: "context",
+			wantReq:    serveActionRequest{Run: "auth-audit"},
+		},
+		{
+			name:       "afford",
+			path:       "/projects/goalx/goalx/afford",
+			body:       `{"run":"auth-audit","session":"session-1"}`,
+			wantAction: "afford",
+			wantReq:    serveActionRequest{Run: "auth-audit", Session: "session-1"},
+		},
+		{
 			name:       "status",
 			path:       "/projects/goalx/goalx/status",
 			body:       `{"run":"auth-audit","session":"session-1"}`,

@@ -1,0 +1,73 @@
+package cli
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestBuildAffordancesIncludesRunScopedCommands(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	doc, err := BuildAffordances(repo, cfg.Name, runDir, "")
+	if err != nil {
+		t.Fatalf("BuildAffordances: %v", err)
+	}
+
+	commands := make([]string, 0, len(doc.Items))
+	for _, item := range doc.Items {
+		commands = append(commands, item.Command)
+	}
+	joined := strings.Join(commands, "\n")
+	for _, want := range []string{
+		"goalx status --run guidance-run",
+		"goalx observe --run guidance-run",
+		"goalx context --run guidance-run",
+		"goalx afford --run guidance-run",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("affordance commands missing %q:\n%s", want, joined)
+		}
+	}
+}
+
+func TestRenderAffordancesMarkdownUsesCurrentRunPaths(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	doc, err := BuildAffordances(repo, cfg.Name, runDir, "master")
+	if err != nil {
+		t.Fatalf("BuildAffordances: %v", err)
+	}
+	text := RenderAffordancesMarkdown(doc)
+
+	for _, want := range []string{
+		"# GoalX Affordances",
+		"goalx context --run guidance-run",
+		"goalx afford --run guidance-run master",
+		runDir,
+		ControlDir(runDir),
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("markdown affordances missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestAffordancesAvoidRecommendationLanguage(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	doc, err := BuildAffordances(repo, cfg.Name, runDir, "")
+	if err != nil {
+		t.Fatalf("BuildAffordances: %v", err)
+	}
+	text := RenderAffordancesMarkdown(doc)
+	for _, unwanted := range []string{
+		"you should",
+		"recommended next step",
+		"best action",
+		"must now",
+	} {
+		if strings.Contains(strings.ToLower(text), unwanted) {
+			t.Fatalf("affordance markdown should avoid %q:\n%s", unwanted, text)
+		}
+	}
+}

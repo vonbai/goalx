@@ -1292,6 +1292,45 @@ func TestRenderMasterProtocolTightensClaudeNativeSubagentUsage(t *testing.T) {
 	}
 }
 
+func TestRenderMasterProtocolReferencesGoalxContextAndAfford(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:             "ship it",
+		RunName:               "demo",
+		Mode:                  goalx.ModeDevelop,
+		Master:                goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		ContextIndexPath:      "/tmp/control/context-index.json",
+		ActivityPath:          "/tmp/control/activity.json",
+		AffordancesPath:       "/tmp/control/affordances.md",
+		ControlRunStatePath:   "/tmp/control/run-state.json",
+		RunStatePath:          "/tmp/state/run.json",
+		SessionsStatePath:     "/tmp/state/sessions.json",
+		ControlRemindersPath:  "/tmp/control/reminders.json",
+		ControlDeliveriesPath: "/tmp/control/deliveries.json",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"`goalx context --run demo`",
+		"`goalx afford --run demo`",
+		"`/tmp/control/context-index.json`",
+		"`/tmp/control/activity.json`",
+		"`/tmp/control/affordances.md`",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func sectionBetween(text, start, end string) string {
 	startIdx := strings.Index(text, start)
 	if startIdx < 0 {

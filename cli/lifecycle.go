@@ -101,6 +101,9 @@ func Park(projectRoot string, args []string) error {
 	if err := UpsertSessionRuntimeState(rc.RunDir, snapshot); err != nil {
 		return fmt.Errorf("update session runtime state: %w", err)
 	}
+	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
+	}
 
 	fmt.Printf("Parked %s in run '%s'\n", sessionName, rc.Name)
 	return nil
@@ -273,6 +276,9 @@ func Resume(projectRoot string, args []string) error {
 	}
 	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_resumed", "goalx resume", fmt.Sprintf("%s was resumed for reuse.", sessionName)); err == nil {
 		_, _ = DeliverControlNudge(rc.RunDir, "session-resumed:"+sessionName, "session-resumed:"+sessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudge)
+	}
+	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 
 	fmt.Printf("Resumed %s in run '%s'\n", sessionName, rc.Name)
@@ -621,6 +627,9 @@ func Replace(projectRoot string, args []string) error {
 	}
 	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_replaced", "goalx replace", fmt.Sprintf("%s was replaced by %s.", oldSessionName, newSessionName)); err == nil {
 		_, _ = DeliverControlNudge(rc.RunDir, "session-replaced:"+oldSessionName, "session-replaced:"+newSessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudge)
+	}
+	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 
 	fmt.Printf("Replaced %s with %s in run '%s'\n", oldSessionName, newSessionName, rc.Name)

@@ -55,6 +55,9 @@ type ProtocolData struct {
 	WorktreeSnapshotPath   string
 	ControlRemindersPath   string
 	ControlDeliveriesPath  string
+	ActivityPath           string
+	ContextIndexPath       string
+	AffordancesPath        string
 	MasterJournalPath      string
 	StatusPath             string // user-scoped status cache for external progress reporting
 	EngineCommand          string // resolved master engine command
@@ -120,6 +123,15 @@ func normalizeProtocolData(data ProtocolData, runDir string) ProtocolData {
 	}
 	if data.DimensionsPath == "" && runDir != "" {
 		data.DimensionsPath = ControlDimensionsPath(runDir)
+	}
+	if data.ActivityPath == "" && runDir != "" {
+		data.ActivityPath = ActivityPath(runDir)
+	}
+	if data.ContextIndexPath == "" && runDir != "" {
+		data.ContextIndexPath = ContextIndexPath(runDir)
+	}
+	if data.AffordancesPath == "" && runDir != "" {
+		data.AffordancesPath = AffordancesMarkdownPath(runDir)
 	}
 	return data
 }
