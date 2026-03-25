@@ -66,7 +66,7 @@ roles:
   develop:  { engine: codex, model: gpt-5.4, effort: medium }
 ```
 
-Project-level config is for project-specific harness only:
+Project-level config is for shared project defaults, not just launch-time engine choices. A common use is an optional local validation command:
 ```yaml
 # .goalx/config.yaml — project-specific
 harness:
@@ -148,7 +148,7 @@ goalx auto → master-led run
            → goalx research / goalx develop when you want a direct phase-specific run
            → observe / status while it runs
            → redirect only when needed
-           → verify before done / implement closeout
+           → verify when you need fresh acceptance evidence
            → save / result when the run finishes
            → goalx debate --from RUN / goalx implement --from RUN / goalx explore --from RUN for follow-up phases
 ```
@@ -256,11 +256,11 @@ goalx/
 
 ### Protocol Design
 
-GoalX is a **protocol scaffolding tool**. The Go code launches the master, exposes worker-management tools, and handles git/worktree mechanics; the orchestration logic lives in the protocol templates. The live protocol is built around immutable charter/identity files plus mutable goal/gate/proof state:
+GoalX is a **protocol scaffolding tool**. The Go code launches the master, exposes worker-management tools, and handles git/worktree mechanics; the orchestration logic lives in the protocol templates. The live protocol is built around immutable charter/identity files plus mutable goal/acceptance/proof state and read-only guidance surfaces under `control/`:
 
-**Master** (`master.md.tmpl`): Final responsible party and lightweight dispatcher. Re-reads `run-charter.json` and `control/run-identity.json` as the durable identity anchor, maintains `goal.json` as the mutable completion boundary, appends boundary/path decisions to `goal-log.jsonl`, keeps required outcomes covered or explicitly blocked, dispatches parallel work when independent required slices remain, parks idle sessions for later reuse, resumes parked sessions before creating unnecessary new ones, keeps `acceptance.json` aligned with the current verification gate, rescues dead or stuck sessions, runs verification before `done` / `implement`, and cannot close a run without both passing acceptance and a canonical `proof/completion.json`.
+**Master** (`master.md.tmpl`): Final responsible party and lightweight dispatcher. Re-reads `run-charter.json` as the durable structural anchor, maintains `goal.json` as the mutable completion boundary, appends boundary/path decisions to `goal-log.jsonl`, keeps required outcomes covered or explicitly blocked, dispatches parallel work when independent required slices remain, parks idle sessions for later reuse, resumes parked sessions before creating unnecessary new ones, rescues dead or stuck sessions, reads `goalx context` / `goalx afford` as the canonical run guidance surfaces, and treats `goalx verify` as evidence recording only. The master interprets acceptance results and builds `proof/completion.json` itself.
 
-**Subagent** (`program.md.tmpl`): Hypothesis-driven exploration (research) or structured TDD (develop). Resumes from `sessions/session-N/identity.json` plus `run-charter.json`, then executes the current assignment. `goal.json` remains the mutable completion boundary, `acceptance.json` remains the verification gate, and `proof/completion.json` remains the canonical closeout proof. Communicates via journal files plus the durable session inbox/cursor pair, including concise blocker and dependency hints so the master can rebalance work quickly or park/resume the session cleanly.
+**Subagent** (`program.md.tmpl`): Hypothesis-driven exploration (research) or structured TDD (develop). Resumes from `sessions/session-N/identity.json`, `run-charter.json`, and the run-scoped guidance surfaces, then executes the current assignment. `goal.json` remains the mutable completion boundary, `acceptance.json` remains verification-only state, and `proof/completion.json` remains the canonical closeout proof. A session-local validation command may exist, but it is not the run acceptance contract. Communicates via journal files plus the durable session inbox/cursor pair, including concise blocker and dependency hints so the master can rebalance work quickly or park/resume the session cleanly.
 
 ### Config Model
 
