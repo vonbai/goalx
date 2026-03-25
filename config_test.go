@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -559,6 +560,32 @@ harness:
 	}
 	if cfg.Harness.Command != "go build ./... && go test ./..." {
 		t.Fatalf("harness.command = %q, want project harness", cfg.Harness.Command)
+	}
+}
+
+func TestLoadConfigMergesHarnessTimeoutWithoutCommand(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	projectGoalxDir := filepath.Join(projectRoot, ".goalx")
+	if err := os.MkdirAll(projectGoalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	projectCfg := []byte(strings.TrimSpace(`
+harness:
+  timeout: 30s
+`) + "\n")
+	if err := os.WriteFile(filepath.Join(projectGoalxDir, "config.yaml"), projectCfg, 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	cfg, _, err := LoadRawBaseConfig(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadRawBaseConfig: %v", err)
+	}
+	if cfg.Harness.Timeout != 30*time.Second {
+		t.Fatalf("harness.timeout = %v, want %v", cfg.Harness.Timeout, 30*time.Second)
 	}
 }
 

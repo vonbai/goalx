@@ -909,7 +909,10 @@ func mergeConfig(base, overlay *Config) {
 		base.Target.Readonly = overlay.Target.Readonly
 	}
 	if overlay.Harness.Command != "" {
-		base.Harness = overlay.Harness
+		base.Harness.Command = overlay.Harness.Command
+	}
+	if overlay.Harness.Timeout > 0 {
+		base.Harness.Timeout = overlay.Harness.Timeout
 	}
 	if overlay.Acceptance.Command != "" {
 		base.Acceptance.Command = overlay.Acceptance.Command

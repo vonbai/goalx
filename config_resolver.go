@@ -28,6 +28,9 @@ func resolveConfigWithDetector(layers *ConfigLayers, req ResolveRequest, detect 
 		attachCatalogs(&cfg, copyPresetCatalog(layers.Presets), copyStringCatalog(layers.Dimensions))
 	}
 
+	if req.Name != "" {
+		cfg.Name = req.Name
+	}
 	if req.Mode != "" {
 		cfg.Mode = req.Mode
 	}
@@ -40,6 +43,11 @@ func resolveConfigWithDetector(layers *ConfigLayers, req ResolveRequest, detect 
 	if req.Parallel > 0 {
 		cfg.Parallel = req.Parallel
 	}
+	if req.ClearSessions {
+		cfg.Sessions = nil
+	}
+	applyResolveTargetOverride(&cfg, req.TargetOverride)
+	applyResolveHarnessOverride(&cfg, req.HarnessOverride)
 
 	if cfg.Preset == "" {
 		cfg.Preset = detect()
@@ -100,5 +108,29 @@ func applyResolveOverrides(cfg *Config, req ResolveRequest) {
 		if req.DevelopOverride.Effort != "" {
 			cfg.Roles.Develop.Effort = req.DevelopOverride.Effort
 		}
+	}
+}
+
+func applyResolveTargetOverride(cfg *Config, override *TargetConfig) {
+	if cfg == nil || override == nil {
+		return
+	}
+	if len(override.Files) > 0 {
+		cfg.Target.Files = append([]string(nil), override.Files...)
+	}
+	if len(override.Readonly) > 0 {
+		cfg.Target.Readonly = append([]string(nil), override.Readonly...)
+	}
+}
+
+func applyResolveHarnessOverride(cfg *Config, override *HarnessConfig) {
+	if cfg == nil || override == nil {
+		return
+	}
+	if override.Command != "" {
+		cfg.Harness.Command = override.Command
+	}
+	if override.Timeout > 0 {
+		cfg.Harness.Timeout = override.Timeout
 	}
 }

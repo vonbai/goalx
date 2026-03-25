@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	goalx "github.com/vonbai/goalx"
 )
@@ -247,5 +248,62 @@ harness:
 				t.Fatalf("develop = %s/%s, want %s/%s", cfg.Roles.Develop.Engine, cfg.Roles.Develop.Model, resolved.Config.Roles.Develop.Engine, resolved.Config.Roles.Develop.Model)
 			}
 		})
+	}
+}
+
+func TestResolveLaunchConfigIgnoresSharedSessionsForDirectLaunch(t *testing.T) {
+	projectRoot := t.TempDir()
+	writeLaunchConfigProjectFile(t, projectRoot, `
+preset: codex
+target:
+  files: ["."]
+harness:
+  command: go test ./...
+sessions:
+  - engine: nope
+    model: bad
+`)
+
+	resolvedCfg, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeDevelop,
+	})
+	if err != nil {
+		t.Fatalf("resolveLaunchConfig: %v", err)
+	}
+	if len(resolvedCfg.Config.Sessions) != 0 {
+		t.Fatalf("sessions = %#v, want direct launch to clear shared sessions", resolvedCfg.Config.Sessions)
+	}
+	if err := goalx.ValidateConfig(&resolvedCfg.Config, resolvedCfg.Engines); err != nil {
+		t.Fatalf("ValidateConfig: %v", err)
+	}
+}
+
+func TestResolveLaunchConfigPreservesHarnessTimeoutWhenInferringCommand(t *testing.T) {
+	projectRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module example.com/demo\n\ngo 1.24\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	writeLaunchConfigProjectFile(t, projectRoot, `
+preset: codex
+target:
+  files: ["."]
+harness:
+  timeout: 30s
+`)
+
+	resolvedCfg, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeDevelop,
+	})
+	if err != nil {
+		t.Fatalf("resolveLaunchConfig: %v", err)
+	}
+	wantCommand := "go build ./... && go test ./... -count=1 && go vet ./..."
+	if resolvedCfg.Config.Harness.Command != wantCommand {
+		t.Fatalf("harness.command = %q, want %q", resolvedCfg.Config.Harness.Command, wantCommand)
+	}
+	if resolvedCfg.Config.Harness.Timeout != 30*time.Second {
+		t.Fatalf("harness.timeout = %v, want %v", resolvedCfg.Config.Harness.Timeout, 30*time.Second)
 	}
 }

@@ -149,22 +149,27 @@ func resolveLaunchConfig(projectRoot string, opts launchOptions) (*goalx.Resolve
 }
 
 func buildLaunchResolveRequest(projectRoot string, baseCfg goalx.Config, opts launchOptions) (goalx.ResolveRequest, error) {
-	overlay := goalx.Config{
-		Name: launchConfigName(opts),
+	req := goalx.ResolveRequest{
+		Name:          launchConfigName(opts),
+		Mode:          opts.Mode,
+		Objective:     opts.Objective,
+		Preset:        opts.Preset,
+		Parallel:      opts.Parallel,
+		ClearSessions: true,
 	}
 	if len(baseCfg.Target.Files) == 0 {
 		target := InferTarget(projectRoot)
 		if len(target) == 0 {
 			target = []string{"TODO: specify directories to modify"}
 		}
-		overlay.Target = goalx.TargetConfig{Files: target}
+		req.TargetOverride = &goalx.TargetConfig{Files: target}
 	}
 	if baseCfg.Harness.Command == "" {
 		harness := InferHarness(projectRoot)
 		if harness == "" {
 			harness = "TODO: build + test command"
 		}
-		overlay.Harness = goalx.HarnessConfig{Command: harness}
+		req.HarnessOverride = &goalx.HarnessConfig{Command: harness}
 	}
 
 	masterOverride, researchOverride, developOverride, err := launchRoleOverrides(opts)
@@ -172,16 +177,10 @@ func buildLaunchResolveRequest(projectRoot string, baseCfg goalx.Config, opts la
 		return goalx.ResolveRequest{}, err
 	}
 
-	return goalx.ResolveRequest{
-		ManualDraft:      &overlay,
-		Mode:             opts.Mode,
-		Objective:        opts.Objective,
-		Preset:           opts.Preset,
-		Parallel:         opts.Parallel,
-		MasterOverride:   masterOverride,
-		ResearchOverride: researchOverride,
-		DevelopOverride:  developOverride,
-	}, nil
+	req.MasterOverride = masterOverride
+	req.ResearchOverride = researchOverride
+	req.DevelopOverride = developOverride
+	return req, nil
 }
 
 func launchConfigName(opts launchOptions) string {
