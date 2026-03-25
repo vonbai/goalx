@@ -7,16 +7,16 @@ import (
 	"testing"
 )
 
-func TestObserveShowsRunRuntimeStateAndProjectStatusCache(t *testing.T) {
+func TestObserveShowsRunRuntimeStateAndRunStatusRecord(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 
 	runState := `{"version":1,"run":"guidance-run","mode":"develop","active":true,"updated_at":"2026-03-25T00:00:00Z"}`
 	if err := os.WriteFile(RunRuntimeStatePath(runDir), []byte(runState), 0o644); err != nil {
 		t.Fatalf("write run runtime state: %v", err)
 	}
-	projectStatus := `{"phase":"working","recommendation":"keep going","acceptance_met":false}`
-	if err := os.WriteFile(ProjectStatusCachePath(repo), []byte(projectStatus), 0o644); err != nil {
-		t.Fatalf("write project status cache: %v", err)
+	runStatus := `{"phase":"working","recommendation":"keep going","acceptance_met":false}`
+	if err := os.WriteFile(RunStatusPath(runDir), []byte(runStatus), 0o644); err != nil {
+		t.Fatalf("write run status record: %v", err)
 	}
 
 	out := captureStdout(t, func() {
@@ -28,8 +28,8 @@ func TestObserveShowsRunRuntimeStateAndProjectStatusCache(t *testing.T) {
 	for _, want := range []string{
 		"### Run runtime state",
 		runState,
-		"### Project status cache",
-		projectStatus,
+		"### Run status record",
+		runStatus,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("observe output missing %q:\n%s", want, out)

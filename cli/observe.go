@@ -40,7 +40,7 @@ func Observe(projectRoot string, args []string) error {
 	printStatusControlSummary(rc)
 
 	printObserveStatusSection("### Run runtime state", RunRuntimeStatePath(rc.RunDir))
-	printObserveStatusSection("### Project status cache", ProjectStatusCachePath(rc.ProjectRoot))
+	printObserveStatusSection("### Run status record", RunStatusPath(rc.RunDir))
 
 	if !SessionExists(rc.TmuxSession) {
 		fmt.Println("### transport")

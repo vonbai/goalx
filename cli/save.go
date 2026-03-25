@@ -70,6 +70,9 @@ func Save(projectRoot string, args []string) error {
 	if err := copyFileIfExists(SessionsRuntimeStatePath(rc.RunDir), filepath.Join(saveDir, "sessions.json")); err != nil {
 		return fmt.Errorf("copy session state: %w", err)
 	}
+	if err := copyFileIfExists(RunStatusPath(rc.RunDir), filepath.Join(saveDir, "status.json")); err != nil {
+		return fmt.Errorf("copy run status: %w", err)
+	}
 
 	if err := copyFileIfExists(GoalPath(rc.RunDir), filepath.Join(saveDir, "goal.json")); err != nil {
 		return fmt.Errorf("copy goal state: %w", err)

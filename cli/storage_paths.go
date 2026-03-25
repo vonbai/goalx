@@ -30,8 +30,8 @@ func LegacySavedRunDir(projectRoot, runName string) string {
 	return filepath.Join(LegacySavedRunsDir(projectRoot), runName)
 }
 
-func ProjectStatusCachePath(projectRoot string) string {
-	return filepath.Join(ProjectDataDir(projectRoot), "status.json")
+func RunStatusPath(runDir string) string {
+	return filepath.Join(runDir, "status.json")
 }
 
 type SavedRunLocation struct {

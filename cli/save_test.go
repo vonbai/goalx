@@ -197,7 +197,7 @@ func TestSaveCopiesGoalBoundaryArtifacts(t *testing.T) {
 	}
 }
 
-func TestSaveDoesNotMutateRunStateFromProjectStatusCache(t *testing.T) {
+func TestSaveDoesNotMutateRunStateFromRunStatusRecord(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -235,12 +235,12 @@ func TestSaveDoesNotMutateRunStateFromProjectStatusCache(t *testing.T) {
 		t.Fatalf("SaveRunRuntimeState: %v", err)
 	}
 
-	statusPath := ProjectStatusCachePath(projectRoot)
+	statusPath := RunStatusPath(runDir)
 	if err := os.MkdirAll(filepath.Dir(statusPath), 0o755); err != nil {
 		t.Fatalf("mkdir status dir: %v", err)
 	}
 	if err := os.WriteFile(statusPath, []byte(`{"run":"demo","phase":"complete","acceptance_met":true}`), 0o644); err != nil {
-		t.Fatalf("write status cache: %v", err)
+		t.Fatalf("write run status record: %v", err)
 	}
 
 	before, err := os.ReadFile(RunRuntimeStatePath(runDir))
@@ -271,6 +271,13 @@ func TestSaveDoesNotMutateRunStateFromProjectStatusCache(t *testing.T) {
 	}
 	if !afterInfo.ModTime().Equal(beforeInfo.ModTime()) {
 		t.Fatalf("run state modtime changed during save: before=%s after=%s", beforeInfo.ModTime(), afterInfo.ModTime())
+	}
+	savedStatus, err := os.ReadFile(filepath.Join(SavedRunDir(projectRoot, runName), "status.json"))
+	if err != nil {
+		t.Fatalf("read saved status record: %v", err)
+	}
+	if string(savedStatus) != `{"run":"demo","phase":"complete","acceptance_met":true}` {
+		t.Fatalf("saved status record mismatch:\nwant: %s\ngot:  %s", `{"run":"demo","phase":"complete","acceptance_met":true}`, string(savedStatus))
 	}
 }
 

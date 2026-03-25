@@ -32,7 +32,7 @@ func TestObserveLeavesRunAndStatusStateUntouched(t *testing.T) {
 	}
 
 	assertFileUnchanged(t, RunRuntimeStatePath(runDir), runStateBefore)
-	assertFileUnchanged(t, ProjectStatusCachePath(repo), statusBefore)
+	assertFileUnchanged(t, RunStatusPath(runDir), statusBefore)
 	assertTmuxTouched(t, logPath)
 }
 
@@ -63,7 +63,7 @@ func TestObserveShowsDegradedRunWithoutTmux(t *testing.T) {
 	}
 
 	assertFileUnchanged(t, RunRuntimeStatePath(runDir), runStateBefore)
-	assertFileUnchanged(t, ProjectStatusCachePath(repo), statusBefore)
+	assertFileUnchanged(t, RunStatusPath(runDir), statusBefore)
 }
 
 func TestObservePrefersCanonicalControlFactsOverStaleActivitySnapshot(t *testing.T) {
@@ -172,7 +172,7 @@ func TestStatusLeavesRunAndStatusStateUntouched(t *testing.T) {
 	}
 
 	assertFileUnchanged(t, RunRuntimeStatePath(runDir), runStateBefore)
-	assertFileUnchanged(t, ProjectStatusCachePath(repo), statusBefore)
+	assertFileUnchanged(t, RunStatusPath(runDir), statusBefore)
 }
 
 func TestReportLeavesRunAndStatusStateUntouched(t *testing.T) {
@@ -194,7 +194,7 @@ func TestReportLeavesRunAndStatusStateUntouched(t *testing.T) {
 	}
 
 	assertFileUnchanged(t, RunRuntimeStatePath(runDir), runStateBefore)
-	assertFileUnchanged(t, ProjectStatusCachePath(repo), statusBefore)
+	assertFileUnchanged(t, RunStatusPath(runDir), statusBefore)
 }
 
 func TestSaveLeavesRunAndStatusStateUntouched(t *testing.T) {
@@ -218,7 +218,7 @@ func TestSaveLeavesRunAndStatusStateUntouched(t *testing.T) {
 	}
 
 	assertFileUnchanged(t, RunRuntimeStatePath(runDir), runStateBefore)
-	assertFileUnchanged(t, ProjectStatusCachePath(repo), statusBefore)
+	assertFileUnchanged(t, RunStatusPath(runDir), statusBefore)
 }
 
 func TestVerifyDoesNotRewriteRunStateOrStatus(t *testing.T) {
@@ -257,11 +257,11 @@ func TestVerifyDoesNotRewriteRunStateOrStatus(t *testing.T) {
 		t.Fatalf("write run state: %v", err)
 	}
 	statusBefore := []byte(`{"run":"verify-run","phase":"working","recommendation":"keep going"}`)
-	if err := os.MkdirAll(filepath.Dir(ProjectStatusCachePath(repo)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(RunStatusPath(runDir)), 0o755); err != nil {
 		t.Fatalf("mkdir status dir: %v", err)
 	}
-	if err := os.WriteFile(ProjectStatusCachePath(repo), statusBefore, 0o644); err != nil {
-		t.Fatalf("write status cache: %v", err)
+	if err := os.WriteFile(RunStatusPath(runDir), statusBefore, 0o644); err != nil {
+		t.Fatalf("write run status record: %v", err)
 	}
 	if err := os.WriteFile(GoalPath(runDir), []byte(`{"version":1,"required":[{"id":"req-1","text":"ship feature","source":"user","state":"claimed","evidence_paths":["/tmp/e2e.txt"]}],"optional":[]}`), 0o644); err != nil {
 		t.Fatalf("write goal state: %v", err)
@@ -276,7 +276,7 @@ func TestVerifyDoesNotRewriteRunStateOrStatus(t *testing.T) {
 	}
 
 	assertFileUnchanged(t, RunRuntimeStatePath(runDir), runStateBefore)
-	assertFileUnchanged(t, ProjectStatusCachePath(repo), statusBefore)
+	assertFileUnchanged(t, RunStatusPath(runDir), statusBefore)
 }
 
 func writeReadOnlyRunFixture(t *testing.T, repo string) (string, string, []byte, []byte) {
@@ -311,11 +311,11 @@ func writeReadOnlyRunFixture(t *testing.T, repo string) (string, string, []byte,
 		t.Fatalf("write run state: %v", err)
 	}
 	statusBefore := []byte(`{"run":"readonly-run","phase":"working","recommendation":"keep going","active":true}`)
-	if err := os.MkdirAll(filepath.Dir(ProjectStatusCachePath(repo)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(RunStatusPath(runDir)), 0o755); err != nil {
 		t.Fatalf("mkdir status dir: %v", err)
 	}
-	if err := os.WriteFile(ProjectStatusCachePath(repo), statusBefore, 0o644); err != nil {
-		t.Fatalf("write status cache: %v", err)
+	if err := os.WriteFile(RunStatusPath(runDir), statusBefore, 0o644); err != nil {
+		t.Fatalf("write run status record: %v", err)
 	}
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
 		Version:      1,

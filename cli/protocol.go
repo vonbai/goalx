@@ -61,7 +61,7 @@ type ProtocolData struct {
 	ContextIndexPath       string
 	AffordancesPath        string
 	MasterJournalPath      string
-	StatusPath             string // user-scoped status cache for external progress reporting
+	StatusPath             string // run-scoped master-written status record
 	EngineCommand          string // resolved master engine command
 
 	// Subagent-specific (used in program.md.tmpl)
@@ -95,7 +95,7 @@ type SessionData struct {
 }
 
 type ProviderCapabilities struct {
-	ProviderLabel                    string
+	ProviderLabel                     string
 	NativeSubagentsAvailable          bool
 	NativeSubagentsRequireExplicitAsk bool
 	StopHookSafetyNet                 bool
@@ -156,14 +156,14 @@ func providerCapabilities(engine string) ProviderCapabilities {
 	switch strings.TrimSpace(engine) {
 	case "claude-code":
 		return ProviderCapabilities{
-			ProviderLabel:              "Claude Code",
+			ProviderLabel:            "Claude Code",
 			NativeSubagentsAvailable: true,
-			StopHookSafetyNet:         true,
+			StopHookSafetyNet:        true,
 			WebSearchAvailable:       true,
 		}
 	case "codex":
 		return ProviderCapabilities{
-			ProviderLabel:                    "Codex CLI",
+			ProviderLabel:                     "Codex CLI",
 			NativeSubagentsAvailable:          true,
 			NativeSubagentsRequireExplicitAsk: true,
 		}

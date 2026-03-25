@@ -14,9 +14,9 @@ import (
 	goalx "github.com/vonbai/goalx"
 )
 
-// RunRuntimeState holds master-written runtime state for a run.
-// All derived fields (GoalSatisfied, CompletionMode, etc.) are removed —
-// master writes status.json directly with whatever it decides.
+// RunRuntimeState holds framework-owned runtime facts for a run.
+// The separate run-scoped status record is master-written and carries any
+// agent-authored progress summary without project-level sharing.
 type RunRuntimeState struct {
 	Version        int    `json:"version"`
 	Run            string `json:"run"`
