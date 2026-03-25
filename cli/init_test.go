@@ -71,7 +71,7 @@ func TestInitResearchUsesResearchPresetDefaults(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
 		t.Fatalf("mkdir project config dir: %v", err)
 	}
-	projectCfg := []byte("master:\n  engine: claude-code\n  model: sonnet\n")
+	projectCfg := []byte("preset: codex\nmaster:\n  engine: claude-code\n  model: sonnet\n")
 	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), projectCfg, 0o644); err != nil {
 		t.Fatalf("write project config: %v", err)
 	}

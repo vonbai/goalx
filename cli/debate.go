@@ -18,43 +18,22 @@ func Debate(projectRoot string, args []string, nc *nextConfigJSON) error {
 	if err != nil {
 		return err
 	}
-	opts = mergeNextConfigIntoPhaseOptions(opts, nc, goalx.ModeResearch)
-	source, err := loadSavedPhaseSource(projectRoot, opts.From)
-	if err != nil {
-		return err
-	}
-	if len(source.Context) == 0 {
-		return fmt.Errorf("no reports found in %s", source.Dir)
-	}
+	return runPhaseAction(projectRoot, phaseActionSpec{
+		Kind:         "debate",
+		Mode:         goalx.ModeResearch,
+		NoContextErr: "no reports found in %s",
+		DraftHeader:  "# goalx manual draft — debate round based on %s\n",
+		DefaultHints: debatePhaseHints,
+	}, opts, nc)
+}
 
-	cfg, engines, err := resolvePhaseConfig(projectRoot, "debate", goalx.ModeResearch, source, opts)
-	if err != nil {
-		return err
+func debatePhaseHints(source *savedPhaseSource) []string {
+	if source == nil {
+		return debateDefaultHints(nil)
 	}
-	sort.Strings(source.SessionNames)
-	defaultHints := debateDefaultHints(source.SessionNames)
-	hints, err := applyPhaseDimensions(defaultHints, cfg.Parallel, opts)
-	if err != nil {
-		return err
-	}
-	contextFiles, err := phaseContextFiles(cfg, source, opts.ContextPaths)
-	if err != nil {
-		return err
-	}
-
-	applySessionHints(cfg, hints)
-	cfg.Context = goalx.ContextConfig{Files: contextFiles, Refs: cfg.Context.Refs}
-
-	if opts.WriteConfig {
-		if err := writePhaseConfig(projectRoot, cfg, fmt.Sprintf("# goalx manual draft — debate round based on %s\n", source.Run)); err != nil {
-			return err
-		}
-		fmt.Printf("Generated manual draft %s (debate from %s)\n", ManualDraftConfigPath(projectRoot), source.Run)
-		fmt.Println("\n  Next: review .goalx/goalx.yaml, then goalx start --config .goalx/goalx.yaml")
-		return nil
-	}
-
-	return startWithConfig(projectRoot, cfg, engines, phaseRunMetadataPatch(source, "debate"), false)
+	sessionNames := append([]string(nil), source.SessionNames...)
+	sort.Strings(sessionNames)
+	return debateDefaultHints(sessionNames)
 }
 
 func debateDefaultHints(sessionNames []string) []string {

@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -297,5 +298,48 @@ func TestValidateNextConfigRejectsInvalidExtendedFields(t *testing.T) {
 	}
 	if got.Sessions[1].Model != "" {
 		t.Fatalf("sessions[1].model = %q, want empty", got.Sessions[1].Model)
+	}
+}
+
+func TestValidateNextConfigUsesProjectEngineCatalog(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	cfgYAML := `
+engines:
+  localai:
+    command: "localai --model {model_id}"
+    prompt: "Read {protocol}"
+    models:
+      small: local-small
+`
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte(cfgYAML), 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	got := validateNextConfig(projectRoot, &nextConfigJSON{
+		Engine:       "localai",
+		Model:        "small",
+		MasterEngine: "localai",
+		MasterModel:  "small",
+		Sessions: []sessionConfigJSON{
+			{Hint: "worker", Engine: "localai", Model: "small"},
+		},
+	})
+	if got == nil {
+		t.Fatal("validateNextConfig returned nil")
+	}
+	if got.Engine != "localai" || got.Model != "small" {
+		t.Fatalf("engine/model = %q/%q, want localai/small", got.Engine, got.Model)
+	}
+	if got.MasterEngine != "localai" || got.MasterModel != "small" {
+		t.Fatalf("master engine/model = %q/%q, want localai/small", got.MasterEngine, got.MasterModel)
+	}
+	if len(got.Sessions) != 1 || got.Sessions[0].Engine != "localai" || got.Sessions[0].Model != "small" {
+		t.Fatalf("sessions = %#v, want localai/small preserved from project engines", got.Sessions)
 	}
 }

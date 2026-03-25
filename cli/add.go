@@ -167,12 +167,9 @@ func Add(projectRoot string, args []string) (err error) {
 	sessionLeaseTTL := time.Duration(checkSec) * time.Second * 2
 
 	// Resolve engine
-	_, engines, err := goalx.LoadConfig(rc.ProjectRoot)
+	engines, err := loadEngineCatalog(rc.ProjectRoot)
 	if err != nil {
-		_, engines, err = goalx.LoadRawBaseConfig(rc.ProjectRoot)
-		if err != nil {
-			return fmt.Errorf("load config for engine resolution: %w", err)
-		}
+		return fmt.Errorf("load config for engine resolution: %w", err)
 	}
 	launchSpec, err := goalx.ResolveLaunchSpec(engines, goalx.LaunchRequest{
 		Engine: engine,

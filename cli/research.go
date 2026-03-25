@@ -15,9 +15,5 @@ func Research(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	resolved, err := resolveLaunchConfig(projectRoot, opts)
-	if err != nil {
-		return err
-	}
-	return startWithConfig(projectRoot, &resolved.Config, resolved.Engines, nil, opts.NoSnapshot)
+	return startResolvedLaunch(projectRoot, opts)
 }

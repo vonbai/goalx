@@ -16,41 +16,18 @@ func Explore(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	source, err := loadSavedPhaseSource(projectRoot, opts.From)
-	if err != nil {
-		return err
-	}
-	if len(source.Context) == 0 {
-		return fmt.Errorf("no reports found in %s", source.Dir)
-	}
+	return runPhaseAction(projectRoot, phaseActionSpec{
+		Kind:         "explore",
+		Mode:         goalx.ModeResearch,
+		NoContextErr: "no reports found in %s",
+		DraftHeader:  "# goalx manual draft — explore based on %s\n",
+		DefaultHints: explorePhaseHints,
+	}, opts, nil)
+}
 
-	cfg, engines, err := resolvePhaseConfig(projectRoot, "explore", goalx.ModeResearch, source, opts)
-	if err != nil {
-		return err
-	}
-	contextFiles, err := phaseContextFiles(cfg, source, opts.ContextPaths)
-	if err != nil {
-		return err
-	}
-	defaultHints := []string{
+func explorePhaseHints(*savedPhaseSource) []string {
+	return []string{
 		"继续扩大证据覆盖范围，优先验证原结论的盲点、缺失案例和失败模式。",
 		"从替代架构路径、反例和更高 ROI 方案入手，补充可派发的新切片。",
 	}
-	hints, err := applyPhaseDimensions(defaultHints, cfg.Parallel, opts)
-	if err != nil {
-		return err
-	}
-	applySessionHints(cfg, hints)
-	cfg.Context = goalx.ContextConfig{Files: contextFiles, Refs: cfg.Context.Refs}
-
-	if opts.WriteConfig {
-		if err := writePhaseConfig(projectRoot, cfg, fmt.Sprintf("# goalx manual draft — explore based on %s\n", source.Run)); err != nil {
-			return err
-		}
-		fmt.Printf("Generated manual draft %s (explore from %s)\n", ManualDraftConfigPath(projectRoot), source.Run)
-		fmt.Println("\n  Next: review .goalx/goalx.yaml, then goalx start --config .goalx/goalx.yaml")
-		return nil
-	}
-
-	return startWithConfig(projectRoot, cfg, engines, phaseRunMetadataPatch(source, "explore"), false)
 }

@@ -170,7 +170,7 @@ func TestServeHandlerGoalxActionRoutes(t *testing.T) {
 	type call struct {
 		projectRoot string
 		action      string
-		args        []string
+		req         serveActionRequest
 	}
 
 	cases := []struct {
@@ -178,112 +178,142 @@ func TestServeHandlerGoalxActionRoutes(t *testing.T) {
 		path       string
 		body       string
 		wantAction string
-		wantArgs   []string
+		wantReq    serveActionRequest
 	}{
 		{
 			name:       "init",
 			path:       "/projects/goalx/goalx/init",
 			body:       `{"objective":"audit auth","mode":"research","parallel":2,"name":"auth-audit","context":["README.md","docs/arch.md"],"dimensions":["depth","security"]}`,
 			wantAction: "init",
-			wantArgs:   []string{"audit auth", "--research", "--parallel", "2", "--name", "auth-audit", "--context", "README.md,docs/arch.md", "--dimension", "depth,security"},
+			wantReq: serveActionRequest{
+				Objective: "audit auth",
+				Mode:      "research",
+				Parallel:  2,
+				Name:      "auth-audit",
+				Context:   []string{"README.md", "docs/arch.md"},
+				Dimensions: []string{
+					"depth",
+					"security",
+				},
+			},
 		},
 		{
 			name:       "start",
 			path:       "/projects/goalx/goalx/start",
 			body:       `{"objective":"implement serve","mode":"develop","parallel":1}`,
 			wantAction: "start",
-			wantArgs:   []string{"implement serve", "--develop", "--parallel", "1"},
+			wantReq: serveActionRequest{
+				Objective: "implement serve",
+				Mode:      "develop",
+				Parallel:  1,
+			},
 		},
 		{
 			name:       "start from manual draft",
 			path:       "/projects/goalx/goalx/start",
 			body:       `{"config_scope":"draft"}`,
 			wantAction: "start",
-			wantArgs:   []string{"--config", filepath.Join(workspace, ".goalx", "goalx.yaml")},
+			wantReq:    serveActionRequest{ConfigScope: "draft"},
 		},
 		{
 			name:       "auto",
 			path:       "/projects/goalx/goalx/auto",
 			body:       `{"objective":"research remote management","mode":"research","parallel":3}`,
 			wantAction: "auto",
-			wantArgs:   []string{"research remote management", "--research", "--parallel", "3"},
+			wantReq: serveActionRequest{
+				Objective: "research remote management",
+				Mode:      "research",
+				Parallel:  3,
+			},
 		},
 		{
 			name:       "research",
 			path:       "/projects/goalx/goalx/research",
 			body:       `{"objective":"triage auth bugs","parallel":2,"preset":"hybrid","master":"codex/best","research_role":"claude-code/opus"}`,
 			wantAction: "research",
-			wantArgs:   []string{"triage auth bugs", "--parallel", "2", "--preset", "hybrid", "--master", "codex/best", "--research-role", "claude-code/opus"},
+			wantReq: serveActionRequest{
+				Objective:    "triage auth bugs",
+				Parallel:     2,
+				Preset:       "hybrid",
+				Master:       "codex/best",
+				ResearchRole: "claude-code/opus",
+			},
 		},
 		{
 			name:       "implement",
 			path:       "/projects/goalx/goalx/implement",
 			body:       `{"from":"auth-audit","objective":"implement fixes","parallel":2,"develop_role":"codex/fast","write_config":true}`,
 			wantAction: "implement",
-			wantArgs:   []string{"--from", "auth-audit", "--objective", "implement fixes", "--parallel", "2", "--develop-role", "codex/fast", "--write-config"},
+			wantReq: serveActionRequest{
+				From:        "auth-audit",
+				Objective:   "implement fixes",
+				Parallel:    2,
+				DevelopRole: "codex/fast",
+				WriteConfig: true,
+			},
 		},
 		{
 			name:       "observe",
 			path:       "/projects/goalx/goalx/observe",
 			body:       `{"run":"auth-audit"}`,
 			wantAction: "observe",
-			wantArgs:   []string{"--run", "auth-audit"},
+			wantReq:    serveActionRequest{Run: "auth-audit"},
 		},
 		{
 			name:       "status",
 			path:       "/projects/goalx/goalx/status",
 			body:       `{"run":"auth-audit","session":"session-1"}`,
 			wantAction: "status",
-			wantArgs:   []string{"--run", "auth-audit", "session-1"},
+			wantReq:    serveActionRequest{Run: "auth-audit", Session: "session-1"},
 		},
 		{
 			name:       "add",
 			path:       "/projects/goalx/goalx/add",
 			body:       `{"run":"auth-audit","direction":"investigate authz"}`,
 			wantAction: "add",
-			wantArgs:   []string{"investigate authz", "--run", "auth-audit"},
+			wantReq:    serveActionRequest{Run: "auth-audit", Direction: "investigate authz"},
 		},
 		{
 			name:       "stop",
 			path:       "/projects/goalx/goalx/stop",
 			body:       `{"run":"auth-audit"}`,
 			wantAction: "stop",
-			wantArgs:   []string{"--run", "auth-audit"},
+			wantReq:    serveActionRequest{Run: "auth-audit"},
 		},
 		{
 			name:       "save",
 			path:       "/projects/goalx/goalx/save",
 			body:       `{"run":"auth-audit"}`,
 			wantAction: "save",
-			wantArgs:   []string{"--run", "auth-audit"},
+			wantReq:    serveActionRequest{Run: "auth-audit"},
 		},
 		{
 			name:       "keep",
 			path:       "/projects/goalx/goalx/keep",
 			body:       `{"run":"auth-audit","session":"session-2"}`,
 			wantAction: "keep",
-			wantArgs:   []string{"--run", "auth-audit", "session-2"},
+			wantReq:    serveActionRequest{Run: "auth-audit", Session: "session-2"},
 		},
 		{
 			name:       "drop",
 			path:       "/projects/goalx/goalx/drop",
 			body:       `{"run":"auth-audit"}`,
 			wantAction: "drop",
-			wantArgs:   []string{"--run", "auth-audit"},
+			wantReq:    serveActionRequest{Run: "auth-audit"},
 		},
 		{
 			name:       "park",
 			path:       "/projects/goalx/goalx/park",
 			body:       `{"run":"auth-audit","session":"session-2"}`,
 			wantAction: "park",
-			wantArgs:   []string{"--run", "auth-audit", "session-2"},
+			wantReq:    serveActionRequest{Run: "auth-audit", Session: "session-2"},
 		},
 		{
 			name:       "resume",
 			path:       "/projects/goalx/goalx/resume",
 			body:       `{"run":"auth-audit","session":"session-2"}`,
 			wantAction: "resume",
-			wantArgs:   []string{"--run", "auth-audit", "session-2"},
+			wantReq:    serveActionRequest{Run: "auth-audit", Session: "session-2"},
 		},
 	}
 
@@ -294,8 +324,8 @@ func TestServeHandlerGoalxActionRoutes(t *testing.T) {
 				Token:      "secret-token",
 				Workspaces: map[string]string{"goalx": workspace},
 			})
-			app.runCLI = func(projectRoot, action string, args []string) (string, error) {
-				got = call{projectRoot: projectRoot, action: action, args: append([]string(nil), args...)}
+			app.runAction = func(projectRoot, action string, req serveActionRequest) (string, error) {
+				got = call{projectRoot: projectRoot, action: action, req: req}
 				return "ok", nil
 			}
 
@@ -307,8 +337,8 @@ func TestServeHandlerGoalxActionRoutes(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 			}
-			if got.projectRoot != workspace || got.action != tc.wantAction || !reflect.DeepEqual(got.args, tc.wantArgs) {
-				t.Fatalf("call = %+v, want action=%q args=%v", got, tc.wantAction, tc.wantArgs)
+			if got.projectRoot != workspace || got.action != tc.wantAction || !reflect.DeepEqual(got.req, tc.wantReq) {
+				t.Fatalf("call = %+v, want action=%q req=%+v", got, tc.wantAction, tc.wantReq)
 			}
 		})
 	}

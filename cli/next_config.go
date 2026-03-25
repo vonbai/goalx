@@ -92,7 +92,7 @@ func validateNextConfig(projectRoot string, nc *nextConfigJSON) *nextConfigJSON 
 	}
 
 	engines := goalx.BuiltinEngines
-	if _, loadedEngines, err := goalx.LoadRawBaseConfig(projectRoot); err == nil && len(loadedEngines) > 0 {
+	if loadedEngines, err := loadEngineCatalog(projectRoot); err == nil && len(loadedEngines) > 0 {
 		engines = loadedEngines
 	}
 	switch validated.Mode {

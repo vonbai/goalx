@@ -143,3 +143,29 @@ func TestStartWithExplicitManualConfigRequiresExistingFile(t *testing.T) {
 		t.Fatalf("error = %v, want missing manual draft error", err)
 	}
 }
+
+func TestLoadManualDraftConfigRejectsPreviewPlaceholders(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	draftPath := filepath.Join(projectRoot, ".goalx", "goalx.yaml")
+	if err := os.MkdirAll(filepath.Dir(draftPath), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	writeRootConfigFixture(t, projectRoot, goalx.Config{
+		Name:      "preview-draft",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship it",
+		Target:    goalx.TargetConfig{Files: []string{"."}},
+		Harness:   goalx.HarnessConfig{Command: "TODO: build + test command"},
+	})
+
+	_, _, err := LoadManualDraftConfig(projectRoot, draftPath)
+	if err == nil {
+		t.Fatal("expected LoadManualDraftConfig to reject preview placeholders")
+	}
+	if !strings.Contains(err.Error(), "harness.command is required") {
+		t.Fatalf("error = %v, want harness placeholder validation", err)
+	}
+}

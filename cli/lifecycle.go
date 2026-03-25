@@ -166,12 +166,9 @@ func Resume(projectRoot string, args []string) error {
 		return fmt.Errorf("load session identity: %w", err)
 	}
 
-	_, engines, err := goalx.LoadConfig(rc.ProjectRoot)
+	engines, err := loadEngineCatalog(rc.ProjectRoot)
 	if err != nil {
-		_, engines, err = goalx.LoadRawBaseConfig(rc.ProjectRoot)
-		if err != nil {
-			return fmt.Errorf("load config for engine resolution: %w", err)
-		}
+		return fmt.Errorf("load config for engine resolution: %w", err)
 	}
 	spec, err := goalx.ResolveLaunchSpec(engines, goalx.LaunchRequest{
 		Engine: sessionIdentity.Engine,

@@ -21,9 +21,7 @@ func Auto(projectRoot string, args []string) error {
 	if err := autoStart(projectRoot, args); err != nil {
 		return fmt.Errorf("start: %w", err)
 	}
-
-	fmt.Println("Run started.")
-	fmt.Println("Use `goalx status`, `goalx observe`, or `goalx attach` to monitor progress.")
+	printAutoStarted()
 	return nil
 }
 
@@ -32,9 +30,14 @@ func startAuto(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	resolved, err := resolveLaunchConfig(projectRoot, opts)
-	if err != nil {
-		return err
-	}
-	return startWithConfig(projectRoot, &resolved.Config, resolved.Engines, nil, opts.NoSnapshot)
+	return autoWithOptions(projectRoot, opts)
+}
+
+func autoWithOptions(projectRoot string, opts launchOptions) error {
+	return startResolvedLaunch(projectRoot, opts)
+}
+
+func printAutoStarted() {
+	fmt.Println("Run started.")
+	fmt.Println("Use `goalx status`, `goalx observe`, or `goalx attach` to monitor progress.")
 }

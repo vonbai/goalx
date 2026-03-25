@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 
 	goalx "github.com/vonbai/goalx"
@@ -18,5 +20,32 @@ func LoadManualDraftConfig(projectRoot, draftPath string) (*goalx.Config, map[st
 	if draftPath == "" {
 		draftPath = ManualDraftConfigPath(projectRoot)
 	}
-	return goalx.LoadConfigWithManualDraft(projectRoot, draftPath)
+	if _, err := os.Stat(draftPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, fmt.Errorf("manual draft config not found: %s", draftPath)
+		}
+		return nil, nil, fmt.Errorf("manual draft config: %w", err)
+	}
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+	draft, err := goalx.LoadYAML[goalx.Config](draftPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("manual draft config: %w", err)
+	}
+	draft.Context.Files = goalx.FilterExternalContextFiles(projectRoot, draft.Context.Files)
+	resolved, err := goalx.ResolveConfig(layers, goalx.ResolveRequest{ManualDraft: &draft})
+	if err != nil {
+		return nil, nil, err
+	}
+	return &resolved.Config, resolved.Engines, nil
+}
+
+func loadEngineCatalog(projectRoot string) (map[string]goalx.EngineConfig, error) {
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	return layers.Engines, nil
 }

@@ -36,7 +36,7 @@ func LoadConfigLayers(projectRoot string) (*ConfigLayers, error) {
 		return nil, fmt.Errorf("project config: %w", err)
 	}
 	applyConfigEnvelope(&cfg, &engines, &presets, &dimensions, &projectCfg)
-	cfg.Context.Files = filterExternalContextFiles(projectRoot, cfg.Context.Files)
+	cfg.Context.Files = FilterExternalContextFiles(projectRoot, cfg.Context.Files)
 	attachCatalogs(&cfg, presets, dimensions)
 
 	return &ConfigLayers{

@@ -14,35 +14,49 @@ import (
 
 // Start executes the full goalx start workflow.
 func Start(projectRoot string, args []string) (err error) {
-	var cfg *goalx.Config
-	var engines map[string]goalx.EngineConfig
-	var opts startOptions
 	if len(args) > 0 {
 		if wantsHelp(args) {
 			fmt.Println(launchUsage("start"))
 			return nil
 		}
-		opts, err = parseStartArgs(args)
+		opts, err := parseStartArgs(args)
 		if err != nil {
 			return err
 		}
-		if opts.ConfigPath != "" {
-			cfg, engines, err = LoadManualDraftConfig(projectRoot, opts.ConfigPath)
-			if err != nil {
-				return fmt.Errorf("load manual draft config: %w", err)
-			}
-		} else {
-			resolved, err := resolveLaunchConfig(projectRoot, opts.launchOptions)
-			if err != nil {
-				return err
-			}
-			cfg = &resolved.Config
-			engines = resolved.Engines
-		}
-	} else {
-		return fmt.Errorf("goalx start requires either an objective with flags or --config PATH for an explicit manual draft")
+		return startWithOptions(projectRoot, opts)
 	}
+	return fmt.Errorf("goalx start requires either an objective with flags or --config PATH for an explicit manual draft")
+}
+
+func startWithOptions(projectRoot string, opts startOptions) error {
+	var cfg *goalx.Config
+	var engines map[string]goalx.EngineConfig
+
+	if opts.ConfigPath != "" {
+		loadedCfg, loadedEngines, err := LoadManualDraftConfig(projectRoot, opts.ConfigPath)
+		if err != nil {
+			return fmt.Errorf("load manual draft config: %w", err)
+		}
+		cfg = loadedCfg
+		engines = loadedEngines
+	} else {
+		resolved, err := resolveLaunchConfig(projectRoot, opts.launchOptions)
+		if err != nil {
+			return err
+		}
+		cfg = &resolved.Config
+		engines = resolved.Engines
+	}
+
 	return startWithConfig(projectRoot, cfg, engines, nil, opts.NoSnapshot)
+}
+
+func startResolvedLaunch(projectRoot string, opts launchOptions) error {
+	resolved, err := resolveLaunchConfig(projectRoot, opts)
+	if err != nil {
+		return err
+	}
+	return startWithConfig(projectRoot, &resolved.Config, resolved.Engines, nil, opts.NoSnapshot)
 }
 
 func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]goalx.EngineConfig, metaPatch *RunMetadata, noSnapshot bool) (err error) {

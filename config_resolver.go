@@ -12,10 +12,20 @@ type ResolvedConfig struct {
 
 // ResolveConfig applies request overrides to loaded config layers and returns one resolved config.
 func ResolveConfig(layers *ConfigLayers, req ResolveRequest) (*ResolvedConfig, error) {
-	return resolveConfigWithDetector(layers, req, DetectPresetFromEnvironment)
+	return resolveConfigWithOptions(layers, req, DetectPresetFromEnvironment, true)
+}
+
+// ResolveConfigPreview resolves config layers without enforcing launch-time validation.
+// This is used for draft-generation flows that intentionally allow placeholders.
+func ResolveConfigPreview(layers *ConfigLayers, req ResolveRequest) (*ResolvedConfig, error) {
+	return resolveConfigWithOptions(layers, req, DetectPresetFromEnvironment, false)
 }
 
 func resolveConfigWithDetector(layers *ConfigLayers, req ResolveRequest, detect func() string) (*ResolvedConfig, error) {
+	return resolveConfigWithOptions(layers, req, detect, true)
+}
+
+func resolveConfigWithOptions(layers *ConfigLayers, req ResolveRequest, detect func() string, validate bool) (*ResolvedConfig, error) {
 	if layers == nil {
 		return nil, fmt.Errorf("config layers are required")
 	}
@@ -60,8 +70,10 @@ func resolveConfigWithDetector(layers *ConfigLayers, req ResolveRequest, detect 
 		cfg.Parallel = 1
 	}
 
-	if err := ValidateConfig(&cfg, layers.Engines); err != nil {
-		return nil, err
+	if validate {
+		if err := ValidateConfig(&cfg, layers.Engines); err != nil {
+			return nil, err
+		}
 	}
 
 	return &ResolvedConfig{

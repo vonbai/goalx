@@ -15,12 +15,9 @@ func relaunchMaster(projectRoot, runDir, tmuxSession string, cfg *goalx.Config) 
 		return fmt.Errorf("run config is nil")
 	}
 
-	_, engines, err := goalx.LoadConfig(projectRoot)
+	engines, err := loadEngineCatalog(projectRoot)
 	if err != nil {
-		_, engines, err = goalx.LoadRawBaseConfig(projectRoot)
-		if err != nil {
-			return fmt.Errorf("load config for engine resolution: %w", err)
-		}
+		return fmt.Errorf("load config for engine resolution: %w", err)
 	}
 	spec, err := goalx.ResolveLaunchSpec(engines, goalx.LaunchRequest{
 		Engine: cfg.Master.Engine,

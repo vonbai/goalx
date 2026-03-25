@@ -18,6 +18,10 @@ func Init(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
+	return initWithOptions(projectRoot, opts)
+}
+
+func initWithOptions(projectRoot string, opts launchOptions) error {
 	cfg, err := buildLaunchConfig(projectRoot, opts)
 	if err != nil {
 		return err

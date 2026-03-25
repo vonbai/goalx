@@ -22,6 +22,14 @@ type savedPhaseSource struct {
 	SessionNames []string
 }
 
+type phaseActionSpec struct {
+	Kind          string
+	Mode          goalx.Mode
+	NoContextErr  string
+	DraftHeader   string
+	DefaultHints  func(*savedPhaseSource) []string
+}
+
 func loadSavedPhaseSource(projectRoot, runName string) (*savedPhaseSource, error) {
 	runName = strings.TrimSpace(runName)
 	if runName == "" {
@@ -99,6 +107,45 @@ func phaseRunMetadataPatch(source *savedPhaseSource, phaseKind string) *RunMetad
 		patch.RootRunID = source.Metadata.RunID
 	}
 	return patch
+}
+
+func runPhaseAction(projectRoot string, spec phaseActionSpec, opts phaseOptions, nc *nextConfigJSON) error {
+	opts = mergeNextConfigIntoPhaseOptions(opts, nc, spec.Mode)
+
+	source, err := loadSavedPhaseSource(projectRoot, opts.From)
+	if err != nil {
+		return err
+	}
+	if len(source.Context) == 0 {
+		return fmt.Errorf(spec.NoContextErr, source.Dir)
+	}
+
+	cfg, engines, err := resolvePhaseConfig(projectRoot, spec.Kind, spec.Mode, source, opts)
+	if err != nil {
+		return err
+	}
+	contextFiles, err := phaseContextFiles(cfg, source, opts.ContextPaths)
+	if err != nil {
+		return err
+	}
+	hints, err := applyPhaseDimensions(spec.DefaultHints(source), cfg.Parallel, opts)
+	if err != nil {
+		return err
+	}
+
+	applySessionHints(cfg, hints)
+	cfg.Context = goalx.ContextConfig{Files: contextFiles, Refs: cfg.Context.Refs}
+
+	if opts.WriteConfig {
+		if err := writePhaseConfig(projectRoot, cfg, fmt.Sprintf(spec.DraftHeader, source.Run)); err != nil {
+			return err
+		}
+		fmt.Printf("Generated manual draft %s (%s from %s)\n", ManualDraftConfigPath(projectRoot), spec.Kind, source.Run)
+		fmt.Println("\n  Next: review .goalx/goalx.yaml, then goalx start --config .goalx/goalx.yaml")
+		return nil
+	}
+
+	return startWithConfig(projectRoot, cfg, engines, phaseRunMetadataPatch(source, spec.Kind), false)
 }
 
 func resolvePhaseConfig(projectRoot string, phaseKind string, mode goalx.Mode, source *savedPhaseSource, opts phaseOptions) (*goalx.Config, map[string]goalx.EngineConfig, error) {

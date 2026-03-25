@@ -1,6 +1,7 @@
 package goalx
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,6 +11,42 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+func loadResolvedConfigForTest(projectRoot, draftPath string) (*Config, map[string]EngineConfig, error) {
+	layers, err := LoadConfigLayers(projectRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+	req := ResolveRequest{}
+	if draftPath != "" {
+		if _, err := os.Stat(draftPath); err != nil {
+			if os.IsNotExist(err) {
+				return nil, nil, fmt.Errorf("manual draft config not found: %s", draftPath)
+			}
+			return nil, nil, fmt.Errorf("manual draft config: %w", err)
+		}
+		draft, err := LoadYAML[Config](draftPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("manual draft config: %w", err)
+		}
+		draft.Context.Files = FilterExternalContextFiles(projectRoot, draft.Context.Files)
+		req.ManualDraft = &draft
+	}
+	resolved, err := ResolveConfigPreview(layers, req)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &resolved.Config, resolved.Engines, nil
+}
+
+func loadRawSharedConfigForTest(projectRoot string) (*Config, map[string]EngineConfig, error) {
+	layers, err := LoadConfigLayers(projectRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg := layers.Config
+	return &cfg, layers.Engines, nil
+}
 
 func TestSlugify(t *testing.T) {
 	tests := []struct {
@@ -120,7 +157,7 @@ func TestPresetNoOverrideExplicit(t *testing.T) {
 
 func TestApplyPresetFillsRoleDefaults(t *testing.T) {
 	cfg := Config{Preset: "hybrid", Mode: ModeResearch}
-	ApplyPreset(&cfg)
+	applyPreset(&cfg)
 	if cfg.Master.Engine != "claude-code" || cfg.Master.Model != "opus" {
 		t.Fatalf("master = %s/%s", cfg.Master.Engine, cfg.Master.Model)
 	}
@@ -404,7 +441,7 @@ serve:
 		t.Fatalf("write run config: %v", err)
 	}
 
-	cfg, _, err := LoadConfigWithManualDraft(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml"))
+	cfg, _, err := loadResolvedConfigForTest(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml"))
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
@@ -465,7 +502,7 @@ harness:
 		t.Fatalf("write run config: %v", err)
 	}
 
-	cfg, _, err := LoadConfigWithManualDraft(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml"))
+	cfg, _, err := loadResolvedConfigForTest(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml"))
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
@@ -530,7 +567,7 @@ harness:
 		t.Fatalf("write project config: %v", err)
 	}
 
-	cfg, _, err := LoadConfig(projectRoot)
+	cfg, _, err := loadResolvedConfigForTest(projectRoot, "")
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
@@ -580,7 +617,7 @@ harness:
 		t.Fatalf("write project config: %v", err)
 	}
 
-	cfg, _, err := LoadRawBaseConfig(projectRoot)
+	cfg, _, err := loadRawSharedConfigForTest(projectRoot)
 	if err != nil {
 		t.Fatalf("LoadRawBaseConfig: %v", err)
 	}
@@ -642,7 +679,7 @@ harness:
 		t.Fatalf("write run config: %v", err)
 	}
 
-	cfg, _, err := LoadConfigWithManualDraft(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml"))
+	cfg, _, err := loadResolvedConfigForTest(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml"))
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
@@ -723,7 +760,7 @@ harness:
 	if err != nil {
 		t.Fatalf("LoadConfigLayers: %v", err)
 	}
-	cfg, engines, err := LoadConfigWithManualDraft(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml"))
+	cfg, engines, err := loadResolvedConfigForTest(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml"))
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
@@ -887,7 +924,7 @@ harness:
 		t.Fatalf("write goalx.yaml: %v", err)
 	}
 
-	if _, _, err := LoadConfigWithManualDraft(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml")); err != nil {
+	if _, _, err := loadResolvedConfigForTest(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml")); err != nil {
 		t.Fatalf("LoadConfigWithManualDraft: %v", err)
 	}
 
@@ -947,7 +984,7 @@ func TestLoadConfigFiltersContextFilesToExternalRefs(t *testing.T) {
 		t.Fatalf("write goalx.yaml: %v", err)
 	}
 
-	loaded, _, err := LoadConfigWithManualDraft(projectRoot, filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
+	loaded, _, err := loadResolvedConfigForTest(projectRoot, filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}

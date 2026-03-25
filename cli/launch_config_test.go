@@ -192,6 +192,41 @@ target:
 	}
 }
 
+func TestBuildLaunchConfigPreviewAllowsPlaceholderDraftValues(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	cfg, err := buildLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeDevelop,
+	})
+	if err != nil {
+		t.Fatalf("buildLaunchConfig: %v", err)
+	}
+	if len(cfg.Target.Files) != 1 || cfg.Target.Files[0] != "." {
+		t.Fatalf("target.files = %#v, want inferred default target", cfg.Target.Files)
+	}
+	if cfg.Harness.Command != "TODO: build + test command" {
+		t.Fatalf("harness.command = %q, want placeholder draft harness", cfg.Harness.Command)
+	}
+
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+	req, err := buildLaunchResolveRequest(projectRoot, layers.Config, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeDevelop,
+	})
+	if err != nil {
+		t.Fatalf("buildLaunchResolveRequest: %v", err)
+	}
+	if _, err := goalx.ResolveConfig(layers, req); err == nil {
+		t.Fatal("ResolveConfig unexpectedly accepted placeholder draft values")
+	} else if err.Error() != "harness.command is required (set in the explicit manual draft config or .goalx/config.yaml)" {
+		t.Fatalf("ResolveConfig error = %v, want harness placeholder validation", err)
+	}
+}
+
 func TestBuildLaunchConfigResearchAndDevelopMatchResolverDefaults(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

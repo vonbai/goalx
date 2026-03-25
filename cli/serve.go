@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -22,7 +21,7 @@ import (
 type serveApp struct {
 	cfg           goalx.ServeConfig
 	sessionExists func(string) bool
-	runCLI        func(projectRoot, action string, args []string) (string, error)
+	runAction     func(projectRoot, action string, req serveActionRequest) (string, error)
 	sendNudge     func(target, engine string) error
 }
 
@@ -80,15 +79,15 @@ func Serve(projectRoot string, args []string) error {
 		return fmt.Errorf("usage: goalx serve")
 	}
 
-	cfg, _, err := goalx.LoadRawBaseConfig(projectRoot)
+	layers, err := goalx.LoadConfigLayers(projectRoot)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if err := validateServeConfig(cfg.Serve); err != nil {
+	if err := validateServeConfig(layers.Config.Serve); err != nil {
 		return err
 	}
 
-	return http.ListenAndServe(cfg.Serve.Bind, newServeHandler(cfg.Serve))
+	return http.ListenAndServe(layers.Config.Serve.Bind, newServeHandler(layers.Config.Serve))
 }
 
 func newServeHandler(cfg goalx.ServeConfig) http.Handler {
@@ -101,7 +100,7 @@ func newServeApp(cfg goalx.ServeConfig) *serveApp {
 		sessionExists: SessionExists,
 		sendNudge:     SendAgentNudge,
 	}
-	app.runCLI = app.runCLIAction
+	app.runAction = app.runServeAction
 	return app
 }
 
@@ -179,13 +178,7 @@ func (a *serveApp) handleGoalxAction(w http.ResponseWriter, r *http.Request, pro
 		return
 	}
 
-	args, err := buildServeCLIArgs(project.Path, action, req)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	output, err := a.runCLI(project.Path, action, args)
+	output, err := a.runAction(project.Path, action, req)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("%s: %w", action, err))
 		return
@@ -471,201 +464,87 @@ func decodeServeActionRequest(r *http.Request) (serveActionRequest, error) {
 	return req, nil
 }
 
-func buildServeCLIArgs(projectRoot, action string, req serveActionRequest) ([]string, error) {
-	switch action {
-	case "init":
-		if strings.TrimSpace(req.Objective) == "" {
-			return nil, fmt.Errorf("objective is required")
-		}
-		return buildServeStartInitArgs(req), nil
-	case "start":
-		if strings.TrimSpace(req.Objective) == "" {
-			if strings.TrimSpace(req.ConfigScope) == "draft" {
-				return []string{"--config", ManualDraftConfigPath(projectRoot)}, nil
+func launchOptionsFromServeRequest(req serveActionRequest, defaultMode goalx.Mode, allowModeSwitch bool) (launchOptions, error) {
+	if strings.TrimSpace(req.Objective) == "" {
+		return launchOptions{}, fmt.Errorf("objective is required")
+	}
+
+	opts := launchOptions{
+		Objective:      req.Objective,
+		Mode:           defaultMode,
+		Parallel:       req.Parallel,
+		Name:           req.Name,
+		ContextPaths:   append([]string(nil), req.Context...),
+		Dimensions:     append([]string(nil), req.Dimensions...),
+		Effort:         req.Effort,
+		Master:         req.Master,
+		ResearchRole:   req.ResearchRole,
+		DevelopRole:    req.DevelopRole,
+		MasterEffort:   req.MasterEffort,
+		ResearchEffort: req.ResearchEffort,
+		DevelopEffort:  req.DevelopEffort,
+		Preset:         req.Preset,
+	}
+	if allowModeSwitch {
+		switch strings.TrimSpace(req.Mode) {
+		case "":
+		case string(goalx.ModeResearch):
+			opts.Mode = goalx.ModeResearch
+		case string(goalx.ModeDevelop):
+			opts.Mode = goalx.ModeDevelop
+		case string(goalx.ModeAuto):
+			if defaultMode == goalx.ModeAuto {
+				opts.Mode = goalx.ModeAuto
+			} else {
+				return launchOptions{}, fmt.Errorf("mode must be research or develop")
 			}
-			return nil, fmt.Errorf("objective is required unless config_scope=draft")
+		default:
+			if defaultMode == goalx.ModeAuto {
+				return launchOptions{}, fmt.Errorf("mode must be auto, research, or develop")
+			}
+			return launchOptions{}, fmt.Errorf("mode must be research or develop")
 		}
-		return buildServeStartInitArgs(req), nil
-	case "auto":
-		if strings.TrimSpace(req.Objective) == "" {
-			return nil, fmt.Errorf("objective is required")
-		}
-		return buildServeStartInitArgs(req), nil
-	case "research", "develop":
-		if strings.TrimSpace(req.Objective) == "" {
-			return nil, fmt.Errorf("objective is required")
-		}
-		return buildServeLaunchArgs(req), nil
-	case "debate", "implement", "explore":
-		if strings.TrimSpace(req.From) == "" {
-			return nil, fmt.Errorf("from is required")
-		}
-		return buildServePhaseArgs(req), nil
-	case "observe", "stop", "save", "drop":
-		return buildServeRunArgs(req.Run), nil
-	case "status":
-		return buildServeStatusArgs(req.Run, req.Session), nil
-	case "add":
-		if strings.TrimSpace(req.Direction) == "" {
-			return nil, fmt.Errorf("direction is required")
-		}
-		args := []string{req.Direction}
-		if req.Run != "" {
-			args = append(args, "--run", req.Run)
-		}
-		return args, nil
-	case "keep":
-		fallthrough
-	case "park":
-		fallthrough
-	case "resume":
-		if strings.TrimSpace(req.Session) == "" {
-			return nil, fmt.Errorf("session is required")
-		}
-		args := buildServeRunArgs(req.Run)
-		args = append(args, req.Session)
-		return args, nil
-	default:
-		return nil, fmt.Errorf("unknown action %q", action)
 	}
+	return opts, nil
 }
 
-func buildServeStartInitArgs(req serveActionRequest) []string {
-	args := []string{req.Objective}
-	switch req.Mode {
-	case string(goalx.ModeResearch):
-		args = append(args, "--research")
-	case string(goalx.ModeDevelop):
-		args = append(args, "--develop")
+func startOptionsFromServeRequest(projectRoot string, req serveActionRequest) (startOptions, error) {
+	if strings.TrimSpace(req.Objective) == "" {
+		if strings.TrimSpace(req.ConfigScope) == "draft" {
+			return startOptions{ConfigPath: ManualDraftConfigPath(projectRoot)}, nil
+		}
+		return startOptions{}, fmt.Errorf("objective is required unless config_scope=draft")
 	}
-	if req.Parallel > 0 {
-		args = append(args, "--parallel", strconv.Itoa(req.Parallel))
+
+	launch, err := launchOptionsFromServeRequest(req, goalx.ModeDevelop, true)
+	if err != nil {
+		return startOptions{}, err
 	}
-	if req.Name != "" {
-		args = append(args, "--name", req.Name)
-	}
-	if len(req.Context) > 0 {
-		args = append(args, "--context", strings.Join(req.Context, ","))
-	}
-	if len(req.Dimensions) > 0 {
-		args = append(args, "--dimension", strings.Join(req.Dimensions, ","))
-	}
-	if req.Effort != "" {
-		args = append(args, "--effort", string(req.Effort))
-	}
-	if req.MasterEffort != "" {
-		args = append(args, "--master-effort", string(req.MasterEffort))
-	}
-	if req.ResearchEffort != "" {
-		args = append(args, "--research-effort", string(req.ResearchEffort))
-	}
-	if req.DevelopEffort != "" {
-		args = append(args, "--develop-effort", string(req.DevelopEffort))
-	}
-	if req.Preset != "" {
-		args = append(args, "--preset", req.Preset)
-	}
-	if req.Master != "" {
-		args = append(args, "--master", req.Master)
-	}
-	if req.ResearchRole != "" {
-		args = append(args, "--research-role", req.ResearchRole)
-	}
-	if req.DevelopRole != "" {
-		args = append(args, "--develop-role", req.DevelopRole)
-	}
-	return args
+	return startOptions{launchOptions: launch}, nil
 }
 
-func buildServeLaunchArgs(req serveActionRequest) []string {
-	args := []string{req.Objective}
-	if req.Parallel > 0 {
-		args = append(args, "--parallel", strconv.Itoa(req.Parallel))
+func phaseOptionsFromServeRequest(req serveActionRequest) (phaseOptions, error) {
+	if strings.TrimSpace(req.From) == "" {
+		return phaseOptions{}, fmt.Errorf("from is required")
 	}
-	if req.Name != "" {
-		args = append(args, "--name", req.Name)
-	}
-	if len(req.Context) > 0 {
-		args = append(args, "--context", strings.Join(req.Context, ","))
-	}
-	if len(req.Dimensions) > 0 {
-		args = append(args, "--dimension", strings.Join(req.Dimensions, ","))
-	}
-	if req.Effort != "" {
-		args = append(args, "--effort", string(req.Effort))
-	}
-	if req.MasterEffort != "" {
-		args = append(args, "--master-effort", string(req.MasterEffort))
-	}
-	if req.ResearchEffort != "" {
-		args = append(args, "--research-effort", string(req.ResearchEffort))
-	}
-	if req.DevelopEffort != "" {
-		args = append(args, "--develop-effort", string(req.DevelopEffort))
-	}
-	if req.Preset != "" {
-		args = append(args, "--preset", req.Preset)
-	}
-	if req.Master != "" {
-		args = append(args, "--master", req.Master)
-	}
-	if req.ResearchRole != "" {
-		args = append(args, "--research-role", req.ResearchRole)
-	}
-	if req.DevelopRole != "" {
-		args = append(args, "--develop-role", req.DevelopRole)
-	}
-	return args
-}
-
-func buildServePhaseArgs(req serveActionRequest) []string {
-	args := []string{"--from", req.From}
-	if req.Name != "" {
-		args = append(args, "--name", req.Name)
-	}
-	if req.Objective != "" {
-		args = append(args, "--objective", req.Objective)
-	}
-	if req.Parallel > 0 {
-		args = append(args, "--parallel", strconv.Itoa(req.Parallel))
-	}
-	if len(req.Context) > 0 {
-		args = append(args, "--context", strings.Join(req.Context, ","))
-	}
-	if len(req.Dimensions) > 0 {
-		args = append(args, "--dimension", strings.Join(req.Dimensions, ","))
-	}
-	if req.Effort != "" {
-		args = append(args, "--effort", string(req.Effort))
-	}
-	if req.MasterEffort != "" {
-		args = append(args, "--master-effort", string(req.MasterEffort))
-	}
-	if req.ResearchEffort != "" {
-		args = append(args, "--research-effort", string(req.ResearchEffort))
-	}
-	if req.DevelopEffort != "" {
-		args = append(args, "--develop-effort", string(req.DevelopEffort))
-	}
-	if req.Preset != "" {
-		args = append(args, "--preset", req.Preset)
-	}
-	if req.Master != "" {
-		args = append(args, "--master", req.Master)
-	}
-	if req.ResearchRole != "" {
-		args = append(args, "--research-role", req.ResearchRole)
-	}
-	if req.DevelopRole != "" {
-		args = append(args, "--develop-role", req.DevelopRole)
-	}
-	if req.BudgetSeconds > 0 {
-		args = append(args, "--budget-seconds", strconv.Itoa(req.BudgetSeconds))
-	}
-	if req.WriteConfig {
-		args = append(args, "--write-config")
-	}
-	return args
+	return phaseOptions{
+		From:           req.From,
+		Name:           req.Name,
+		Objective:      req.Objective,
+		Parallel:       req.Parallel,
+		ContextPaths:   append([]string(nil), req.Context...),
+		Dimensions:     append([]string(nil), req.Dimensions...),
+		Effort:         req.Effort,
+		Master:         req.Master,
+		ResearchRole:   req.ResearchRole,
+		DevelopRole:    req.DevelopRole,
+		MasterEffort:   req.MasterEffort,
+		ResearchEffort: req.ResearchEffort,
+		DevelopEffort:  req.DevelopEffort,
+		Preset:         req.Preset,
+		BudgetSeconds:  req.BudgetSeconds,
+		WriteConfig:    req.WriteConfig,
+	}, nil
 }
 
 func buildServeRunArgs(run string) []string {
@@ -683,43 +562,119 @@ func buildServeStatusArgs(run, session string) []string {
 	return args
 }
 
-func (a *serveApp) runCLIAction(projectRoot, action string, args []string) (string, error) {
+func (a *serveApp) runServeAction(projectRoot, action string, req serveActionRequest) (string, error) {
 	return captureServeOutput(func() error {
 		switch action {
 		case "init":
-			return Init(projectRoot, args)
+			opts, err := launchOptionsFromServeRequest(req, goalx.ModeDevelop, true)
+			if err != nil {
+				return err
+			}
+			return initWithOptions(projectRoot, opts)
 		case "start":
-			return Start(projectRoot, args)
+			opts, err := startOptionsFromServeRequest(projectRoot, req)
+			if err != nil {
+				return err
+			}
+			return startWithOptions(projectRoot, opts)
 		case "auto":
-			return Auto(projectRoot, args)
+			opts, err := launchOptionsFromServeRequest(req, goalx.ModeAuto, true)
+			if err != nil {
+				return err
+			}
+			if err := autoWithOptions(projectRoot, opts); err != nil {
+				return err
+			}
+			printAutoStarted()
+			return nil
 		case "research":
-			return Research(projectRoot, args)
+			opts, err := launchOptionsFromServeRequest(req, goalx.ModeResearch, false)
+			if err != nil {
+				return err
+			}
+			return startResolvedLaunch(projectRoot, opts)
 		case "develop":
-			return Develop(projectRoot, args)
+			opts, err := launchOptionsFromServeRequest(req, goalx.ModeDevelop, false)
+			if err != nil {
+				return err
+			}
+			return startResolvedLaunch(projectRoot, opts)
 		case "observe":
-			return Observe(projectRoot, args)
+			return Observe(projectRoot, buildServeRunArgs(req.Run))
 		case "status":
-			return Status(projectRoot, args)
+			return Status(projectRoot, buildServeStatusArgs(req.Run, req.Session))
 		case "add":
+			if strings.TrimSpace(req.Direction) == "" {
+				return fmt.Errorf("direction is required")
+			}
+			args := []string{req.Direction}
+			if req.Run != "" {
+				args = append(args, "--run", req.Run)
+			}
 			return Add(projectRoot, args)
 		case "stop":
-			return Stop(projectRoot, args)
+			return Stop(projectRoot, buildServeRunArgs(req.Run))
 		case "save":
-			return Save(projectRoot, args)
+			return Save(projectRoot, buildServeRunArgs(req.Run))
 		case "keep":
+			if strings.TrimSpace(req.Session) == "" {
+				return fmt.Errorf("session is required")
+			}
+			args := buildServeRunArgs(req.Run)
+			args = append(args, req.Session)
 			return Keep(projectRoot, args)
 		case "park":
+			if strings.TrimSpace(req.Session) == "" {
+				return fmt.Errorf("session is required")
+			}
+			args := buildServeRunArgs(req.Run)
+			args = append(args, req.Session)
 			return Park(projectRoot, args)
 		case "resume":
+			if strings.TrimSpace(req.Session) == "" {
+				return fmt.Errorf("session is required")
+			}
+			args := buildServeRunArgs(req.Run)
+			args = append(args, req.Session)
 			return Resume(projectRoot, args)
 		case "drop":
-			return Drop(projectRoot, args)
+			return Drop(projectRoot, buildServeRunArgs(req.Run))
 		case "debate":
-			return Debate(projectRoot, args, nil)
+			opts, err := phaseOptionsFromServeRequest(req)
+			if err != nil {
+				return err
+			}
+			return runPhaseAction(projectRoot, phaseActionSpec{
+				Kind:         "debate",
+				Mode:         goalx.ModeResearch,
+				NoContextErr: "no reports found in %s",
+				DraftHeader:  "# goalx manual draft — debate round based on %s\n",
+				DefaultHints: debatePhaseHints,
+			}, opts, nil)
 		case "implement":
-			return Implement(projectRoot, args, nil)
+			opts, err := phaseOptionsFromServeRequest(req)
+			if err != nil {
+				return err
+			}
+			return runPhaseAction(projectRoot, phaseActionSpec{
+				Kind:         "implement",
+				Mode:         goalx.ModeDevelop,
+				NoContextErr: "no reports/summary found in %s",
+				DraftHeader:  "# goalx manual draft — implement fixes from %s\n",
+				DefaultHints: implementPhaseHints,
+			}, opts, nil)
 		case "explore":
-			return Explore(projectRoot, args)
+			opts, err := phaseOptionsFromServeRequest(req)
+			if err != nil {
+				return err
+			}
+			return runPhaseAction(projectRoot, phaseActionSpec{
+				Kind:         "explore",
+				Mode:         goalx.ModeResearch,
+				NoContextErr: "no reports found in %s",
+				DraftHeader:  "# goalx manual draft — explore based on %s\n",
+				DefaultHints: explorePhaseHints,
+			}, opts, nil)
 		default:
 			return fmt.Errorf("unsupported action %q", action)
 		}

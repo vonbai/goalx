@@ -10,114 +10,30 @@ import (
 )
 
 func buildLaunchConfig(projectRoot string, opts launchOptions) (*goalx.Config, error) {
-	baseCfg, _, err := goalx.LoadRawBaseConfig(projectRoot)
+	layers, err := goalx.LoadConfigLayers(projectRoot)
 	if err != nil {
-		return nil, fmt.Errorf("load base config: %w", err)
+		return nil, fmt.Errorf("load config layers: %w", err)
 	}
-
-	cfg := *baseCfg
-	cfg.Name = opts.Name
-	if cfg.Name == "" {
-		cfg.Name = goalx.Slugify(opts.Objective)
-	}
-	cfg.Mode = opts.Mode
-	cfg.Objective = opts.Objective
-	if opts.Parallel > 0 {
-		cfg.Parallel = opts.Parallel
-	}
-	cfg.Sessions = nil
-	if opts.Preset != "" {
-		cfg.Preset = opts.Preset
-	}
-	goalx.ApplyPreset(&cfg)
-	if err := applyLaunchRoleOverrides(&cfg, opts); err != nil {
+	req, err := buildLaunchResolveRequest(projectRoot, layers.Config, opts)
+	if err != nil {
 		return nil, err
 	}
-	if cfg.Parallel < 1 {
-		cfg.Parallel = 1
+	resolved, err := goalx.ResolveConfigPreview(layers, req)
+	if err != nil {
+		return nil, err
 	}
-
-	if len(opts.Dimensions) > 0 {
-		hints, err := goalx.ResolveDimensions(opts.Dimensions)
-		if err != nil {
-			return nil, err
-		}
-		if cfg.Parallel < len(hints) {
-			cfg.Parallel = len(hints)
-		}
-		cfg.Sessions = make([]goalx.SessionConfig, cfg.Parallel)
-		sessionMode := goalx.ResolveSessionMode(cfg.Mode, "")
-		for i, hint := range hints {
-			cfg.Sessions[i] = goalx.SessionConfig{
-				Hint: hint,
-				Mode: sessionMode,
-			}
-		}
+	if err := applyLaunchSessionOverrides(&resolved.Config, opts, resolved.Dimensions); err != nil {
+		return nil, err
 	}
-	if len(cfg.Target.Files) == 0 {
-		cfg.Target.Files = InferTarget(projectRoot)
-	}
-	if len(cfg.Target.Files) == 0 {
-		cfg.Target = goalx.TargetConfig{Files: []string{"TODO: specify directories to modify"}}
-	}
-	if cfg.Harness.Command == "" {
-		cfg.Harness.Command = InferHarness(projectRoot)
-	}
-	if cfg.Harness.Command == "" {
-		cfg.Harness = goalx.HarnessConfig{Command: "TODO: build + test command"}
-	}
-
-	if len(opts.Subs) > 0 {
-		cfg.Sessions = nil
-		sessionMode := goalx.ResolveSessionMode(cfg.Mode, "")
-		for _, sub := range opts.Subs {
-			spec, countStr := sub, "1"
-			if idx := strings.LastIndex(sub, ":"); idx > 0 {
-				spec = sub[:idx]
-				countStr = sub[idx+1:]
-			}
-			engine, model, err := parseEngineModelValue("--sub", spec)
-			if err != nil {
-				return nil, fmt.Errorf("invalid --sub format %q (expected engine/model or engine/model:N): %w", sub, err)
-			}
-			n, err := strconv.Atoi(countStr)
-			if err != nil || n < 1 {
-				return nil, fmt.Errorf("invalid --sub count %q in %q", countStr, sub)
-			}
-			for j := 0; j < n; j++ {
-				cfg.Sessions = append(cfg.Sessions, goalx.SessionConfig{
-					Engine: engine,
-					Model:  model,
-					Mode:   sessionMode,
-				})
-			}
-		}
-	}
-
-	if opts.Auditor != "" {
-		engine, model, err := parseEngineModelValue("--auditor", opts.Auditor)
-		if err != nil {
-			return nil, err
-		}
-		cfg.Sessions = append(cfg.Sessions, goalx.SessionConfig{
-			Engine: engine,
-			Model:  model,
-			Effort: opts.Effort,
-			Mode:   goalx.ResolveSessionMode(cfg.Mode, ""),
-			Hint:   "Auditor: Review and challenge other sessions' work. Find flaws, missed edge cases, and incorrect assumptions.",
-		})
-	}
-
 	if len(opts.ContextPaths) > 0 {
 		contextFiles, err := DiscoverContextFiles(opts.ContextPaths)
 		if err != nil {
 			return nil, fmt.Errorf("discover context: %w", err)
 		}
-		cfg.Context = goalx.ContextConfig{Files: contextFiles}
+		resolved.Config.Context = goalx.ContextConfig{Files: contextFiles}
 	}
-
-	cfg.Budget = goalx.BudgetConfig{MaxDuration: 6 * time.Hour}
-	return &cfg, nil
+	resolved.Config.Budget = goalx.BudgetConfig{MaxDuration: 6 * time.Hour}
+	return &resolved.Config, nil
 }
 
 func resolveLaunchConfig(projectRoot string, opts launchOptions) (*goalx.ResolvedConfig, error) {
@@ -316,50 +232,6 @@ func launchRoleOverrides(opts launchOptions) (*goalx.MasterConfig, *goalx.Sessio
 	}
 
 	return masterOverride, researchOverride, developOverride, nil
-}
-
-func applyLaunchRoleOverrides(cfg *goalx.Config, opts launchOptions) error {
-	if cfg == nil {
-		return fmt.Errorf("launch config is nil")
-	}
-	masterOverride, researchOverride, developOverride, err := launchRoleOverrides(opts)
-	if err != nil {
-		return err
-	}
-	if masterOverride != nil {
-		if masterOverride.Engine != "" {
-			cfg.Master.Engine = masterOverride.Engine
-		}
-		if masterOverride.Model != "" {
-			cfg.Master.Model = masterOverride.Model
-		}
-		if masterOverride.Effort != "" {
-			cfg.Master.Effort = masterOverride.Effort
-		}
-	}
-	if researchOverride != nil {
-		if researchOverride.Engine != "" {
-			cfg.Roles.Research.Engine = researchOverride.Engine
-		}
-		if researchOverride.Model != "" {
-			cfg.Roles.Research.Model = researchOverride.Model
-		}
-		if researchOverride.Effort != "" {
-			cfg.Roles.Research.Effort = researchOverride.Effort
-		}
-	}
-	if developOverride != nil {
-		if developOverride.Engine != "" {
-			cfg.Roles.Develop.Engine = developOverride.Engine
-		}
-		if developOverride.Model != "" {
-			cfg.Roles.Develop.Model = developOverride.Model
-		}
-		if developOverride.Effort != "" {
-			cfg.Roles.Develop.Effort = developOverride.Effort
-		}
-	}
-	return nil
 }
 
 func parseEngineModelValue(flagName, value string) (string, string, error) {

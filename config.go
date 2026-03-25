@@ -302,14 +302,6 @@ func LoadYAML[T any](path string) (T, error) {
 	return cfg, nil
 }
 
-func loadBaseConfigRaw(projectRoot string) (Config, map[string]EngineConfig, error) {
-	layers, err := LoadConfigLayers(projectRoot)
-	if err != nil {
-		return Config{}, nil, err
-	}
-	return layers.Config, layers.Engines, nil
-}
-
 func applyConfigEnvelope(cfg *Config, engines *map[string]EngineConfig, presets *map[string]PresetConfig, dimensions *map[string]string, overlay *UserConfig) {
 	if cfg == nil || overlay == nil {
 		return
@@ -330,26 +322,6 @@ func applyConfigEnvelope(cfg *Config, engines *map[string]EngineConfig, presets 
 			(*dimensions)[k] = v
 		}
 	}
-}
-
-func finalizeLoadedConfig(projectRoot string, cfg Config) *Config {
-	cfg.Context.Files = filterExternalContextFiles(projectRoot, cfg.Context.Files)
-
-	// Auto-detect preset from available engines only when no preset is configured.
-	// If the user explicitly set a preset (even "codex"), respect it.
-	if cfg.Preset == "" {
-		cfg.Preset = DetectPresetFromEnvironment()
-	}
-
-	// Apply preset to fill in role defaults.
-	applyPreset(&cfg)
-
-	// Apply defaults for parallel
-	if cfg.Parallel < 1 {
-		cfg.Parallel = 1
-	}
-
-	return &cfg
 }
 
 // DetectPresetFromEnvironment checks which engines are available and picks
@@ -373,49 +345,6 @@ func DetectPresetFromEnvironment() string {
 func commandExists(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
-}
-
-// LoadRawBaseConfig loads built-in, user, and project config layers without
-// applying preset-derived engine/model defaults.
-func LoadRawBaseConfig(projectRoot string) (*Config, map[string]EngineConfig, error) {
-	cfg, engines, err := loadBaseConfigRaw(projectRoot)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &cfg, engines, nil
-}
-
-// LoadConfig loads and merges shared config layers for the current project.
-func LoadConfig(projectRoot string) (*Config, map[string]EngineConfig, error) {
-	cfg, engines, err := loadBaseConfigRaw(projectRoot)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return finalizeLoadedConfig(projectRoot, cfg), engines, nil
-}
-
-// LoadConfigWithManualDraft loads shared config layers, then overlays an
-// explicit manual draft config file such as .goalx/goalx.yaml.
-func LoadConfigWithManualDraft(projectRoot, draftPath string) (*Config, map[string]EngineConfig, error) {
-	cfg, engines, err := loadBaseConfigRaw(projectRoot)
-	if err != nil {
-		return nil, nil, err
-	}
-	if _, err := os.Stat(draftPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil, fmt.Errorf("manual draft config not found: %s", draftPath)
-		}
-		return nil, nil, fmt.Errorf("manual draft config: %w", err)
-	}
-
-	runCfg, err := LoadYAML[Config](draftPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("manual draft config: %w", err)
-	}
-	mergeConfig(&cfg, &runCfg)
-
-	return finalizeLoadedConfig(projectRoot, cfg), engines, nil
 }
 
 // applyPreset fills in missing master/role defaults from the selected preset.
@@ -457,27 +386,6 @@ func presetCatalogFor(cfg *Config) map[string]PresetConfig {
 		return cfg.presetCatalog
 	}
 	return Presets
-}
-
-// ApplyPreset fills missing master/role defaults from the selected preset.
-func ApplyPreset(cfg *Config) {
-	applyPreset(cfg)
-}
-
-// ForceApplyPreset overwrites master/role engine/model from the preset,
-// even if they were already filled. Used when auto-detection changes the
-// preset after an initial applyPreset with a different (fallback) preset.
-func ForceApplyPreset(cfg *Config) {
-	preset, ok := presetCatalogFor(cfg)[cfg.Preset]
-	if !ok {
-		return
-	}
-	cfg.Master.Engine = preset.Master.Engine
-	cfg.Master.Model = preset.Master.Model
-	cfg.Roles.Research.Engine = preset.Research.Engine
-	cfg.Roles.Research.Model = preset.Research.Model
-	cfg.Roles.Develop.Engine = preset.Develop.Engine
-	cfg.Roles.Develop.Model = preset.Develop.Model
 }
 
 // ValidateConfig checks the config before creating any side effects.
@@ -1025,7 +933,7 @@ func copyRoutingTable(src map[string]map[string]string) map[string]map[string]st
 	return dst
 }
 
-func filterExternalContextFiles(projectRoot string, files []string) []string {
+func FilterExternalContextFiles(projectRoot string, files []string) []string {
 	if len(files) == 0 {
 		return nil
 	}
