@@ -46,17 +46,12 @@ func Start(projectRoot string, args []string) (err error) {
 }
 
 func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]goalx.EngineConfig, metaPatch *RunMetadata, noSnapshot bool) (err error) {
-	// 2. Auto-generate name if missing
-	if cfg.Name == "" {
-		cfg.Name = goalx.Slugify(cfg.Objective)
-	}
-
-	// 3. Validate before any side effects
+	// 2. Validate before any side effects
 	if err := goalx.ValidateConfig(cfg, engines); err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}
 
-	// 4. Compute paths
+	// 3. Compute paths
 	runDir := goalx.RunDir(projectRoot, cfg.Name)
 	tmuxSess := goalx.TmuxSessionName(projectRoot, cfg.Name)
 	absProjectRoot, _ := filepath.Abs(projectRoot)
@@ -88,7 +83,7 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		}
 	}()
 
-	// 5. Check conflicts
+	// 4. Check conflicts
 	if _, err := os.Stat(runDir); err == nil {
 		return fmt.Errorf("run directory already exists: %s (use a different name or goalx drop first)", runDir)
 	}
@@ -96,7 +91,7 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		return fmt.Errorf("tmux session already exists: %s (goalx stop first)", tmuxSess)
 	}
 
-	// 5b. Snapshot tracked changes so the run worktree starts from the current source-root state.
+	// 4b. Snapshot tracked changes so the run worktree starts from the current source-root state.
 	snapshotCommit := ""
 	if dirty, err := hasDirtyWorktree(projectRoot); err == nil && dirty {
 		if noSnapshot {
@@ -109,7 +104,7 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		}
 	}
 
-	// 6. Create run directory structure
+	// 5. Create run directory structure
 	dirs := []string{
 		runDir,
 		filepath.Join(runDir, "journals"),

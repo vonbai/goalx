@@ -52,6 +52,10 @@ func resolveConfigWithDetector(layers *ConfigLayers, req ResolveRequest, detect 
 		cfg.Parallel = 1
 	}
 
+	if err := ValidateConfig(&cfg, layers.Engines); err != nil {
+		return nil, err
+	}
+
 	return &ResolvedConfig{
 		Config:     cfg,
 		Engines:    copyEngines(layers.Engines),
