@@ -477,7 +477,7 @@ func TestRenderMasterProtocolIncludesGoalBoundaryChecklistInstructions(t *testin
 		"goalx tell --run demo session-N",
 		"goalx park --run demo session-N",
 		"goalx resume --run demo session-N",
-		"dispatcher and referee",
+		"orchestrator",
 		"check evidence density, clear evidence, and actionability of findings",
 		"If any required item is uncovered, that is a scheduling bug.",
 		"If parallel capacity exists and independent required work remains, dispatch it now instead of waiting.",
