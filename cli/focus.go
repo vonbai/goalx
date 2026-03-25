@@ -30,8 +30,7 @@ func Focus(projectRoot string, args []string) error {
 		return fmt.Errorf("run %q is not active", runName)
 	}
 
-	reg.FocusedRun = runName
-	if err := SaveProjectRegistry(projectRoot, reg); err != nil {
+	if err := setFocusedRun(projectRoot, runName); err != nil {
 		return err
 	}
 

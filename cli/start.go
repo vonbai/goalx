@@ -237,9 +237,6 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	if err := GenerateAdapter(cfg.Master.Engine, runWT, MasterInboxPath(runDir), MasterCursorPath(runDir)); err != nil {
 		return fmt.Errorf("generate master adapter: %w", err)
 	}
-	if err := SaveLaunchEnvSnapshot(ControlLaunchEnvPath(runDir), CaptureCurrentLaunchEnvSnapshot()); err != nil {
-		return fmt.Errorf("write launch env snapshot: %w", err)
-	}
 	fence, err := NewIdentityFence(runDir, meta)
 	if err != nil {
 		return fmt.Errorf("init identity fence: %w", err)
@@ -309,6 +306,9 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	if err := RegisterActiveRun(projectRoot, cfg); err != nil {
 		return fmt.Errorf("register active run: %w", err)
 	}
+	if err := setFocusedRun(projectRoot, cfg.Name); err != nil {
+		return fmt.Errorf("focus active run: %w", err)
+	}
 
 	checkSec, warning := normalizeSidecarInterval(cfg.Master.CheckInterval)
 	if warning != "" {
@@ -320,12 +320,8 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
 	}
-	launchEnv, err := RequireLaunchEnvSnapshot(runDir)
-	if err != nil {
-		return fmt.Errorf("load launch env snapshot: %w", err)
-	}
 	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
-	masterLaunch := buildMasterLaunchCommandWithEnv(launchEnv.Env, goalxBin, cfg.Name, runDir, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
+	masterLaunch := buildMasterLaunchCommand(goalxBin, cfg.Name, runDir, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
 	if err := NewSessionWithCommand(tmuxSess, "master", runWT, masterLaunch); err != nil {
 		return fmt.Errorf("tmux new-session: %w", err)
 	}

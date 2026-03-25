@@ -245,6 +245,63 @@ var BuiltinDefaults = Config{
 	Preset:   "", // empty: auto-detected from installed engines at runtime
 	Mode:     ModeDevelop,
 	Parallel: 1,
+	Preferences: PreferencesConfig{
+		Research: PreferencePolicy{
+			Guidance: "默认 gpt-5.4 high。深度分析/架构设计用 opus。简单信息收集用 fast。",
+		},
+		Develop: PreferencePolicy{
+			Guidance: "主力 gpt-5.4 medium。简单修复用 fast。",
+		},
+		Simple: PreferencePolicy{
+			Guidance: "轻量任务用 fast。",
+		},
+	},
+	Routing: RoutingTableConfig{
+		Profiles: map[string]ExecutionProfile{
+			"research_deep": {
+				Engine: "claude-code",
+				Model:  "opus",
+				Effort: EffortHigh,
+			},
+			"research_max": {
+				Engine: "claude-code",
+				Model:  "opus",
+				Effort: EffortMax,
+			},
+			"build_balanced": {
+				Engine: "codex",
+				Model:  "gpt-5.4",
+				Effort: EffortMedium,
+			},
+			"build_fast": {
+				Engine: "codex",
+				Model:  "gpt-5.4-mini",
+				Effort: EffortMinimal,
+			},
+			"fallback_safe": {
+				Engine: "claude-code",
+				Model:  "sonnet",
+				Effort: EffortLow,
+			},
+		},
+		Table: map[string]map[string]string{
+			"research": {
+				"low":    "build_fast",
+				"medium": "research_deep",
+				"high":   "research_max",
+			},
+			"develop": {
+				"low":    "build_fast",
+				"medium": "build_balanced",
+				"high":   "research_deep",
+			},
+			"simple": {
+				"low":    "build_fast",
+				"medium": "build_fast",
+				"high":   "build_balanced",
+			},
+		},
+	},
 	Master: MasterConfig{
 		CheckInterval: 2 * time.Minute,
 	},

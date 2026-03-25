@@ -141,6 +141,57 @@ func TestPresetMixed(t *testing.T) {
 	}
 }
 
+func TestBuiltinDefaultsIncludeRoutingAndPreferences(t *testing.T) {
+	profile := BuiltinDefaults.Routing.Profiles["research_deep"]
+	if profile.Engine != "claude-code" || profile.Model != "opus" || profile.Effort != EffortHigh {
+		t.Fatalf("research_deep = %#v, want claude-code/opus/high", profile)
+	}
+	if got := BuiltinDefaults.Routing.Profiles["research_max"]; got.Effort != EffortMax {
+		t.Fatalf("research_max.effort = %q, want max", got.Effort)
+	}
+	if got := BuiltinDefaults.Routing.Profiles["build_fast"]; got.Engine != "codex" || got.Model != "gpt-5.4-mini" || got.Effort != EffortMinimal {
+		t.Fatalf("build_fast = %#v, want codex/gpt-5.4-mini/minimal", got)
+	}
+	if got := BuiltinDefaults.Routing.Table["develop"]["medium"]; got != "build_balanced" {
+		t.Fatalf("routing.table.develop.medium = %q, want build_balanced", got)
+	}
+	if got := BuiltinDefaults.Routing.Table["simple"]["high"]; got != "build_balanced" {
+		t.Fatalf("routing.table.simple.high = %q, want build_balanced", got)
+	}
+	if got := BuiltinDefaults.Preferences.Research.Guidance; got != "默认 gpt-5.4 high。深度分析/架构设计用 opus。简单信息收集用 fast。" {
+		t.Fatalf("research guidance = %q", got)
+	}
+	if got := BuiltinDefaults.Preferences.Develop.Guidance; got != "主力 gpt-5.4 medium。简单修复用 fast。" {
+		t.Fatalf("develop guidance = %q", got)
+	}
+	if got := BuiltinDefaults.Preferences.Simple.Guidance; got != "轻量任务用 fast。" {
+		t.Fatalf("simple guidance = %q", got)
+	}
+}
+
+func TestLoadConfigUsesBuiltinRoutingAndPreferencesWhenUnset(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	cfg, _, err := loadResolvedConfigForTest(projectRoot, "")
+	if err != nil {
+		t.Fatalf("loadResolvedConfigForTest: %v", err)
+	}
+	if got := cfg.Routing.Table["research"]["medium"]; got != "research_deep" {
+		t.Fatalf("routing.table.research.medium = %q, want research_deep", got)
+	}
+	if got := cfg.Routing.Table["develop"]["high"]; got != "research_deep" {
+		t.Fatalf("routing.table.develop.high = %q, want research_deep", got)
+	}
+	if got := cfg.Preferences.Research.Guidance; got != "默认 gpt-5.4 high。深度分析/架构设计用 opus。简单信息收集用 fast。" {
+		t.Fatalf("research guidance = %q", got)
+	}
+	if got := cfg.Preferences.Simple.Guidance; got != "轻量任务用 fast。" {
+		t.Fatalf("simple guidance = %q", got)
+	}
+}
+
 func TestPresetNoOverrideExplicit(t *testing.T) {
 	cfg := Config{
 		Preset: "claude",

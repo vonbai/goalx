@@ -144,11 +144,6 @@ exit 0
 	}
 	t.Setenv("TMUX_LOG", logPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	writeTestLaunchEnvSnapshot(t, runDir, map[string]string{
-		"HOME": home,
-		"PATH": fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
-	})
-
 	if err := relaunchMaster(repo, runDir, goalx.TmuxSessionName(repo, cfg.Name), cfg); err != nil {
 		t.Fatalf("relaunchMaster: %v", err)
 	}
@@ -198,10 +193,6 @@ func TestRunSidecarTickRelaunchesMasterAfterThreeUrgentTicks(t *testing.T) {
 	if err := os.MkdirAll(RunWorktreePath(runDir), 0o755); err != nil {
 		t.Fatalf("mkdir run worktree: %v", err)
 	}
-	writeTestLaunchEnvSnapshot(t, runDir, map[string]string{
-		"HOME": home,
-		"PATH": os.Getenv("PATH"),
-	})
 	if _, err := appendControlInboxMessage(runDir, "master", "tell", "user", "drop everything and triage", true); err != nil {
 		t.Fatalf("appendControlInboxMessage: %v", err)
 	}

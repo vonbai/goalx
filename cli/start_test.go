@@ -337,6 +337,117 @@ esac
 	}
 }
 
+func TestStartFocusesNewestRun(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	goalxDir := filepath.Join(repo, ".goalx")
+	if err := os.MkdirAll(goalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	tmuxPath := filepath.Join(binDir, "tmux")
+	script := `#!/bin/sh
+set -eu
+state="${GOALX_FAKE_TMUX_STATE:?}"
+mkdir -p "$state"
+log="$state/log"
+cmd="$1"
+shift
+echo "$cmd $*" >> "$log"
+case "$cmd" in
+  has-session)
+    target="$2"
+    if [ -f "$state/session_$target" ]; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  new-session)
+    name=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "-s" ]; then
+        shift
+        name="$1"
+        break
+      fi
+      shift
+    done
+    : > "$state/session_$name"
+    exit 0
+    ;;
+  kill-session)
+    target="$2"
+    rm -f "$state/session_$target"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
+
+	origLaunchSidecar := launchRunSidecar
+	defer func() { launchRunSidecar = origLaunchSidecar }()
+	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+
+	writeDraft := func(name, objective string) string {
+		t.Helper()
+		cfg := goalx.Config{
+			Name:      name,
+			Mode:      goalx.ModeDevelop,
+			Objective: objective,
+			Roles: goalx.RoleDefaultsConfig{
+				Develop: goalx.SessionConfig{Engine: "codex", Model: "gpt-5.4"},
+			},
+			Target: goalx.TargetConfig{Files: []string{"README.md"}},
+			Harness: goalx.HarnessConfig{
+				Command: "test -f README.md",
+			},
+			Master: goalx.MasterConfig{
+				Engine: "codex",
+				Model:  "gpt-5.4",
+			},
+		}
+		data, err := yaml.Marshal(&cfg)
+		if err != nil {
+			t.Fatalf("marshal config: %v", err)
+		}
+		path := filepath.Join(goalxDir, "goalx.yaml")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatalf("write goalx.yaml: %v", err)
+		}
+		return path
+	}
+
+	firstDraft := writeDraft("alpha", "ship alpha")
+	if err := Start(repo, []string{"--config", firstDraft}); err != nil {
+		t.Fatalf("Start alpha: %v", err)
+	}
+	secondDraft := writeDraft("beta", "ship beta")
+	if err := Start(repo, []string{"--config", secondDraft}); err != nil {
+		t.Fatalf("Start beta: %v", err)
+	}
+
+	reg, err := LoadProjectRegistry(repo)
+	if err != nil {
+		t.Fatalf("LoadProjectRegistry: %v", err)
+	}
+	if reg.FocusedRun != "beta" {
+		t.Fatalf("focused run = %q, want beta", reg.FocusedRun)
+	}
+}
+
 func TestStartBuildLaunchConfigMatchesResolverDefaults(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -680,7 +791,7 @@ esac
 	}
 	text := string(masterProtocol)
 	for _, want := range []string{
-		"## User Preferences",
+		"### Preferences",
 		"| Research | multi-perspective |",
 		"| Develop | speed |",
 		"CLI overrides take precedence.",
@@ -695,7 +806,7 @@ esac
 	}
 }
 
-func TestStartLaunchesMasterWithRuntimeEnv(t *testing.T) {
+func TestStartLaunchesMasterWithCurrentProcessEnvWithoutSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -815,22 +926,8 @@ esac
 	if strings.Contains(logText, "TMUX_PANE='%99'") {
 		t.Fatalf("start launch should not propagate TMUX_PANE:\n%s", logText)
 	}
-	launchEnvData, err := os.ReadFile(filepath.Join(runDir, "control", "launch-env.json"))
-	if err != nil {
-		t.Fatalf("read launch env snapshot: %v", err)
-	}
-	launchEnvText := string(launchEnvData)
-	for _, want := range []string{
-		`"FOO_TOOLCHAIN_ROOT": "/opt/goalx-toolchain"`,
-		`"HOME": "` + home + `"`,
-		`"OPENAI_API_KEY": "sk-goalx"`,
-	} {
-		if !strings.Contains(launchEnvText, want) {
-			t.Fatalf("launch env snapshot missing %q:\n%s", want, launchEnvText)
-		}
-	}
-	if strings.Contains(launchEnvText, `"TMUX_PANE"`) {
-		t.Fatalf("launch env snapshot should not persist TMUX_PANE:\n%s", launchEnvText)
+	if _, err := os.Stat(filepath.Join(runDir, "control", "launch-env.json")); !os.IsNotExist(err) {
+		t.Fatalf("launch env snapshot should not be written, stat err = %v", err)
 	}
 	if _, err := os.Stat(runWT); err != nil {
 		t.Fatalf("run worktree missing: %v", err)

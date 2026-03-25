@@ -56,7 +56,7 @@ Common path:
 13. Shared project scope is minimal: `.goalx/config.yaml` is the project-scoped config, while active runs, saved runs, focus, and status live under `~/.goalx/runs/{projectID}/...`.
 14. Treat `run-charter.json` as the immutable doctrine anchor, `sessions/session-N/identity.json` as the durable worker identity, and `control/identity-fence.json` as the low-disturbance refresh signal.
 15. Treat missing charter or session-identity artifacts as a broken live run. Do not invent compatibility behavior around them.
-16. Treat `control/launch-env.json` as the run-scoped launch environment authority. `goalx add` and `goalx resume` should reuse that snapshot, not the caller's current shell env or tmux server env.
+16. Launch behavior follows the current caller environment at the moment of `goalx start`, `goalx add`, `goalx resume`, or master relaunch. Do not invent or depend on a persisted launch-env snapshot file.
 17. Use `--dimension` for launch-time hints and `goalx dimension` for runtime mutation.
 18. Routing profiles are config-driven. Define reusable bundles under `routing.profiles` and map `role + dimension` to profile names under `routing.table`.
 19. `goalx stop` kills all leased processes and their descendant process trees before destroying the tmux session. `goalx drop` does the same cleanup, then removes worktrees, branches, and the run directory.

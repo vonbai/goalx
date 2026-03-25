@@ -230,10 +230,6 @@ func Resume(projectRoot string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
 	}
-	launchEnv, err := RequireLaunchEnvSnapshot(rc.RunDir)
-	if err != nil {
-		return fmt.Errorf("load run launch env: %w", err)
-	}
 	goalxBin, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
@@ -241,7 +237,7 @@ func Resume(projectRoot string, args []string) error {
 	checkSec, _ := normalizeSidecarInterval(rc.Config.Master.CheckInterval)
 	sessionLeaseTTL := time.Duration(checkSec) * time.Second * 2
 
-	launchCmd := buildLeaseWrappedLaunchCommandWithEnv(launchEnv.Env, goalxBin, rc.Name, rc.RunDir, sessionName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
+	launchCmd := buildLeaseWrappedLaunchCommand(goalxBin, rc.Name, rc.RunDir, sessionName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
 	if err := NewWindowWithCommand(rc.TmuxSession, windowName, workdir, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}

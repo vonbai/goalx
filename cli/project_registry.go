@@ -125,6 +125,18 @@ func RegisterActiveRun(projectRoot string, cfg *goalx.Config) error {
 	return UpsertGlobalRun(projectRoot, cfg, "active")
 }
 
+func setFocusedRun(projectRoot, runName string) error {
+	reg, err := LoadProjectRegistry(projectRoot)
+	if err != nil {
+		return err
+	}
+	if _, ok := reg.ActiveRuns[runName]; !ok {
+		return fmt.Errorf("run %q is not active", runName)
+	}
+	reg.FocusedRun = runName
+	return SaveProjectRegistry(projectRoot, reg)
+}
+
 func MarkRunInactive(projectRoot, runName string) error {
 	reg, err := LoadProjectRegistry(projectRoot)
 	if err != nil {

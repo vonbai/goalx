@@ -320,7 +320,7 @@ func TestResumeUsesDurableSessionIdentityInsteadOfCurrentConfig(t *testing.T) {
 	}
 }
 
-func TestResumeUsesRunLaunchEnv(t *testing.T) {
+func TestResumeUsesCurrentProcessEnvWithoutSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -355,14 +355,7 @@ esac
 	t.Setenv("OPENAI_API_KEY", "sk-before")
 	t.Setenv("FOO_TOOLCHAIN_ROOT", "/opt/resume-before")
 
-	runName, runDir := writeLifecycleRunFixture(t, repo)
-	writeTestLaunchEnvSnapshot(t, runDir, map[string]string{
-		"HOME":               home,
-		"PATH":               fakeBin + string(os.PathListSeparator) + "/tmp/goalx-bin:/usr/bin",
-		"OPENAI_API_KEY":     "sk-before",
-		"FOO_TOOLCHAIN_ROOT": "/opt/resume-before",
-	})
-
+	runName, _ := writeLifecycleRunFixture(t, repo)
 	t.Setenv("OPENAI_API_KEY", "sk-after")
 	t.Setenv("FOO_TOOLCHAIN_ROOT", "/opt/resume-after")
 
@@ -376,15 +369,15 @@ esac
 	}
 	logText := string(out)
 	for _, want := range []string{
-		"FOO_TOOLCHAIN_ROOT='/opt/resume-before'",
-		"OPENAI_API_KEY='sk-before'",
+		"FOO_TOOLCHAIN_ROOT='/opt/resume-after'",
+		"OPENAI_API_KEY='sk-after'",
 	} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("resume launch missing %q:\n%s", want, logText)
 		}
 	}
-	if strings.Contains(logText, "OPENAI_API_KEY='sk-after'") || strings.Contains(logText, "FOO_TOOLCHAIN_ROOT='/opt/resume-after'") {
-		t.Fatalf("resume should use stored run launch env, not caller env:\n%s", logText)
+	if strings.Contains(logText, "OPENAI_API_KEY='sk-before'") || strings.Contains(logText, "FOO_TOOLCHAIN_ROOT='/opt/resume-before'") {
+		t.Fatalf("resume should use current process env, not a stored snapshot:\n%s", logText)
 	}
 }
 
@@ -550,7 +543,6 @@ func writeLifecycleRunFixture(t *testing.T, repo string) (string, string) {
 	if err := EnsureMasterControl(runDir); err != nil {
 		t.Fatalf("EnsureMasterControl: %v", err)
 	}
-	writeTestLaunchEnvSnapshotFromCurrent(t, runDir)
 	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)

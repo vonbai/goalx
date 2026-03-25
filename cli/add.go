@@ -154,10 +154,6 @@ func Add(projectRoot string, args []string) (err error) {
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
 	}
-	launchEnv, err := RequireLaunchEnvSnapshot(rc.RunDir)
-	if err != nil {
-		return fmt.Errorf("load run launch env: %w", err)
-	}
 	runWT := RunWorktreePath(rc.RunDir)
 	goalxBin, err := os.Executable()
 	if err != nil {
@@ -273,7 +269,7 @@ func Add(projectRoot string, args []string) (err error) {
 
 	// Launch in tmux
 	prompt := goalx.ResolvePrompt(engines, engine, protocolPath)
-	launchCmd := buildLeaseWrappedLaunchCommandWithEnv(launchEnv.Env, goalxBin, rc.Name, rc.RunDir, sName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
+	launchCmd := buildLeaseWrappedLaunchCommand(goalxBin, rc.Name, rc.RunDir, sName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
 	if err := NewWindowWithCommand(rc.TmuxSession, windowName, workdir, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}

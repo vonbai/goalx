@@ -35,10 +35,6 @@ func relaunchMaster(projectRoot, runDir, tmuxSession string, cfg *goalx.Config) 
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
 	}
-	launchEnv, err := RequireLaunchEnvSnapshot(runDir)
-	if err != nil {
-		return fmt.Errorf("load launch env snapshot: %w", err)
-	}
 	goalxBin, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
@@ -46,7 +42,7 @@ func relaunchMaster(projectRoot, runDir, tmuxSession string, cfg *goalx.Config) 
 	checkSec, _ := normalizeSidecarInterval(cfg.Master.CheckInterval)
 	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
 	workdir := RunWorktreePath(runDir)
-	launchCmd := buildMasterLaunchCommandWithEnv(launchEnv.Env, goalxBin, cfg.Name, runDir, meta.RunID, meta.Epoch, masterLeaseTTL, engineCmd, prompt)
+	launchCmd := buildMasterLaunchCommand(goalxBin, cfg.Name, runDir, meta.RunID, meta.Epoch, masterLeaseTTL, engineCmd, prompt)
 
 	_ = KillWindow(tmuxSession, "master")
 	if err := NewWindowWithCommand(tmuxSession, "master", workdir, launchCmd); err != nil {

@@ -464,7 +464,7 @@ func TestRenderMasterProtocolIncludesGoalBoundaryChecklistInstructions(t *testin
 	for _, want := range []string{
 		"## Mode",
 		"The user specified **develop** mode.",
-		"## Your Job",
+		"## Operations",
 		"run-charter.json",
 		"goal boundary",
 		"control/identity-fence.json",
@@ -886,13 +886,13 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 	}
 	text := string(out)
 	for _, want := range []string{
-		"## Available Engines",
-		"## Current Configuration",
+		"## Resources",
+		"## Objective",
 		"- Run: demo",
 		"goalx save demo && goalx debate --from demo",
 		"goalx save demo && goalx implement --from demo",
 		"goalx stop --run demo",
-		"## Status Contract",
+		"## Status",
 		"You drive the transition.",
 		"Set `keep_session` when a develop-mode session should be merged",
 		"Do NOT just write a recommendation and wait.",
@@ -1088,8 +1088,8 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		"Do not wait on one session if other independent required work can proceed.",
 		"Prefer reusing a parked or idle session with fresh inbox instructions before launching another session.",
 		"Improvement backlog",
-		"short-lived information gathering",
-		"if you are running on Claude Code, you may use Claude's native subagents inside the master session",
+		"Only use Claude native subagents for quick read-only checks or validation under 30 seconds.",
+		"Do not use native subagents for primary research, implementation, or durable ownership.",
 		"`goalx add` remains the durable path",
 		"Treat narrowed causes as hypotheses until a failing regression test or decisive evidence confirms them.",
 		"If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated control cycles.",
@@ -1185,6 +1185,110 @@ func TestRenderMasterProtocolIncludesOptimizationDoctrine(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
 		}
+	}
+}
+
+func TestRenderMasterProtocolUsesCondensedOperatingSections(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:             "ship it",
+		RunName:               "demo",
+		Mode:                  goalx.ModeDevelop,
+		Master:                goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		TmuxSession:           "ar-demo",
+		SummaryPath:           "/tmp/summary.md",
+		AcceptanceStatePath:   "/tmp/acceptance.json",
+		GoalPath:              "/tmp/goal.json",
+		StatusPath:            "/tmp/status.json",
+		CoordinationPath:      "/tmp/coordination.json",
+		MasterInboxPath:       "/tmp/control/inbox/master.jsonl",
+		MasterCursorPath:      "/tmp/control/master-cursor.json",
+		ControlRunStatePath:   "/tmp/control/run-state.json",
+		RunStatePath:          "/tmp/state/run.json",
+		SessionsStatePath:     "/tmp/state/sessions.json",
+		LivenessPath:          "/tmp/control/liveness.json",
+		WorktreeSnapshotPath:  "/tmp/control/worktree-snapshot.json",
+		ControlRemindersPath:  "/tmp/control/reminders.json",
+		ControlDeliveriesPath: "/tmp/control/deliveries.json",
+		CompletionProofPath:   "/tmp/proof/completion.json",
+		EngineCommand:         "claude --model claude-opus-4-6 --permission-mode auto",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"## Identity",
+		"## Objective",
+		"## Resources",
+		"## Strategy",
+		"## Operations",
+		"## Completion",
+		"## Tools",
+		"## Status",
+		"Dispatch implementation to GoalX sessions first.",
+		"Mechanical work belongs on codex-class workers. Judgment and final arbitration belong on opus-class workers.",
+		"Read the inbox every control cycle before making decisions.",
+		"If you finish a thinking block without a concrete next action, immediately enter `goalx wait --run demo master --timeout 300`.",
+		"If a session is stale for 15+ minutes while its lease is healthy, park it and replace it.",
+		"Re-read the charter objective before declaring completion.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+	for _, unwanted := range []string{
+		"## Current Configuration",
+		"## Routing Guidance",
+		"## Implementation Strategy",
+		"## Your Job",
+		"## Rules",
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("rendered master protocol should omit %q:\n%s", unwanted, text)
+		}
+	}
+}
+
+func TestRenderMasterProtocolTightensClaudeNativeSubagentUsage(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:     "ship it",
+		RunName:       "demo",
+		Mode:          goalx.ModeDevelop,
+		Master:        goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		TmuxSession:   "ar-demo",
+		SummaryPath:   "/tmp/summary.md",
+		StatusPath:    "/tmp/status.json",
+		EngineCommand: "claude --model claude-opus-4-6 --permission-mode auto",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"Only use Claude native subagents for quick read-only checks or validation under 30 seconds.",
+		"Do not use native subagents for primary research, implementation, or durable ownership.",
+		"If the task needs a worktree, durable tracking, or more than a quick check, use `goalx add`.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "short-lived information gathering") {
+		t.Fatalf("rendered master protocol should not keep the old permissive native-subagent wording:\n%s", text)
 	}
 }
 

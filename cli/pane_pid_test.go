@@ -91,7 +91,6 @@ harness:
 	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
 		t.Fatalf("CreateWorktree run root: %v", err)
 	}
-	writeTestLaunchEnvSnapshotFromCurrent(t, runDir)
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}

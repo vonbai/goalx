@@ -1,20 +1,12 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 )
-
-type LaunchEnvSnapshot struct {
-	Version    int               `json:"version"`
-	CapturedAt string            `json:"captured_at,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
-}
 
 var launchEnvDenylist = map[string]struct{}{
 	"CLAUDE_SESSION_ID":    {},
@@ -29,10 +21,6 @@ var launchEnvDenylist = map[string]struct{}{
 	"TERM_PROGRAM_VERSION": {},
 	"TMUX":                 {},
 	"TMUX_PANE":            {},
-}
-
-func ControlLaunchEnvPath(runDir string) string {
-	return filepath.Join(ControlDir(runDir), "launch-env.json")
 }
 
 func buildEngineLaunchCommand(engineCmd, prompt string) string {
@@ -107,62 +95,4 @@ func currentLaunchEnv() map[string]string {
 func shouldPropagateLaunchEnv(key string) bool {
 	_, denied := launchEnvDenylist[key]
 	return !denied
-}
-
-func CaptureCurrentLaunchEnvSnapshot() *LaunchEnvSnapshot {
-	return &LaunchEnvSnapshot{
-		Version:    1,
-		CapturedAt: time.Now().UTC().Format(time.RFC3339),
-		Env:        currentLaunchEnv(),
-	}
-}
-
-func LoadLaunchEnvSnapshot(path string) (*LaunchEnvSnapshot, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	snapshot := &LaunchEnvSnapshot{}
-	if len(strings.TrimSpace(string(data))) == 0 {
-		snapshot.Version = 1
-		snapshot.Env = map[string]string{}
-		return snapshot, nil
-	}
-	if err := json.Unmarshal(data, snapshot); err != nil {
-		return nil, fmt.Errorf("parse launch env snapshot: %w", err)
-	}
-	if snapshot.Version == 0 {
-		snapshot.Version = 1
-	}
-	if snapshot.Env == nil {
-		snapshot.Env = map[string]string{}
-	}
-	return snapshot, nil
-}
-
-func SaveLaunchEnvSnapshot(path string, snapshot *LaunchEnvSnapshot) error {
-	if snapshot == nil {
-		return fmt.Errorf("launch env snapshot is nil")
-	}
-	if snapshot.Version == 0 {
-		snapshot.Version = 1
-	}
-	if snapshot.CapturedAt == "" {
-		snapshot.CapturedAt = time.Now().UTC().Format(time.RFC3339)
-	}
-	if snapshot.Env == nil {
-		snapshot.Env = map[string]string{}
-	}
-	return writeJSONFile(path, snapshot)
-}
-
-func RequireLaunchEnvSnapshot(runDir string) (*LaunchEnvSnapshot, error) {
-	snapshot, err := LoadLaunchEnvSnapshot(ControlLaunchEnvPath(runDir))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("missing run launch env snapshot at %s", ControlLaunchEnvPath(runDir))
-		}
-		return nil, err
-	}
-	return snapshot, nil
 }

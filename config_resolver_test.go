@@ -210,3 +210,37 @@ func TestResolveConfigSemantics(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveConfigPreservesBuiltinRoutingDefaults(t *testing.T) {
+	t.Parallel()
+
+	base := BuiltinDefaults
+	base.Name = "demo"
+	base.Mode = ModeDevelop
+	base.Objective = "lock config state"
+	base.Target = TargetConfig{Files: []string{"README.md"}}
+	base.Harness = HarnessConfig{Command: "go test ./..."}
+	attachCatalogs(&base, copyPresetCatalog(Presets), copyStringCatalog(BuiltinDimensions))
+
+	resolved, err := resolveConfigWithDetector(&ConfigLayers{
+		Config:     base,
+		Engines:    copyEngines(BuiltinEngines),
+		Presets:    copyPresetCatalog(Presets),
+		Dimensions: copyStringCatalog(BuiltinDimensions),
+	}, ResolveRequest{}, func() string {
+		return "hybrid"
+	})
+	if err != nil {
+		t.Fatalf("resolveConfigWithDetector: %v", err)
+	}
+
+	if got := resolved.Config.Routing.Table["research"]["high"]; got != "research_max" {
+		t.Fatalf("routing.table.research.high = %q, want research_max", got)
+	}
+	if got := resolved.Config.Routing.Table["simple"]["medium"]; got != "build_fast" {
+		t.Fatalf("routing.table.simple.medium = %q, want build_fast", got)
+	}
+	if got := resolved.Config.Preferences.Develop.Guidance; got != "主力 gpt-5.4 medium。简单修复用 fast。" {
+		t.Fatalf("develop guidance = %q", got)
+	}
+}

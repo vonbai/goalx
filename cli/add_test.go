@@ -258,7 +258,7 @@ acceptance:
 	}
 }
 
-func TestAddLaunchesSessionWithRunLaunchEnvInExplicitWorktree(t *testing.T) {
+func TestAddLaunchesSessionWithCurrentProcessEnvInExplicitWorktree(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -309,12 +309,6 @@ harness:
 	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
 		t.Fatalf("CreateWorktree run root: %v", err)
 	}
-	writeTestLaunchEnvSnapshot(t, runDir, map[string]string{
-		"HOME":               home,
-		"PATH":               fakeBin + string(os.PathListSeparator) + "/tmp/goalx-bin:/usr/bin",
-		"ANTHROPIC_API_KEY":  "anthropic-test",
-		"FOO_TOOLCHAIN_ROOT": "/opt/add-before",
-	})
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
@@ -336,10 +330,10 @@ harness:
 		"lease-loop --run",
 		"--holder",
 		"session-2",
-		"FOO_TOOLCHAIN_ROOT='/opt/add-before'",
+		"FOO_TOOLCHAIN_ROOT='/opt/add-after'",
 		"HOME='" + home + "'",
 		"PATH='" + fakeBin + ":/tmp/goalx-bin:/usr/bin'",
-		"ANTHROPIC_API_KEY='anthropic-test'",
+		"ANTHROPIC_API_KEY='anthropic-after'",
 		"claude --model claude-opus-4-6 --permission-mode auto --disable-slash-commands",
 	} {
 		if !strings.Contains(logText, want) {
@@ -349,8 +343,8 @@ harness:
 	if strings.Contains(logText, "send-keys -t "+goalx.TmuxSessionName(repo, runName)+":session-2") {
 		t.Fatalf("add should launch session directly, not via send-keys:\n%s", logText)
 	}
-	if strings.Contains(logText, "ANTHROPIC_API_KEY='anthropic-after'") || strings.Contains(logText, "FOO_TOOLCHAIN_ROOT='/opt/add-after'") {
-		t.Fatalf("add should use stored run launch env, not caller env:\n%s", logText)
+	if strings.Contains(logText, "ANTHROPIC_API_KEY='anthropic-test'") || strings.Contains(logText, "FOO_TOOLCHAIN_ROOT='/opt/add-before'") {
+		t.Fatalf("add should use current process env, not a stored snapshot:\n%s", logText)
 	}
 }
 
@@ -996,7 +990,6 @@ func writeAddRunFixture(t *testing.T, repo, snapshot string) (string, string) {
 	if err := EnsureMasterControl(runDir); err != nil {
 		t.Fatalf("EnsureMasterControl: %v", err)
 	}
-	writeTestLaunchEnvSnapshotFromCurrent(t, runDir)
 	fence, err := NewIdentityFence(runDir, meta)
 	if err != nil {
 		t.Fatalf("NewIdentityFence: %v", err)
