@@ -26,12 +26,16 @@ func TestAddExtendsExplicitSessionsSnapshot(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: fast
+roles:
+  develop:
+    engine: codex
+    model: fast
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
   - hint: second
+    mode: develop
 target:
   files: ["."]
 harness:
@@ -44,7 +48,7 @@ harness:
 		}
 	}
 
-	if err := Add(repo, []string{"third direction", "--run", runName}); err != nil {
+	if err := Add(repo, []string{"third direction", "--mode", "develop", "--run", runName}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	identity, err := LoadSessionIdentity(SessionIdentityPath(runDir, "session-3"))
@@ -95,11 +99,14 @@ func TestAddAttachesDimensionsWithoutReplacingDirection(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: fast
+roles:
+  develop:
+    engine: codex
+    model: fast
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["."]
 harness:
@@ -114,7 +121,7 @@ harness:
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
 
-	if err := Add(repo, []string{"audit root cause", "--dimension", "adversarial", "--run", runName}); err != nil {
+	if err := Add(repo, []string{"audit root cause", "--mode", "develop", "--dimension", "adversarial", "--run", runName}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -158,8 +165,6 @@ func TestAddPropagatesEngineToRenderedProtocol(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
 roles:
   research:
     engine: claude-code
@@ -170,6 +175,7 @@ roles:
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["."]
 harness:
@@ -184,7 +190,7 @@ harness:
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
 
-	if err := Add(repo, []string{"second direction", "--run", runName}); err != nil {
+	if err := Add(repo, []string{"second direction", "--mode", "develop", "--run", runName}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -214,8 +220,6 @@ func TestAddRendersAcceptanceContractAndTeamContext(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
 roles:
   research:
     engine: claude-code
@@ -226,6 +230,7 @@ roles:
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["."]
 harness:
@@ -244,7 +249,7 @@ acceptance:
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
 
-	if err := Add(repo, []string{"second direction", "--run", runName}); err != nil {
+	if err := Add(repo, []string{"second direction", "--mode", "develop", "--run", runName}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -299,15 +304,17 @@ esac
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
 roles:
   research:
     engine: claude-code
     model: opus
+  develop:
+    engine: codex
+    model: fast
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["."]
 harness:
@@ -387,11 +394,14 @@ esac
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
+roles:
+  develop:
+    engine: codex
+    model: codex
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["."]
 harness:
@@ -406,7 +416,7 @@ harness:
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
 
-	if err := Add(repo, []string{"--run", runName, "second direction"}); err != nil {
+	if err := Add(repo, []string{"--run", runName, "--mode", "develop", "second direction"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -455,11 +465,14 @@ func TestAddWithWorktreeCopiesGitignoredFiles(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
+roles:
+  develop:
+    engine: codex
+    model: codex
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["."]
 harness:
@@ -475,7 +488,7 @@ harness:
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
 
-	if err := Add(repo, []string{"--run", runName, "--worktree", "second direction"}); err != nil {
+	if err := Add(repo, []string{"--run", runName, "--worktree", "--mode", "develop", "second direction"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -505,14 +518,17 @@ func TestAddNotifiesMasterViaInbox(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
+roles:
+  develop:
+    engine: codex
+    model: codex
 parallel: 1
 master:
   engine: codex
   model: gpt-5.4
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["."]
 harness:
@@ -527,7 +543,7 @@ harness:
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
 
-	if err := Add(repo, []string{"second direction", "--run", runName}); err != nil {
+	if err := Add(repo, []string{"second direction", "--mode", "develop", "--run", runName}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -567,8 +583,10 @@ func TestAddStartsNumberingFromExistingRunArtifacts(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: fast
+roles:
+  develop:
+    engine: codex
+    model: fast
 parallel: 3
 target:
   files: ["."]
@@ -577,10 +595,10 @@ harness:
 `)
 	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
 
-	if err := Add(repo, []string{"first direction", "--run", runName}); err != nil {
+	if err := Add(repo, []string{"first direction", "--mode", "develop", "--run", runName}); err != nil {
 		t.Fatalf("Add first: %v", err)
 	}
-	if err := Add(repo, []string{"second direction", "--run", runName}); err != nil {
+	if err := Add(repo, []string{"second direction", "--mode", "develop", "--run", runName}); err != nil {
 		t.Fatalf("Add second: %v", err)
 	}
 
@@ -621,8 +639,6 @@ func TestAddSupportsResearchModeOverride(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
 roles:
   research:
     engine: claude-code
@@ -633,6 +649,7 @@ roles:
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["src/"]
 harness:
@@ -702,11 +719,14 @@ func TestAddRequiresDurableIdentityForExistingSessions(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
+roles:
+  develop:
+    engine: codex
+    model: codex
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["src/"]
 harness:
@@ -720,7 +740,7 @@ harness:
 		t.Fatalf("remove session identity: %v", err)
 	}
 
-	err := Add(repo, []string{"second direction", "--run", runName})
+	err := Add(repo, []string{"second direction", "--mode", "develop", "--run", runName})
 	if err == nil || !strings.Contains(err.Error(), "session identity") {
 		t.Fatalf("Add error = %v, want missing session identity", err)
 	}
@@ -756,11 +776,14 @@ esac
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
+roles:
+  develop:
+    engine: codex
+    model: codex
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["src/"]
 harness:
@@ -771,7 +794,7 @@ harness:
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
 
-	err := Add(repo, []string{"first direction", "--run", runName})
+	err := Add(repo, []string{"first direction", "--mode", "develop", "--run", runName})
 	if err == nil || !strings.Contains(err.Error(), "create tmux window") {
 		t.Fatalf("Add error = %v, want tmux window failure", err)
 	}
@@ -797,8 +820,6 @@ func TestAddResearchModeOverrideUsesResearchRoleWithoutExplicitSessions(t *testi
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
 roles:
   research:
     engine: claude-code
@@ -825,6 +846,27 @@ harness:
 		t.Fatalf("LoadRunSpec: %v", err)
 	}
 	effective := goalx.EffectiveSessionConfig(cfg, 0)
+	if effective.Mode == "" {
+		effective.Mode = cfg.Mode
+	}
+	if effective.Engine == "" || effective.Model == "" {
+		roleDefaults := goalx.SessionConfig{}
+		switch effective.Mode {
+		case goalx.ModeResearch:
+			roleDefaults = cfg.Roles.Research
+		case goalx.ModeDevelop:
+			roleDefaults = cfg.Roles.Develop
+		}
+		if effective.Engine == "" {
+			effective.Engine = roleDefaults.Engine
+		}
+		if effective.Model == "" {
+			effective.Model = roleDefaults.Model
+		}
+		if effective.Effort == "" {
+			effective.Effort = roleDefaults.Effort
+		}
+	}
 	identity, err := NewSessionIdentity(
 		runDir,
 		"session-1",
@@ -891,11 +933,14 @@ func TestAddHelpDoesNotCreateSession(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
+roles:
+  develop:
+    engine: codex
+    model: codex
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["."]
 harness:
@@ -1008,6 +1053,27 @@ func writeAddRunFixture(t *testing.T, repo, snapshot string) (string, string) {
 	}
 	for i := range cfg.Sessions {
 		effective := goalx.EffectiveSessionConfig(cfg, i)
+		if effective.Mode == "" {
+			effective.Mode = cfg.Mode
+		}
+		if effective.Engine == "" || effective.Model == "" {
+			roleDefaults := goalx.SessionConfig{}
+			switch effective.Mode {
+			case goalx.ModeResearch:
+				roleDefaults = cfg.Roles.Research
+			case goalx.ModeDevelop:
+				roleDefaults = cfg.Roles.Develop
+			}
+			if effective.Engine == "" {
+				effective.Engine = roleDefaults.Engine
+			}
+			if effective.Model == "" {
+				effective.Model = roleDefaults.Model
+			}
+			if effective.Effort == "" {
+				effective.Effort = roleDefaults.Effort
+			}
+		}
 		identity, err := NewSessionIdentity(
 			runDir,
 			SessionName(i+1),

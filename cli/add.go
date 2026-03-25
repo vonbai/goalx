@@ -391,13 +391,17 @@ func buildSessionDataList(runDir string, cfg *goalx.Config, engines map[string]g
 			dimensions = resolvedDimensions
 		}
 		dimensions = CurrentSessionDimensions(runDir, sName, dimensions)
-		spec, err := goalx.ResolveLaunchSpec(engines, goalx.LaunchRequest{
-			Engine: engine,
-			Model:  model,
-			Effort: effective.Effort,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("resolve session-%d engine: %w", num, err)
+		engineCommand := ""
+		if strings.TrimSpace(engine) != "" && strings.TrimSpace(model) != "" {
+			spec, err := goalx.ResolveLaunchSpec(engines, goalx.LaunchRequest{
+				Engine: engine,
+				Model:  model,
+				Effort: effective.Effort,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("resolve session-%d engine: %w", num, err)
+			}
+			engineCommand = spec.Command
 		}
 		worktreePath := resolvedSessionWorktreePath(runDir, cfg.Name, sName, sessionState)
 		list = append(list, SessionData{
@@ -414,7 +418,7 @@ func buildSessionDataList(runDir string, cfg *goalx.Config, engines map[string]g
 			RouteRole:         identity.RouteRole,
 			RouteProfile:      identity.RouteProfile,
 			Dimensions:        dimensions,
-			EngineCommand:     spec.Command,
+			EngineCommand:     engineCommand,
 		})
 	}
 	return list, nil

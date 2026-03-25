@@ -34,7 +34,7 @@ Usage:
   goalx focus   [--run NAME]           Set the default run for this project
   goalx archive [--run RUN] <session> Git tag + preserve
   goalx save    [--run RUN]           Save run artifacts to user-scoped durable storage
-  goalx verify  [--run RUN]           Run the effective acceptance gate, then validate contract and completion provenance
+  goalx verify  [--run RUN]           Run the effective acceptance command and record exit code + output
   goalx debate  --from RUN [flags]     Start a debate run from a saved run
   goalx implement --from RUN [flags]   Start a develop run from a saved run
   goalx explore --from RUN [flags]     Start a follow-up research run from a saved run

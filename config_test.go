@@ -255,6 +255,30 @@ func TestResolveSessionRouteExplicitProfileBeatsRules(t *testing.T) {
 	}
 }
 
+func TestResolveSessionRouteLeavesUnspecifiedSessionsUnassigned(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeAuto,
+		Roles: RoleDefaultsConfig{
+			Research: SessionConfig{Engine: "claude-code", Model: "opus"},
+			Develop:  SessionConfig{Engine: "codex", Model: "gpt-5.4"},
+		},
+	}
+
+	resolved, err := ResolveSessionRoute(cfg, SessionConfig{})
+	if err != nil {
+		t.Fatalf("ResolveSessionRoute: %v", err)
+	}
+	if resolved.Mode != "" {
+		t.Fatalf("mode = %q, want unset mode", resolved.Mode)
+	}
+	if resolved.RouteRole != "" {
+		t.Fatalf("route_role = %q, want unset route_role", resolved.RouteRole)
+	}
+	if resolved.Engine != "" || resolved.Model != "" {
+		t.Fatalf("engine/model = %s/%s, want unset engine/model", resolved.Engine, resolved.Model)
+	}
+}
+
 func TestPresetNoOverrideExplicit(t *testing.T) {
 	cfg := Config{
 		Preset: "claude",
@@ -422,13 +446,13 @@ func TestValidateConfigAcceptsAutoMode(t *testing.T) {
 	}
 }
 
-func TestResolveAcceptanceCommandFallsBackToHarness(t *testing.T) {
+func TestResolveAcceptanceCommandDoesNotFallBackToHarness(t *testing.T) {
 	cfg := &Config{
 		Harness: HarnessConfig{Command: "go test ./..."},
 	}
 
-	if got := ResolveAcceptanceCommand(cfg); got != "go test ./..." {
-		t.Fatalf("ResolveAcceptanceCommand() = %q, want harness command", got)
+	if got := ResolveAcceptanceCommand(cfg); got != "" {
+		t.Fatalf("ResolveAcceptanceCommand() = %q, want empty command", got)
 	}
 }
 
@@ -1349,8 +1373,8 @@ func TestEffectiveSessionConfigInheritsRunDefaults(t *testing.T) {
 	}
 
 	got := EffectiveSessionConfig(cfg, 0)
-	if got.Mode != ModeDevelop {
-		t.Fatalf("Mode = %q, want %q", got.Mode, ModeDevelop)
+	if got.Mode != "" {
+		t.Fatalf("Mode = %q, want unset mode", got.Mode)
 	}
 	if !reflect.DeepEqual(got.Target.Files, []string{"src/"}) {
 		t.Fatalf("Target.Files = %#v, want inherited run target", got.Target.Files)
@@ -1358,8 +1382,8 @@ func TestEffectiveSessionConfigInheritsRunDefaults(t *testing.T) {
 	if got.Harness.Command != "go test ./..." {
 		t.Fatalf("Harness.Command = %q, want inherited run harness", got.Harness.Command)
 	}
-	if got.Engine != "codex" || got.Model != "fast" {
-		t.Fatalf("Engine/Model = %s/%s, want codex/fast", got.Engine, got.Model)
+	if got.Engine != "" || got.Model != "" {
+		t.Fatalf("Engine/Model = %s/%s, want unset engine/model", got.Engine, got.Model)
 	}
 }
 
@@ -1389,7 +1413,7 @@ func TestEffectiveSessionConfigUsesModeSpecificRoleDefaults(t *testing.T) {
 	}
 }
 
-func TestEffectiveSessionConfigDefaultsAutoRunsToDevelopMode(t *testing.T) {
+func TestEffectiveSessionConfigLeavesAutoRunSessionsUnsetByDefault(t *testing.T) {
 	cfg := &Config{
 		Mode: ModeAuto,
 		Roles: RoleDefaultsConfig{
@@ -1402,15 +1426,15 @@ func TestEffectiveSessionConfigDefaultsAutoRunsToDevelopMode(t *testing.T) {
 
 	got := EffectiveSessionConfig(cfg, 0)
 
-	if got.Mode != ModeDevelop {
-		t.Fatalf("Mode = %q, want %q", got.Mode, ModeDevelop)
+	if got.Mode != "" {
+		t.Fatalf("Mode = %q, want unset mode", got.Mode)
 	}
-	if got.Engine != "codex" || got.Model != "fast" {
-		t.Fatalf("Engine/Model = %s/%s, want codex/fast", got.Engine, got.Model)
+	if got.Engine != "" || got.Model != "" {
+		t.Fatalf("Engine/Model = %s/%s, want unset engine/model", got.Engine, got.Model)
 	}
 }
 
-func TestEffectiveSessionConfigUsesRoleDefaults(t *testing.T) {
+func TestEffectiveSessionConfigRequiresExplicitRoutingForRoleDefaults(t *testing.T) {
 	cfg := &Config{
 		Mode: ModeResearch,
 		Roles: RoleDefaultsConfig{
@@ -1423,7 +1447,7 @@ func TestEffectiveSessionConfigUsesRoleDefaults(t *testing.T) {
 	}
 
 	got := EffectiveSessionConfig(cfg, 0)
-	if got.Engine != "claude-code" || got.Model != "sonnet" {
-		t.Fatalf("role default session = %s/%s", got.Engine, got.Model)
+	if got.Engine != "" || got.Model != "" {
+		t.Fatalf("role default session = %s/%s, want unset engine/model", got.Engine, got.Model)
 	}
 }

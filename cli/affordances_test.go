@@ -71,3 +71,20 @@ func TestAffordancesAvoidRecommendationLanguage(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildAffordancesDoesNotDefaultTargetToMaster(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	doc, err := BuildAffordances(repo, cfg.Name, runDir, "")
+	if err != nil {
+		t.Fatalf("BuildAffordances: %v", err)
+	}
+	if doc.Target != "" {
+		t.Fatalf("target = %q, want empty target", doc.Target)
+	}
+	for _, item := range doc.Items {
+		if item.ID == "tell" && strings.Contains(item.Command, " master ") {
+			t.Fatalf("tell affordance should not default to master:\n%s", item.Command)
+		}
+	}
+}

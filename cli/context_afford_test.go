@@ -61,7 +61,7 @@ func TestAffordCommandPrintsMarkdownAffordances(t *testing.T) {
 		"# GoalX Affordances",
 		"goalx context --run " + cfg.Name,
 		"goalx afford --run " + cfg.Name + " master",
-		"Relevant for exact GoalX commands and run-local paths.",
+		"## tell",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("afford output missing %q:\n%s", want, out)

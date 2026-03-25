@@ -76,11 +76,14 @@ func TestAddPersistsPanePIDForNewSession(t *testing.T) {
 	snapshot := []byte(`name: add-run
 mode: develop
 objective: implement audit fixes
-engine: codex
-model: codex
+roles:
+  develop:
+    engine: codex
+    model: codex
 parallel: 1
 sessions:
   - hint: first
+    mode: develop
 target:
   files: ["."]
 harness:
@@ -95,7 +98,7 @@ harness:
 		t.Fatalf("seed session-1 journal: %v", err)
 	}
 
-	if err := Add(repo, []string{"--run", runName, "second direction"}); err != nil {
+	if err := Add(repo, []string{"--run", runName, "--mode", "develop", "second direction"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 

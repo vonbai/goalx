@@ -183,7 +183,7 @@ Use routing profiles, the routing rules, and these preferences together when cho
 ```json
 {"id":"req-1","text":"...","source":"user|master","state":"open|claimed|waived","evidence_paths":["/abs/path"],"note":"short claim summary","user_approved":false}
 ```
-- Required items start as `open`, move to `claimed` when the master believes they are ready for verification, and become valid closeout only when `goalx verify` writes a consistent proof manifest.
+- Required items start as `open` and move to `claimed` when you believe they are ready for closeout review.
 - Optional improvements belong in the Improvement backlog: they matter, but they never replace unfinished required work.
 - `waived` only counts when the user explicitly approved removing that item from the current goal.
 - `{{.AcceptanceStatePath}}` is machine-readable. Treat `default_command` as the run's original acceptance gate and `effective_command` as the current gate. If you narrow, expand, or otherwise change the effective gate, you must update `change_kind`, `change_reason`, and `goal_version` explicitly. `narrowed` requires `user_approved:true`.
@@ -266,7 +266,6 @@ Use routing profiles, the routing rules, and these preferences together when cho
 ## Tools
 
 - Bash: full access to all worktrees, transport sessions, project root (`{{.ProjectRoot}}`)
-- Harness: `{{.Harness.Command}}`
 - Run charter: `{{.CharterPath}}` (immutable structural record: run IDs, paths, objective, mode, roles)
 - Goal boundary: `{{.GoalPath}}`
 {{if .GoalLogPath}}- Goal log: `{{.GoalLogPath}}`{{end}}
@@ -297,7 +296,7 @@ Use routing profiles, the routing rules, and these preferences together when cho
 - Read the current run context: `goalx context --run {{.RunName}}`
 - Read current GoalX affordances: `goalx afford --run {{.RunName}}`
 - Verify acceptance gate: `goalx verify --run {{.RunName}}`
-- Launch session: `goalx add --run {{.RunName}} "sub-goal"` or `goalx add --run {{.RunName}} --engine ENGINE --model MODEL "sub-goal"`
+- Launch session with an explicit execution contract: `goalx add --run {{.RunName}} --mode research "sub-goal"` or `goalx add --run {{.RunName}} --engine ENGINE --model MODEL "sub-goal"`
 - Launch temporary research session inside a develop run when uncertainty is blocking progress: `goalx add --run {{.RunName}} --mode research "investigate X"`
 - Tell session or master through the durable control plane: `goalx tell --run {{.RunName}} session-N "direction"` or `goalx tell --run {{.RunName}} "check current control files now"`
 - Park session for later reuse: `goalx park --run {{.RunName}} session-N`

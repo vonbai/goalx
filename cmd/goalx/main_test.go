@@ -121,11 +121,11 @@ func TestMainInitWritesPreviewManualDraftOnEmptyProject(t *testing.T) {
 	if cfg.Name != "demo" {
 		t.Fatalf("cfg.Name = %q, want demo", cfg.Name)
 	}
-	if len(cfg.Target.Files) != 1 || cfg.Target.Files[0] != "." {
-		t.Fatalf("target.files = %#v, want inferred default target", cfg.Target.Files)
+	if len(cfg.Target.Files) != 0 {
+		t.Fatalf("target.files = %#v, want unset target", cfg.Target.Files)
 	}
-	if cfg.Harness.Command != "TODO: build + test command" {
-		t.Fatalf("harness.command = %q, want preview placeholder harness", cfg.Harness.Command)
+	if cfg.Harness.Command != "" {
+		t.Fatalf("harness.command = %q, want unset harness", cfg.Harness.Command)
 	}
 }
 

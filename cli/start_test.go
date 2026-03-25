@@ -344,14 +344,14 @@ esac
 		t.Fatalf("read acceptance state: %v", err)
 	}
 	stateText := string(stateData)
-	for _, want := range []string{
-		`"default_command": "test -f README.md"`,
-		`"effective_command": "test -f README.md"`,
-		`"goal_version": 1`,
-	} {
-		if !strings.Contains(stateText, want) {
-			t.Fatalf("acceptance state missing %q:\n%s", want, stateText)
-		}
+	if strings.Contains(stateText, `"default_command"`) {
+		t.Fatalf("acceptance state must not synthesize default_command from harness:\n%s", stateText)
+	}
+	if strings.Contains(stateText, `"effective_command"`) {
+		t.Fatalf("acceptance state must not synthesize effective_command from harness:\n%s", stateText)
+	}
+	if !strings.Contains(stateText, `"goal_version": 1`) {
+		t.Fatalf("acceptance state missing goal_version:\n%s", stateText)
 	}
 	// Framework must not auto-derive status or change_kind
 	if strings.Contains(stateText, `"status"`) {

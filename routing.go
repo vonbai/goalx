@@ -41,12 +41,7 @@ func ResolveSessionRoute(cfg *Config, session SessionConfig) (SessionConfig, err
 	}
 
 	resolved := session
-	resolved.Mode = ResolveSessionMode(cfg.Mode, resolved.Mode)
-	if strings.TrimSpace(resolved.RouteRole) == "" {
-		resolved.RouteRole = defaultRouteRole(resolved.Mode)
-	}
-
-	roleDefault := defaultRoleSession(cfg, resolved.Mode)
+	roleDefault := explicitRoleSession(cfg, resolved.Mode, resolved.RouteRole)
 	resolvedDimensions, err := resolveDimensionSpecsWithCatalog(resolveDimensionCatalog(cfg), resolved.Dimensions)
 	if err != nil {
 		return SessionConfig{}, err
@@ -138,18 +133,6 @@ func fillRoleDefaults(session SessionConfig, roleDefault SessionConfig) SessionC
 	}
 	return session
 }
-
-func defaultRouteRole(mode Mode) string {
-	switch mode {
-	case ModeResearch:
-		return "research"
-	case ModeDevelop:
-		return "develop"
-	default:
-		return ""
-	}
-}
-
 func resolveDimensionCatalog(cfg *Config) map[string]string {
 	if cfg == nil || len(cfg.dimensionCatalog) == 0 {
 		return BuiltinDimensions

@@ -118,7 +118,7 @@ func TestBuildLaunchConfigResearchDoesNotHardcodeReportDefaults(t *testing.T) {
 	}
 }
 
-func TestBuildLaunchConfigAutoDefaultsPreconfiguredSessionsToDevelopMode(t *testing.T) {
+func TestBuildLaunchConfigAutoLeavesPreconfiguredSessionsModeUnset(t *testing.T) {
 	projectRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
 		t.Fatalf("mkdir .goalx: %v", err)
@@ -142,8 +142,8 @@ func TestBuildLaunchConfigAutoDefaultsPreconfiguredSessionsToDevelopMode(t *test
 		t.Fatalf("sessions = %#v, want 2 preconfigured sessions", cfg.Sessions)
 	}
 	for i, sess := range cfg.Sessions {
-		if sess.Mode != goalx.ModeDevelop {
-			t.Fatalf("session[%d].Mode = %q, want %q", i, sess.Mode, goalx.ModeDevelop)
+		if sess.Mode != "" {
+			t.Fatalf("session[%d].Mode = %q, want unset mode", i, sess.Mode)
 		}
 	}
 }
@@ -191,7 +191,7 @@ target:
 	}
 }
 
-func TestBuildLaunchConfigPreviewAllowsPlaceholderDraftValues(t *testing.T) {
+func TestBuildLaunchConfigPreviewLeavesTargetAndHarnessUnsetWhenUnconfigured(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -204,11 +204,11 @@ func TestBuildLaunchConfigPreviewAllowsPlaceholderDraftValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildLaunchConfig: %v", err)
 	}
-	if len(cfg.Target.Files) != 1 || cfg.Target.Files[0] != "." {
-		t.Fatalf("target.files = %#v, want inferred default target", cfg.Target.Files)
+	if len(cfg.Target.Files) != 0 {
+		t.Fatalf("target.files = %#v, want unset target", cfg.Target.Files)
 	}
-	if cfg.Harness.Command != "TODO: build + test command" {
-		t.Fatalf("harness.command = %q, want placeholder draft harness", cfg.Harness.Command)
+	if cfg.Harness.Command != "" {
+		t.Fatalf("harness.command = %q, want unset harness", cfg.Harness.Command)
 	}
 
 	layers, err := goalx.LoadConfigLayers(projectRoot)
@@ -222,10 +222,8 @@ func TestBuildLaunchConfigPreviewAllowsPlaceholderDraftValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildLaunchResolveRequest: %v", err)
 	}
-	if _, err := goalx.ResolveConfig(layers, req); err == nil {
-		t.Fatal("ResolveConfig unexpectedly accepted placeholder draft values")
-	} else if err.Error() != "harness.command is required (set in the explicit manual draft config or .goalx/config.yaml)" {
-		t.Fatalf("ResolveConfig error = %v, want harness placeholder validation", err)
+	if _, err := goalx.ResolveConfig(layers, req); err != nil {
+		t.Fatalf("ResolveConfig: %v", err)
 	}
 }
 
@@ -316,7 +314,7 @@ sessions:
 	}
 }
 
-func TestResolveLaunchConfigPreservesHarnessTimeoutWhenInferringCommand(t *testing.T) {
+func TestResolveLaunchConfigPreservesHarnessTimeoutWithoutInferringCommand(t *testing.T) {
 	projectRoot := t.TempDir()
 	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module example.com/demo\n\ngo 1.24\n"), 0o644); err != nil {
 		t.Fatalf("write go.mod: %v", err)
@@ -336,9 +334,8 @@ harness:
 	if err != nil {
 		t.Fatalf("resolveLaunchConfig: %v", err)
 	}
-	wantCommand := "go build ./... && go test ./... -count=1 && go vet ./..."
-	if resolvedCfg.Config.Harness.Command != wantCommand {
-		t.Fatalf("harness.command = %q, want %q", resolvedCfg.Config.Harness.Command, wantCommand)
+	if resolvedCfg.Config.Harness.Command != "" {
+		t.Fatalf("harness.command = %q, want empty", resolvedCfg.Config.Harness.Command)
 	}
 	if resolvedCfg.Config.Harness.Timeout != 30*time.Second {
 		t.Fatalf("harness.timeout = %v, want %v", resolvedCfg.Config.Harness.Timeout, 30*time.Second)
@@ -406,7 +403,7 @@ func TestResolveLaunchConfigResearchDoesNotHardcodeReportDefaults(t *testing.T) 
 	}
 }
 
-func TestResolveLaunchConfigAutoDefaultsPreconfiguredSessionsToDevelopMode(t *testing.T) {
+func TestResolveLaunchConfigAutoLeavesPreconfiguredSessionsModeUnset(t *testing.T) {
 	projectRoot := t.TempDir()
 	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module example.com/demo\n\ngo 1.24\n"), 0o644); err != nil {
 		t.Fatalf("write go.mod: %v", err)
@@ -427,8 +424,8 @@ func TestResolveLaunchConfigAutoDefaultsPreconfiguredSessionsToDevelopMode(t *te
 		t.Fatalf("sessions = %#v, want 2 preconfigured sessions", resolvedCfg.Config.Sessions)
 	}
 	for i, sess := range resolvedCfg.Config.Sessions {
-		if sess.Mode != goalx.ModeDevelop {
-			t.Fatalf("session[%d].Mode = %q, want %q", i, sess.Mode, goalx.ModeDevelop)
+		if sess.Mode != "" {
+			t.Fatalf("session[%d].Mode = %q, want unset mode", i, sess.Mode)
 		}
 	}
 }

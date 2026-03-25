@@ -8,8 +8,6 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-
-	goalx "github.com/vonbai/goalx"
 )
 
 // Verify executes the run's acceptance command and records the result.
@@ -47,9 +45,6 @@ func Verify(projectRoot string, args []string) error {
 	}
 
 	timeout := rc.Config.Acceptance.Timeout
-	if defaultCommand, source := goalx.ResolveAcceptanceCommandSource(rc.Config); source == "harness" && strings.TrimSpace(defaultCommand) == command && timeout <= 0 {
-		timeout = rc.Config.Harness.Timeout
-	}
 
 	ctx := context.Background()
 	cancel := func() {}

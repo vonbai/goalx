@@ -46,9 +46,6 @@ func initWithOptions(projectRoot string, opts launchOptions) error {
 	fmt.Printf("Generated %s\n", outPath)
 	fmt.Printf("  name: %s\n", cfg.Name)
 	fmt.Printf("  mode: %s\n", cfg.Mode)
-	if cfg.Mode == "develop" && (len(cfg.Target.Files) == 0 || cfg.Target.Files[0] == "TODO: specify directories to modify" || cfg.Harness.Command == "TODO: build + test command") {
-		fmt.Println("\n  ⚠ Edit the manual draft config: fill target.files and harness.command")
-	}
 	fmt.Println("\n  Next: review .goalx/goalx.yaml, then goalx start --config .goalx/goalx.yaml")
 	return nil
 }

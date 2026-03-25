@@ -175,6 +175,8 @@ func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.M
 	if source == nil {
 		return goalx.ResolveRequest{}, fmt.Errorf("saved phase source is required")
 	}
+	_ = projectRoot
+	_ = baseCfg
 	masterOverride, researchOverride, developOverride, err := launchRoleOverrides(launchOptions{
 		Master:         opts.Master,
 		ResearchRole:   opts.ResearchRole,
@@ -202,20 +204,6 @@ func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.M
 		ResearchOverride: researchOverride,
 		DevelopOverride:  developOverride,
 	}
-	if len(baseCfg.Target.Files) == 0 {
-		target := InferTarget(projectRoot)
-		if len(target) == 0 {
-			target = []string{"."}
-		}
-		req.TargetOverride = &goalx.TargetConfig{Files: target}
-	}
-	if baseCfg.Harness.Command == "" {
-		harness := InferHarness(projectRoot)
-		if harness == "" {
-			harness = phaseHarnessFallback()
-		}
-		req.HarnessOverride = &goalx.HarnessConfig{Command: harness}
-	}
 	return req, nil
 }
 
@@ -233,10 +221,6 @@ func resolvePhaseObjective(phaseKind string, sourceRun string, explicit string) 
 	default:
 		return sourceRun
 	}
-}
-
-func phaseHarnessFallback() string {
-	return "echo 'no harness inferred - configure harness.command in .goalx/config.yaml'"
 }
 
 func phaseContextFiles(cfg *goalx.Config, source *savedPhaseSource, extra []string) ([]string, error) {
@@ -295,9 +279,8 @@ func applySessionHints(cfg *goalx.Config, hints []string) {
 		return
 	}
 	cfg.Sessions = make([]goalx.SessionConfig, size)
-	sessionMode := goalx.ResolveSessionMode(cfg.Mode, "")
 	for i, hint := range hints {
-		cfg.Sessions[i] = goalx.SessionConfig{Hint: hint, Mode: sessionMode}
+		cfg.Sessions[i] = goalx.SessionConfig{Hint: hint}
 	}
 }
 
@@ -317,11 +300,7 @@ func applySessionDimensions(cfg *goalx.Config, dimensions []string, opts phaseOp
 	}
 	sessions := make([]goalx.SessionConfig, size)
 	copy(sessions, cfg.Sessions)
-	sessionMode := goalx.ResolveSessionMode(cfg.Mode, "")
 	for i := range sessions {
-		if sessions[i].Mode == "" {
-			sessions[i].Mode = sessionMode
-		}
 		if len(dimensions) > 0 {
 			sessions[i].Dimensions = append([]string(nil), dimensions...)
 		}

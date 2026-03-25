@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -19,6 +20,9 @@ func NewSession(name, firstWindow string) error {
 
 // NewSessionWithCommand creates a new detached tmux session with its first window named.
 func NewSessionWithCommand(name, firstWindow, workdir, command string) error {
+	if err := syncTmuxGlobalPath(); err != nil {
+		return err
+	}
 	args := []string{"new-session", "-d", "-s", name, "-n", firstWindow}
 	if workdir != "" {
 		args = append(args, "-c", workdir)
@@ -36,6 +40,9 @@ func NewWindow(session, window, workdir string) error {
 
 // NewWindowWithCommand creates a new window in the given tmux session.
 func NewWindowWithCommand(session, window, workdir, command string) error {
+	if err := syncTmuxGlobalPath(); err != nil {
+		return err
+	}
 	args := []string{"new-window", "-t", session, "-n", window}
 	if workdir != "" {
 		args = append(args, "-c", workdir)
@@ -133,4 +140,12 @@ func CapturePaneTargetOutput(target string) (string, error) {
 		return "", err
 	}
 	return string(out), nil
+}
+
+func syncTmuxGlobalPath() error {
+	path := strings.TrimSpace(os.Getenv("PATH"))
+	if path == "" {
+		return nil
+	}
+	return exec.Command("tmux", "set-environment", "-g", "PATH", path).Run()
 }

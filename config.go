@@ -478,19 +478,10 @@ func ValidateConfig(cfg *Config, engines map[string]EngineConfig) error {
 		return fmt.Errorf("name is required (use --name or let goalx init generate one)")
 	}
 
-	// Check target
-	if len(cfg.Target.Files) == 0 {
-		return fmt.Errorf("target.files is required")
-	}
 	for _, f := range cfg.Target.Files {
 		if strings.HasPrefix(f, "TODO") {
 			return fmt.Errorf("target.files contains placeholder %q — edit the manual draft config first", f)
 		}
-	}
-
-	// Check harness
-	if cfg.Harness.Command == "" || strings.HasPrefix(cfg.Harness.Command, "TODO") {
-		return fmt.Errorf("harness.command is required (set in the explicit manual draft config or .goalx/config.yaml)")
 	}
 	if cmd := strings.TrimSpace(cfg.Acceptance.Command); cmd != "" && strings.HasPrefix(cmd, "TODO") {
 		return fmt.Errorf("acceptance.command contains placeholder %q — edit the manual draft config first", cfg.Acceptance.Command)
@@ -505,6 +496,27 @@ func ValidateConfig(cfg *Config, engines map[string]EngineConfig) error {
 		Effort: cfg.Master.Effort,
 	}, "master"); err != nil {
 		return err
+	}
+	for _, role := range []struct {
+		name string
+		cfg  SessionConfig
+	}{
+		{name: "roles.research", cfg: cfg.Roles.Research},
+		{name: "roles.develop", cfg: cfg.Roles.Develop},
+	} {
+		if err := validateEffortLevel(role.cfg.Effort, role.name+".effort"); err != nil {
+			return err
+		}
+		if strings.TrimSpace(role.cfg.Engine) == "" && strings.TrimSpace(role.cfg.Model) == "" {
+			continue
+		}
+		if err := validateLaunchRequest(engines, LaunchRequest{
+			Engine: role.cfg.Engine,
+			Model:  role.cfg.Model,
+			Effort: role.cfg.Effort,
+		}, role.name); err != nil {
+			return err
+		}
 	}
 
 	for name, profile := range cfg.Routing.Profiles {
@@ -551,10 +563,29 @@ func ValidateConfig(cfg *Config, engines map[string]EngineConfig) error {
 		}
 	}
 
-	sessions := ExpandSessions(cfg)
-	if len(sessions) == 0 {
-		sessions = []SessionConfig{EffectiveSessionConfig(cfg, -1)}
+	roleDefaults := []struct {
+		name string
+		cfg  SessionConfig
+	}{
+		{name: "roles.research", cfg: cfg.Roles.Research},
+		{name: "roles.develop", cfg: cfg.Roles.Develop},
 	}
+	for _, roleDefault := range roleDefaults {
+		if err := validateEffortLevel(roleDefault.cfg.Effort, roleDefault.name+".effort"); err != nil {
+			return err
+		}
+		if strings.TrimSpace(roleDefault.cfg.Engine) != "" || strings.TrimSpace(roleDefault.cfg.Model) != "" {
+			if err := validateLaunchRequest(engines, LaunchRequest{
+				Engine: roleDefault.cfg.Engine,
+				Model:  roleDefault.cfg.Model,
+				Effort: roleDefault.cfg.Effort,
+			}, roleDefault.name); err != nil {
+				return err
+			}
+		}
+	}
+
+	sessions := ExpandSessions(cfg)
 	for i := range sessions {
 		sess := EffectiveSessionConfig(cfg, i)
 		if sess.Mode != "" && sess.Mode != ModeResearch && sess.Mode != ModeDevelop {
@@ -571,12 +602,14 @@ func ValidateConfig(cfg *Config, engines map[string]EngineConfig) error {
 		if _, err := resolveDimensionSpecsWithCatalog(resolveDimensionCatalog(cfg), sess.Dimensions); err != nil {
 			return fmt.Errorf("session-%d dimensions: %w", i+1, err)
 		}
-		if err := validateLaunchRequest(engines, LaunchRequest{
-			Engine: sess.Engine,
-			Model:  sess.Model,
-			Effort: sess.Effort,
-		}, fmt.Sprintf("session-%d", i+1)); err != nil {
-			return err
+		if strings.TrimSpace(sess.Engine) != "" || strings.TrimSpace(sess.Model) != "" {
+			if err := validateLaunchRequest(engines, LaunchRequest{
+				Engine: sess.Engine,
+				Model:  sess.Model,
+				Effort: sess.Effort,
+			}, fmt.Sprintf("session-%d", i+1)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -651,11 +684,23 @@ func validateLaunchRequest(engines map[string]EngineConfig, req LaunchRequest, r
 	if err != nil {
 		return fmt.Errorf("%s engine: %w", role, err)
 	}
-	if req.Engine == "codex" && (modelID == "gpt-5.3-codex" || modelID == "gpt-5.2") {
+	if req.Engine == "codex" && isBlockedCodexModel(modelID, req.Model) {
 		return fmt.Errorf("%s engine: codex model %q resolves to %s, which triggers an interactive migration prompt in Codex CLI; use gpt-5.4 or gpt-5.4-mini instead", role, req.Model, modelID)
 	}
 	_ = spec
 	return nil
+}
+
+func isBlockedCodexModel(modelID, rawModel string) bool {
+	switch modelID {
+	case "gpt-5.3-codex", "gpt-5.2":
+		return true
+	}
+	switch rawModel {
+	case "gpt-5.3-codex", "gpt-5.2":
+		return true
+	}
+	return false
 }
 
 func validateInteractiveEngineLegacy(engines map[string]EngineConfig, engine, model, role string) error {
@@ -728,7 +773,7 @@ func ExpandSessions(cfg *Config) []SessionConfig {
 	return sessions
 }
 
-// EffectiveSessionConfig resolves a session against run-level defaults.
+// EffectiveSessionConfig resolves a session against explicit run-level defaults.
 func EffectiveSessionConfig(cfg *Config, idx int) SessionConfig {
 	var out SessionConfig
 	if cfg == nil {
@@ -739,7 +784,6 @@ func EffectiveSessionConfig(cfg *Config, idx int) SessionConfig {
 	if idx >= 0 && idx < len(sessions) {
 		out = sessions[idx]
 	}
-	out.Mode = ResolveSessionMode(cfg.Mode, out.Mode)
 	if len(out.Dimensions) > 0 {
 		out.Dimensions = append([]string(nil), out.Dimensions...)
 	}
@@ -773,21 +817,7 @@ func EffectiveSessionConfig(cfg *Config, idx int) SessionConfig {
 	return out
 }
 
-// ResolveSessionMode normalizes a session mode against the enclosing run mode.
-// Sessions only run in research or develop mode. Auto runs default sessions to
-// develop until the master chooses a specific session mode.
-func ResolveSessionMode(runMode, sessionMode Mode) Mode {
-	switch sessionMode {
-	case ModeResearch, ModeDevelop:
-		return sessionMode
-	}
-	if runMode == ModeResearch {
-		return ModeResearch
-	}
-	return ModeDevelop
-}
-
-func defaultRoleSession(cfg *Config, mode Mode) SessionConfig {
+func explicitRoleSession(cfg *Config, mode Mode, routeRole string) SessionConfig {
 	if cfg == nil {
 		return SessionConfig{}
 	}
@@ -796,34 +826,23 @@ func defaultRoleSession(cfg *Config, mode Mode) SessionConfig {
 		return cfg.Roles.Research
 	case ModeDevelop:
 		return cfg.Roles.Develop
-	default:
-		if cfg.Mode == ModeResearch {
-			return cfg.Roles.Research
-		}
+	}
+	switch strings.TrimSpace(routeRole) {
+	case "research":
+		return cfg.Roles.Research
+	case "develop":
 		return cfg.Roles.Develop
+	default:
+		return SessionConfig{}
 	}
 }
 
-// ResolveAcceptanceCommand returns the acceptance command, falling back to the
-// regular harness when no dedicated acceptance command is configured.
+// ResolveAcceptanceCommand returns the explicit acceptance command.
 func ResolveAcceptanceCommand(cfg *Config) string {
-	cmd, _ := ResolveAcceptanceCommandSource(cfg)
-	return cmd
-}
-
-// ResolveAcceptanceCommandSource returns the effective acceptance command plus
-// the config field it came from ("acceptance" or "harness").
-func ResolveAcceptanceCommandSource(cfg *Config) (string, string) {
 	if cfg == nil {
-		return "", ""
+		return ""
 	}
-	if cmd := strings.TrimSpace(cfg.Acceptance.Command); cmd != "" {
-		return cmd, "acceptance"
-	}
-	if cmd := strings.TrimSpace(cfg.Harness.Command); cmd != "" {
-		return cmd, "harness"
-	}
-	return "", ""
+	return strings.TrimSpace(cfg.Acceptance.Command)
 }
 
 // ProjectID returns a slug from the project root path.

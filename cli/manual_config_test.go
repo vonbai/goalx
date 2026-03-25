@@ -149,7 +149,7 @@ func TestStartWithExplicitManualConfigRequiresExistingFile(t *testing.T) {
 	}
 }
 
-func TestLoadManualDraftConfigRejectsPreviewPlaceholders(t *testing.T) {
+func TestLoadManualDraftConfigAllowsUnsetTargetAndHarness(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -162,16 +162,17 @@ func TestLoadManualDraftConfigRejectsPreviewPlaceholders(t *testing.T) {
 		Name:      "preview-draft",
 		Mode:      goalx.ModeDevelop,
 		Objective: "ship it",
-		Target:    goalx.TargetConfig{Files: []string{"."}},
-		Harness:   goalx.HarnessConfig{Command: "TODO: build + test command"},
 	})
 
-	_, _, err := LoadManualDraftConfig(projectRoot, draftPath)
-	if err == nil {
-		t.Fatal("expected LoadManualDraftConfig to reject preview placeholders")
+	cfg, _, err := LoadManualDraftConfig(projectRoot, draftPath)
+	if err != nil {
+		t.Fatalf("LoadManualDraftConfig: %v", err)
 	}
-	if !strings.Contains(err.Error(), "harness.command is required") {
-		t.Fatalf("error = %v, want harness placeholder validation", err)
+	if len(cfg.Target.Files) != 0 {
+		t.Fatalf("target.files = %#v, want unset target", cfg.Target.Files)
+	}
+	if cfg.Harness.Command != "" {
+		t.Fatalf("harness.command = %q, want unset harness", cfg.Harness.Command)
 	}
 }
 

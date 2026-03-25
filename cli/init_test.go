@@ -38,7 +38,7 @@ func TestInitDevelopUsesProjectConfigWhenAvailable(t *testing.T) {
 	}
 }
 
-func TestInitDevelopInfersHarnessAndTargetWithoutProjectConfig(t *testing.T) {
+func TestInitDevelopLeavesHarnessAndTargetUnsetWithoutProjectConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -55,11 +55,11 @@ func TestInitDevelopInfersHarnessAndTargetWithoutProjectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load goalx.yaml: %v", err)
 	}
-	if len(cfg.Target.Files) != 1 || cfg.Target.Files[0] != "." {
-		t.Fatalf("target.files = %#v, want [.]", cfg.Target.Files)
+	if len(cfg.Target.Files) != 0 {
+		t.Fatalf("target.files = %#v, want empty", cfg.Target.Files)
 	}
-	if cfg.Harness.Command != "go build ./... && go test ./... -count=1 && go vet ./..." {
-		t.Fatalf("harness.command = %q", cfg.Harness.Command)
+	if cfg.Harness.Command != "" {
+		t.Fatalf("harness.command = %q, want empty", cfg.Harness.Command)
 	}
 }
 

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	goalx "github.com/vonbai/goalx"
@@ -101,11 +103,14 @@ func TestContextIndexExcludesRawEnvSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildContextIndex: %v", err)
 	}
-
-	if index.RawEnvPath != "" {
-		t.Fatalf("raw_env_path = %q, want empty", index.RawEnvPath)
+	data, err := json.Marshal(index)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
 	}
-	if index.CapturedPATH != "" {
-		t.Fatalf("captured_path = %q, want empty", index.CapturedPATH)
+	text := string(data)
+	for _, unwanted := range []string{"raw_env_path", "captured_path"} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("context index should not expose %q:\n%s", unwanted, text)
+		}
 	}
 }

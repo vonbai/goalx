@@ -73,20 +73,8 @@ func buildLaunchResolveRequest(projectRoot string, baseCfg goalx.Config, opts la
 		Parallel:      opts.Parallel,
 		ClearSessions: true,
 	}
-	if len(baseCfg.Target.Files) == 0 {
-		target := InferTarget(projectRoot)
-		if len(target) == 0 {
-			target = []string{"TODO: specify directories to modify"}
-		}
-		req.TargetOverride = &goalx.TargetConfig{Files: target}
-	}
-	if baseCfg.Harness.Command == "" {
-		harness := InferHarness(projectRoot)
-		if harness == "" {
-			harness = "TODO: build + test command"
-		}
-		req.HarnessOverride = &goalx.HarnessConfig{Command: harness}
-	}
+	_ = projectRoot
+	_ = baseCfg
 
 	masterOverride, researchOverride, developOverride, err := launchRoleOverrides(opts)
 	if err != nil {
@@ -124,10 +112,8 @@ func applyLaunchSessionOverrides(cfg *goalx.Config, opts launchOptions, dimensio
 			size = 1
 		}
 		cfg.Sessions = make([]goalx.SessionConfig, size)
-		sessionMode := goalx.ResolveSessionMode(cfg.Mode, "")
 		for i := range cfg.Sessions {
 			cfg.Sessions[i] = goalx.SessionConfig{
-				Mode:         sessionMode,
 				Effort:       opts.Effort,
 				RouteRole:    opts.RouteRole,
 				RouteProfile: opts.RouteProfile,
@@ -138,7 +124,6 @@ func applyLaunchSessionOverrides(cfg *goalx.Config, opts launchOptions, dimensio
 
 	if len(opts.Subs) > 0 {
 		cfg.Sessions = nil
-		sessionMode := goalx.ResolveSessionMode(cfg.Mode, "")
 		for _, sub := range opts.Subs {
 			spec, countStr := sub, "1"
 			if idx := strings.LastIndex(sub, ":"); idx > 0 {
@@ -157,7 +142,6 @@ func applyLaunchSessionOverrides(cfg *goalx.Config, opts launchOptions, dimensio
 				cfg.Sessions = append(cfg.Sessions, goalx.SessionConfig{
 					Engine:       engine,
 					Model:        model,
-					Mode:         sessionMode,
 					Effort:       opts.Effort,
 					RouteRole:    opts.RouteRole,
 					RouteProfile: opts.RouteProfile,

@@ -138,7 +138,7 @@ acceptance:
 	}
 }
 
-func TestVerifyFallsBackToHarnessAndRecordsFailure(t *testing.T) {
+func TestVerifyRequiresExplicitAcceptanceCommand(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -192,23 +192,23 @@ harness:
 	if err == nil {
 		t.Fatal("expected Verify to fail")
 	}
+	if !strings.Contains(err.Error(), "no acceptance command configured") {
+		t.Fatalf("Verify error = %v, want missing acceptance command", err)
+	}
 
 	stateData, readErr := os.ReadFile(filepath.Join(runDir, "acceptance.json"))
 	if readErr != nil {
 		t.Fatalf("read acceptance state: %v", readErr)
 	}
 	stateText := string(stateData)
-	for _, want := range []string{
+	for _, unwanted := range []string{
 		`"default_command": "test -f DOES-NOT-EXIST"`,
 		`"effective_command": "test -f DOES-NOT-EXIST"`,
+		`"exit_code"`,
 	} {
-		if !strings.Contains(stateText, want) {
-			t.Fatalf("acceptance state missing %q:\n%s", want, stateText)
+		if strings.Contains(stateText, unwanted) {
+			t.Fatalf("acceptance state unexpectedly contains %q:\n%s", unwanted, stateText)
 		}
-	}
-	// Framework records exit code, not derived status
-	if !strings.Contains(stateText, `"exit_code"`) {
-		t.Fatalf("acceptance state missing exit_code:\n%s", stateText)
 	}
 	if strings.Contains(stateText, `"status"`) {
 		t.Fatalf("acceptance state must not contain derived status field:\n%s", stateText)

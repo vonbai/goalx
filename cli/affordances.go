@@ -24,7 +24,6 @@ type AffordanceItem struct {
 	Kind    string   `json:"kind,omitempty"`
 	Summary string   `json:"summary,omitempty"`
 	Command string   `json:"command,omitempty"`
-	When    string   `json:"when,omitempty"`
 	Paths   []string `json:"paths,omitempty"`
 }
 
@@ -94,7 +93,6 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 			Kind:    "observe",
 			Summary: "Read the current run progress and control summary.",
 			Command: fmt.Sprintf("goalx status --run %s", runName),
-			When:    "Relevant for a compact run summary.",
 			Paths:   []string{ActivityPath(runDir)},
 		},
 		{
@@ -102,7 +100,6 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 			Kind:    "observe",
 			Summary: "Read the live transport capture plus current run facts.",
 			Command: fmt.Sprintf("goalx observe --run %s", runName),
-			When:    "Relevant when live tmux output is needed.",
 			Paths:   []string{ActivityPath(runDir)},
 		},
 		{
@@ -110,7 +107,6 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 			Kind:    "context",
 			Summary: "Read the structural context index for this run.",
 			Command: fmt.Sprintf("goalx context --run %s", runName),
-			When:    "Relevant for stable paths, roles, and roster facts.",
 			Paths:   []string{ContextIndexPath(runDir)},
 		},
 		{
@@ -118,15 +114,13 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 			Kind:    "context",
 			Summary: "Read the GoalX command and path affordances for this run.",
 			Command: buildAffordanceCommand(runName, normalizedTarget),
-			When:    "Relevant for exact GoalX commands and run-local paths.",
 			Paths:   []string{AffordancesJSONPath(runDir), AffordancesMarkdownPath(runDir)},
 		},
 		{
 			ID:      "tell",
 			Kind:    "control",
 			Summary: "Send a durable instruction through the control plane.",
-			Command: fmt.Sprintf("goalx tell --run %s %s \"message\"", runName, normalizedTellTarget(normalizedTarget)),
-			When:    "Relevant for durable instructions to the master or a session.",
+			Command: buildTellCommand(runName, normalizedTarget),
 			Paths:   []string{ControlInboxDir(runDir)},
 		},
 	}
@@ -136,7 +130,6 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 			Kind:    "path",
 			Summary: "Absolute run paths for durable state and reports.",
 			Command: "",
-			When:    "Relevant for current run root and control directory paths.",
 			Paths:   []string{index.RunDir, index.ControlDir, index.CharterPath, index.GoalPath},
 		})
 	}
@@ -168,9 +161,6 @@ func RenderAffordancesMarkdown(doc *AffordancesDocument) string {
 		if item.Command != "" {
 			b.WriteString("```bash\n" + item.Command + "\n```\n\n")
 		}
-		if item.When != "" {
-			b.WriteString("When: " + item.When + "\n\n")
-		}
 		for _, path := range item.Paths {
 			b.WriteString("- `" + path + "`\n")
 		}
@@ -196,7 +186,7 @@ func RefreshRunGuidance(projectRoot, runName, runDir string) error {
 	if err := SaveContextIndex(runDir, index); err != nil {
 		return err
 	}
-	affordances, err := BuildAffordances(projectRoot, runName, runDir, "master")
+	affordances, err := BuildAffordances(projectRoot, runName, runDir, "")
 	if err != nil {
 		return err
 	}
@@ -218,9 +208,11 @@ func normalizedAffordanceTarget(target string) string {
 	return strings.TrimSpace(target)
 }
 
-func normalizedTellTarget(target string) string {
-	if target == "" {
-		return "master"
+func buildTellCommand(runName, target string) string {
+	args := []string{"goalx", "tell", "--run", runName}
+	if normalized := normalizedAffordanceTarget(target); normalized != "" {
+		args = append(args, normalized)
 	}
-	return target
+	args = append(args, "\"message\"")
+	return strings.Join(args, " ")
 }

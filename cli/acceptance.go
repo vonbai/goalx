@@ -49,7 +49,7 @@ func AcceptanceEvidencePath(runDir string) string {
 }
 
 func NewAcceptanceState(cfg *goalx.Config, goalVersion int) *AcceptanceState {
-	cmd, _ := goalx.ResolveAcceptanceCommandSource(cfg)
+	cmd := goalx.ResolveAcceptanceCommand(cfg)
 	return &AcceptanceState{
 		Version:          1,
 		GoalVersion:      goalVersion,
@@ -110,7 +110,7 @@ func EnsureAcceptanceState(runDir string, cfg *goalx.Config, goalVersion int) (*
 	}
 
 	changed := false
-	defaultCommand, _ := goalx.ResolveAcceptanceCommandSource(cfg)
+	defaultCommand := goalx.ResolveAcceptanceCommand(cfg)
 	if strings.TrimSpace(state.DefaultCommand) == "" && strings.TrimSpace(defaultCommand) != "" {
 		state.DefaultCommand = defaultCommand
 		changed = true
