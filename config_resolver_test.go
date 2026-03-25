@@ -25,16 +25,7 @@ func resolveConfigFixture(layers resolverTestLayers, req resolverTestRequest) (r
 	catalogPresets := copyPresetCatalog(Presets)
 	catalogDimensions := copyStringCatalog(BuiltinDimensions)
 	attachCatalogs(&base, catalogPresets, catalogDimensions)
-
-	oldDetect := detectPresetForResolve
-	detectPresetForResolve = func() string {
-		return layers.DetectedPreset
-	}
-	defer func() {
-		detectPresetForResolve = oldDetect
-	}()
-
-	resolved, err := ResolveConfig(&ConfigLayers{
+	resolved, err := resolveConfigWithDetector(&ConfigLayers{
 		Config:     base,
 		Engines:    copyEngines(BuiltinEngines),
 		Presets:    catalogPresets,
@@ -47,6 +38,8 @@ func resolveConfigFixture(layers resolverTestLayers, req resolverTestRequest) (r
 			Engine: req.MasterEngine,
 			Model:  req.MasterModel,
 		},
+	}, func() string {
+		return layers.DetectedPreset
 	})
 	if err != nil {
 		return resolverTestResult{}, err

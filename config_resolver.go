@@ -10,10 +10,12 @@ type ResolvedConfig struct {
 	Dimensions map[string]string
 }
 
-var detectPresetForResolve = DetectPresetFromEnvironment
-
 // ResolveConfig applies request overrides to loaded config layers and returns one launchable config.
 func ResolveConfig(layers *ConfigLayers, req ResolveRequest) (*ResolvedConfig, error) {
+	return resolveConfigWithDetector(layers, req, DetectPresetFromEnvironment)
+}
+
+func resolveConfigWithDetector(layers *ConfigLayers, req ResolveRequest, detect func() string) (*ResolvedConfig, error) {
 	if layers == nil {
 		return nil, fmt.Errorf("config layers are required")
 	}
@@ -40,7 +42,7 @@ func ResolveConfig(layers *ConfigLayers, req ResolveRequest) (*ResolvedConfig, e
 	}
 
 	if cfg.Preset == "" {
-		cfg.Preset = detectPresetForResolve()
+		cfg.Preset = detect()
 	}
 
 	applyPreset(&cfg)
