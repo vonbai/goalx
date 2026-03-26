@@ -197,6 +197,42 @@ func TestBuildTransportFactsDetectsCodexSkillChooserDialog(t *testing.T) {
 	}
 }
 
+func TestBuildTransportFactsDoesNotTreatPassiveSkillsHintAsDialog(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	sessionCapture := filepath.Join(t.TempDir(), "session-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	if err := os.WriteFile(sessionCapture, []byte("Use /skills to list available skills\n"), 0o644); err != nil {
+		t.Fatalf("write session capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
+	installGuidanceFakeTmux(t, []string{"session-1"})
+
+	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "xhigh", "", "", goalx.TargetConfig{})
+	if err != nil {
+		t.Fatalf("NewSessionIdentity: %v", err)
+	}
+	if err := SaveSessionIdentity(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
+		t.Fatalf("SaveSessionIdentity: %v", err)
+	}
+
+	facts, err := BuildTransportFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name), cfg.Master.Engine)
+	if err != nil {
+		t.Fatalf("BuildTransportFacts: %v", err)
+	}
+	got := facts.Targets["session-1"]
+	if got.ProviderDialogVisible {
+		t.Fatalf("provider_dialog_visible = true, want false: %+v", got)
+	}
+	if got.ProviderDialogKind != "" || got.ProviderDialogHint != "" {
+		t.Fatalf("provider dialog details = %+v, want empty", got)
+	}
+}
+
 func TestBuildTransportFactsDetectsCapacityPickerDialog(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 

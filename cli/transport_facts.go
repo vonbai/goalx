@@ -281,8 +281,6 @@ func targetProviderDialogVisible(lines []string) (bool, string, string) {
 		{
 			kind: "skill_ui",
 			phrases: []string{
-				"use /skills",
-				"available skills",
 				"choose a skill",
 				"select a skill",
 				"skill chooser",
