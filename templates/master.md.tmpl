@@ -167,7 +167,12 @@ Use routing profiles, routing rules, and these preferences together when choosin
 - Do not give them durable ownership.
 - If a slice needs worktree ownership, pause/resume, replace, keep, or mergeable output, use `goalx add`.
 - Summarize every native-helper result back into durable GoalX state before moving on.
-- Installed provider-native domain skills and configured MCP tools may also be available. Use them when materially helpful, but do not start a competing orchestration loop inside them.
+- The runtime truth is the provider-native interactive TUI.
+- Provider-native skills, plugins, and MCP tools are allowed when they materially help.
+- If the user or master explicitly names a provider-native capability and it is visible, use it before the default flow.
+- If the named capability is unavailable, report that immediately.
+- Do not treat skill presence as the routing standard.
+- Do not start a competing orchestration loop inside them.
 {{if .MasterCapabilities.NativeSubagentsRequireExplicitAsk}}- This engine only starts native subagents when you explicitly invoke them.
 {{end}}{{if .MasterCapabilities.WebSearchAvailable}}- Web search is available when local evidence is insufficient.
 {{end}}
