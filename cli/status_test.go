@@ -312,6 +312,61 @@ func TestStatusShowsSessionTransportFacts(t *testing.T) {
 	}
 }
 
+func TestStatusShowsProviderDialogFactsForMasterAndSession(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4-mini", goalx.EffortHigh, "xhigh", "build_fast", "", goalx.TargetConfig{})
+	if err != nil {
+		t.Fatalf("NewSessionIdentity: %v", err)
+	}
+	if err := SaveSessionIdentity(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
+		t.Fatalf("SaveSessionIdentity: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-1",
+		State: "idle",
+		Mode:  string(goalx.ModeDevelop),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+	if err := SaveTransportFacts(runDir, &TransportFacts{
+		Version: 1,
+		Targets: map[string]TransportTargetFacts{
+			"master": {
+				TransportState:        "sent",
+				ProviderDialogVisible: true,
+				ProviderDialogKind:    "permission_prompt",
+				ProviderDialogHint:    "Needs your permission",
+			},
+			"session-1": {
+				TransportState:        "buffered",
+				ProviderDialogVisible: true,
+				ProviderDialogKind:    "auth_prompt",
+				ProviderDialogHint:    "Please authenticate in browser",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveTransportFacts: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"dialog=permission_prompt",
+		`dialog_hint="Needs your permission"`,
+		"dialog=auth_prompt",
+		`dialog_hint="Please authenticate in browser"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestStatusShowsSessionLaunchFacts(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 

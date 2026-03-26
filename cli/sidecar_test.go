@@ -1122,27 +1122,35 @@ func TestRunSidecarTickQueuesSessionRepairWhenTransportStillBuffered(t *testing.
 	}); err != nil {
 		t.Fatalf("SaveControlDeliveries: %v", err)
 	}
-	if err := SaveTransportFacts(runDir, &TransportFacts{
-		Version: 1,
-		Targets: map[string]TransportTargetFacts{
-			"session-1": {
-				Target:            "session-1",
-				Window:            "session-1",
-				Engine:            "codex",
-				TransportState:    "buffered",
-				InputContainsWake: true,
-			},
-		},
-	}); err != nil {
-		t.Fatalf("SaveTransportFacts: %v", err)
-	}
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	sessionCapture := filepath.Join(t.TempDir(), "session-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	if err := os.WriteFile(sessionCapture, []byte("› [[GOALX_WAKE_CHECK_INBOX]]\n  gpt-5.4 xhigh\n"), 0o644); err != nil {
+		t.Fatalf("write session capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	script := "#!/bin/sh\n" +
 		"if [ \"$1\" = \"has-session\" ]; then exit 0; fi\n" +
 		"if [ \"$1\" = \"list-windows\" ]; then printf '%s\n' master session-1; exit 0; fi\n" +
-		"if [ \"$1\" = \"capture-pane\" ]; then exit 0; fi\n" +
+		"if [ \"$1\" = \"list-panes\" ]; then printf '%%0\tmaster\n%%1\tsession-1\n'; exit 0; fi\n" +
+		"if [ \"$1\" = \"capture-pane\" ]; then\n" +
+		"  target=\"\"\n" +
+		"  while [ $# -gt 0 ]; do\n" +
+		"    if [ \"$1\" = \"-t\" ]; then target=\"$2\"; shift 2; continue; fi\n" +
+		"    shift\n" +
+		"  done\n" +
+		"  case \"$target\" in\n" +
+		"    *:master) cat \"$TMUX_MASTER_CAPTURE\" ;;\n" +
+		"    *:session-1) cat \"$TMUX_SESSION1_CAPTURE\" ;;\n" +
+		"  esac\n" +
+		"  exit 0\n" +
+		"fi\n" +
 		"exit 0\n"
 	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake tmux: %v", err)
@@ -1193,28 +1201,35 @@ func TestRunSidecarTickSkipsSessionWakeWhenTransportAlreadyAccepted(t *testing.T
 	if _, err := AppendControlInboxMessage(runDir, "session-1", "tell", "user", "already accepted"); err != nil {
 		t.Fatalf("AppendControlInboxMessage: %v", err)
 	}
-	if err := SaveTransportFacts(runDir, &TransportFacts{
-		Version: 1,
-		Targets: map[string]TransportTargetFacts{
-			"session-1": {
-				Target:                "session-1",
-				Window:                "session-1",
-				Engine:                "claude-code",
-				TransportState:        "sent",
-				QueuedMessageVisible:  true,
-				LastTransportAcceptAt: time.Now().UTC().Format(time.RFC3339),
-			},
-		},
-	}); err != nil {
-		t.Fatalf("SaveTransportFacts: %v", err)
-	}
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	sessionCapture := filepath.Join(t.TempDir(), "session-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	if err := os.WriteFile(sessionCapture, []byte("• Working (24s)\n• Messages to be submitted after next tool call\n  ↳ [[GOALX_WAKE_CHECK_INBOX]]\n"), 0o644); err != nil {
+		t.Fatalf("write session capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	script := "#!/bin/sh\n" +
 		"if [ \"$1\" = \"has-session\" ]; then exit 0; fi\n" +
 		"if [ \"$1\" = \"list-windows\" ]; then printf '%s\n' master session-1; exit 0; fi\n" +
-		"if [ \"$1\" = \"capture-pane\" ]; then exit 0; fi\n" +
+		"if [ \"$1\" = \"list-panes\" ]; then printf '%%0\tmaster\n%%1\tsession-1\n'; exit 0; fi\n" +
+		"if [ \"$1\" = \"capture-pane\" ]; then\n" +
+		"  target=\"\"\n" +
+		"  while [ $# -gt 0 ]; do\n" +
+		"    if [ \"$1\" = \"-t\" ]; then target=\"$2\"; shift 2; continue; fi\n" +
+		"    shift\n" +
+		"  done\n" +
+		"  case \"$target\" in\n" +
+		"    *:master) cat \"$TMUX_MASTER_CAPTURE\" ;;\n" +
+		"    *:session-1) cat \"$TMUX_SESSION1_CAPTURE\" ;;\n" +
+		"  esac\n" +
+		"  exit 0\n" +
+		"fi\n" +
 		"exit 0\n"
 	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake tmux: %v", err)
@@ -1233,6 +1248,57 @@ func TestRunSidecarTickSkipsSessionWakeWhenTransportAlreadyAccepted(t *testing.T
 		if item.DedupeKey == "session-wake:session-1" {
 			t.Fatalf("unexpected session wake delivery after accepted transport: %+v", item)
 		}
+	}
+}
+
+func TestRunSidecarTickElevatesProviderDialogToUrgentMasterFact(t *testing.T) {
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	seedGuidanceSessionFixture(t, runDir, cfg)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	sessionCapture := filepath.Join(t.TempDir(), "session-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	if err := os.WriteFile(sessionCapture, []byte("Please authenticate in browser to continue\n"), 0o644); err != nil {
+		t.Fatalf("write session capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
+	installGuidanceFakeTmux(t, []string{"session-1"})
+
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick: %v", err)
+	}
+
+	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("ReadFile master inbox: %v", err)
+	}
+	if !strings.Contains(string(inboxData), `"type":"provider-dialog-visible"`) {
+		t.Fatalf("master inbox missing provider-dialog-visible fact:\n%s", string(inboxData))
+	}
+	if !strings.Contains(string(inboxData), `"urgent":true`) {
+		t.Fatalf("master inbox missing urgent provider dialog fact:\n%s", string(inboxData))
+	}
+	if !strings.Contains(string(inboxData), `target=session-1 engine=codex kind=auth_prompt`) {
+		t.Fatalf("master inbox missing provider dialog body details:\n%s", string(inboxData))
+	}
+
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if controlState.ProviderDialogAlerts["session-1"] == "" {
+		t.Fatalf("provider dialog alert fingerprint missing from control state: %+v", controlState.ProviderDialogAlerts)
+	}
+
+	transportFacts, err := LoadTransportFacts(TransportFactsPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadTransportFacts: %v", err)
+	}
+	if !transportFacts.Targets["session-1"].ProviderDialogVisible {
+		t.Fatalf("transport facts missing provider dialog visibility: %+v", transportFacts.Targets["session-1"])
 	}
 }
 

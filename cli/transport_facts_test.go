@@ -131,22 +131,52 @@ func TestSaveAndLoadTransportFactsRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSessionTransportFactsSummaryFormatsBufferedAndQueued(t *testing.T) {
+func TestBuildTransportFactsDetectsProviderDialog(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("Authentication required\nPlease authenticate in browser to continue\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+
+	facts, err := BuildTransportFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name), "codex")
+	if err != nil {
+		t.Fatalf("BuildTransportFacts: %v", err)
+	}
+	got := facts.Targets["master"]
+	if !got.ProviderDialogVisible {
+		t.Fatalf("provider_dialog_visible = false, want true: %+v", got)
+	}
+	if got.ProviderDialogKind != "auth_prompt" {
+		t.Fatalf("provider_dialog_kind = %q, want auth_prompt", got.ProviderDialogKind)
+	}
+	if !strings.Contains(got.ProviderDialogHint, "Please authenticate in browser") {
+		t.Fatalf("provider_dialog_hint = %q, want auth line", got.ProviderDialogHint)
+	}
+}
+
+func TestTransportTargetFactsSummaryFormatsBufferedQueuedAndDialog(t *testing.T) {
 	runDir := t.TempDir()
 	if err := SaveTransportFacts(runDir, &TransportFacts{
 		Version: 1,
 		Targets: map[string]TransportTargetFacts{
 			"session-1": {
-				TransportState:       "buffered",
-				InputContainsWake:    true,
-				QueuedMessageVisible: true,
+				TransportState:        "buffered",
+				InputContainsWake:     true,
+				QueuedMessageVisible:  true,
+				ProviderDialogVisible: true,
+				ProviderDialogKind:    "auth_prompt",
+				ProviderDialogHint:    "Please authenticate in browser",
 			},
 		},
 	}); err != nil {
 		t.Fatalf("SaveTransportFacts: %v", err)
 	}
-	got := sessionTransportFactsSummary(runDir, "session-1")
-	for _, want := range []string{"transport=buffered", "input_wake=true", "queued=true"} {
+	got := transportTargetFactsSummary(runDir, "session-1")
+	for _, want := range []string{"transport=buffered", "input_wake=true", "queued=true", "dialog=auth_prompt", `dialog_hint="Please authenticate in browser"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("summary missing %q: %s", want, got)
 		}

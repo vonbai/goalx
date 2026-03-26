@@ -215,3 +215,74 @@ func TestObserveShowsSessionTransportFacts(t *testing.T) {
 		}
 	}
 }
+
+func TestObserveShowsProviderDialogFactsForMasterAndSession(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	sessionCapture := filepath.Join(t.TempDir(), "session-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	if err := os.WriteFile(sessionCapture, []byte("session pane\n"), 0o644); err != nil {
+		t.Fatalf("write session capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
+	installGuidanceFakeTmux(t, []string{"session-1"})
+
+	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4-mini", goalx.EffortHigh, "xhigh", "", "", goalx.TargetConfig{})
+	if err != nil {
+		t.Fatalf("NewSessionIdentity: %v", err)
+	}
+	if err := SaveSessionIdentity(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
+		t.Fatalf("SaveSessionIdentity: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-1",
+		State: "active",
+		Mode:  string(goalx.ModeDevelop),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+	if err := SaveTransportFacts(runDir, &TransportFacts{
+		Version: 1,
+		Targets: map[string]TransportTargetFacts{
+			"master": {
+				TransportState:        "sent",
+				ProviderDialogVisible: true,
+				ProviderDialogKind:    "permission_prompt",
+				ProviderDialogHint:    "Needs your permission",
+			},
+			"session-1": {
+				TransportState:        "buffered",
+				ProviderDialogVisible: true,
+				ProviderDialogKind:    "auth_prompt",
+				ProviderDialogHint:    "Please authenticate in browser",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveTransportFacts: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Observe(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"### master",
+		"Queue: unread=0 cursor=0/0 transport=sent dialog=permission_prompt",
+		`dialog_hint="Needs your permission"`,
+		"provider_dialog_visible=true provider_dialog_kind=permission_prompt",
+		"### session-1",
+		"Queue: unread=0 cursor=0/0 transport=buffered dialog=auth_prompt",
+		`dialog_hint="Please authenticate in browser"`,
+		"provider_dialog_visible=true provider_dialog_kind=auth_prompt",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("observe output missing %q:\n%s", want, out)
+		}
+	}
+}

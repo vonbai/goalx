@@ -111,7 +111,7 @@ func Status(projectRoot string, args []string) error {
 		inboxState := readControlInboxState(ControlInboxPath(rc.RunDir, sName), SessionCursorPath(rc.RunDir, sName))
 		if inboxState.Unread > 0 {
 			queueSummary := fmt.Sprintf("unread=%d cursor=%d/%d", inboxState.Unread, inboxState.LastSeenID, inboxState.LastID)
-			if transport := loadTransportTargetFacts(rc.RunDir, sName); transport.Target != "" {
+			if transport := loadTransportTargetFacts(rc.RunDir, sName); hasTransportFacts(transport) {
 				queueSummary += formatTransportQueueFacts(transport)
 			}
 			if summary == "no entries" {
@@ -134,7 +134,7 @@ func Status(projectRoot string, args []string) error {
 				summary += " | " + launch
 			}
 		}
-		if transport := sessionTransportFactsSummary(rc.RunDir, sName); transport != "" {
+		if transport := transportTargetFactsSummary(rc.RunDir, sName); transport != "" {
 			if summary == "no entries" {
 				summary = transport
 			} else {
@@ -148,6 +148,13 @@ func Status(projectRoot string, args []string) error {
 	masterPath := filepath.Join(rc.RunDir, "master.jsonl")
 	masterEntries, _ := goalx.LoadJournal(masterPath)
 	masterSummary := goalx.Summary(masterEntries)
+	if transport := transportTargetFactsSummary(rc.RunDir, "master"); transport != "" {
+		if masterSummary == "no entries" {
+			masterSummary = transport
+		} else {
+			masterSummary += " | " + transport
+		}
+	}
 	fmt.Fprintf(w, "master\t-\t-\t%s\t%s\n", actorLeaseSummary(rc.RunDir, "master", "missing"), masterSummary)
 
 	return w.Flush()
@@ -274,9 +281,9 @@ func sessionLaunchFacts(runDir, sessionName string) string {
 	return strings.Join(parts, " ")
 }
 
-func sessionTransportFactsSummary(runDir, sessionName string) string {
-	facts := loadTransportTargetFacts(runDir, sessionName)
-	parts := make([]string, 0, 3)
+func transportTargetFactsSummary(runDir, target string) string {
+	facts := loadTransportTargetFacts(runDir, target)
+	parts := make([]string, 0, 5)
 	if facts.TransportState != "" {
 		parts = append(parts, "transport="+facts.TransportState)
 	}
@@ -286,11 +293,17 @@ func sessionTransportFactsSummary(runDir, sessionName string) string {
 	if facts.QueuedMessageVisible {
 		parts = append(parts, "queued=true")
 	}
+	if facts.ProviderDialogVisible {
+		parts = append(parts, "dialog="+blankAsUnknown(facts.ProviderDialogKind))
+		if facts.ProviderDialogHint != "" {
+			parts = append(parts, "dialog_hint="+fmt.Sprintf("%q", facts.ProviderDialogHint))
+		}
+	}
 	return strings.Join(parts, " ")
 }
 
 func formatTransportQueueFacts(facts TransportTargetFacts) string {
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 5)
 	if facts.LastSubmitAttemptAt != "" {
 		parts = append(parts, " submit_at="+facts.LastSubmitAttemptAt)
 	}
@@ -300,7 +313,34 @@ func formatTransportQueueFacts(facts TransportTargetFacts) string {
 	if facts.LastTransportAcceptAt != "" {
 		parts = append(parts, " accepted_at="+facts.LastTransportAcceptAt)
 	}
+	if facts.ProviderDialogVisible {
+		parts = append(parts, " dialog="+blankAsUnknown(facts.ProviderDialogKind))
+		if facts.ProviderDialogHint != "" {
+			parts = append(parts, " dialog_hint="+fmt.Sprintf("%q", facts.ProviderDialogHint))
+		}
+	}
 	return strings.Join(parts, "")
+}
+
+func hasTransportFacts(facts TransportTargetFacts) bool {
+	return facts.Target != "" ||
+		facts.Window != "" ||
+		facts.PaneID != "" ||
+		facts.Engine != "" ||
+		facts.PromptVisible ||
+		facts.WorkingVisible ||
+		facts.QueuedMessageVisible ||
+		facts.InputContainsWake ||
+		facts.TransportState != "" ||
+		facts.LastSampleAt != "" ||
+		facts.LastOutputAt != "" ||
+		facts.LastSubmitAttemptAt != "" ||
+		facts.LastSubmitMode != "" ||
+		facts.LastTransportAcceptAt != "" ||
+		facts.LastTransportError != "" ||
+		facts.ProviderDialogVisible ||
+		facts.ProviderDialogKind != "" ||
+		facts.ProviderDialogHint != ""
 }
 
 func actorLeaseSummary(runDir, holder, missing string) string {

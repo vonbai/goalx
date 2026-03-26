@@ -205,12 +205,64 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 		}
 	}
 	if watcher != nil && watcher.Alive() {
-		if err := watcher.writeSnapshot(); err != nil {
+		controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+		if err != nil {
+			return err
+		}
+		if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState); err != nil {
 			appendAuditLog(runDir, "transport watcher pre-queue snapshot warning: %v", err)
 		}
+		urgentUnread := hasUrgentUnread(runDir)
+		urgentTicks := controlState.UrgentUnreadTicks
+		if urgentUnread {
+			urgentTicks++
+			tmuxTarget := tmuxSession + ":master"
+			if urgentTicks == 1 {
+				if err := SendEscape(tmuxTarget); err != nil {
+					return err
+				}
+				time.Sleep(500 * time.Millisecond)
+				if err := sendAgentNudge(tmuxTarget, cfg.Master.Engine); err != nil {
+					return err
+				}
+			} else if urgentTicks >= 3 {
+				if err := relaunchMaster(projectRoot, runDir, tmuxSession, cfg); err != nil {
+					return err
+				}
+				urgentTicks = 0
+			}
+		} else {
+			urgentTicks = 0
+		}
+		if urgentTicks != controlState.UrgentUnreadTicks {
+			controlState.UrgentUnreadTicks = urgentTicks
+			controlState.UpdatedAt = ""
+			if err := SaveControlRunState(ControlRunStatePath(runDir), controlState); err != nil {
+				return err
+			}
+		}
+		if err := queueUnreadSessionWakeReminders(runDir, tmuxSession, runName, interval); err != nil {
+			return err
+		}
+		if err := queueMasterWakeReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
+			return err
+		}
+		if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudgeDetailed); err != nil {
+			return err
+		}
+		if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState); err != nil {
+			appendAuditLog(runDir, "transport watcher snapshot warning: %v", err)
+		}
+		if err := RefreshRunGuidance(projectRoot, runName, runDir); err != nil {
+			appendAuditLog(runDir, "guidance refresh warning: %v", err)
+		}
+		return nil
 	}
 	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
 	if err != nil {
+		return err
+	}
+	if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, nil, controlState); err != nil {
 		return err
 	}
 	urgentUnread := hasUrgentUnread(runDir)
@@ -251,19 +303,91 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 	if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudgeDetailed); err != nil {
 		return err
 	}
-	if watcher != nil && watcher.Alive() {
-		if err := watcher.writeSnapshot(); err != nil {
-			appendAuditLog(runDir, "transport watcher snapshot warning: %v", err)
-		}
-	} else if facts, err := BuildTransportFacts(runDir, tmuxSession, cfg.Master.Engine); err == nil {
-		if err := SaveTransportFacts(runDir, facts); err != nil {
-			return err
-		}
+	if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, nil, controlState); err != nil {
+		return err
 	}
 	if err := RefreshRunGuidance(projectRoot, runName, runDir); err != nil {
 		appendAuditLog(runDir, "guidance refresh warning: %v", err)
 	}
 	return nil
+}
+
+func refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine string, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
+	if controlState == nil {
+		return fmt.Errorf("control run state is nil")
+	}
+	var facts *TransportFacts
+	var err error
+	if watcher != nil && watcher.Alive() {
+		if err := watcher.writeSnapshot(); err != nil {
+			return err
+		}
+		facts, err = LoadTransportFacts(TransportFactsPath(runDir))
+	} else {
+		facts, err = BuildTransportFacts(runDir, tmuxSession, masterEngine)
+		if err == nil {
+			err = SaveTransportFacts(runDir, facts)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if err := SaveTransportFacts(runDir, facts); err != nil {
+		return err
+	}
+	return reconcileProviderDialogAlerts(runDir, controlState, facts)
+}
+
+func reconcileProviderDialogAlerts(runDir string, controlState *ControlRunState, facts *TransportFacts) error {
+	if controlState == nil {
+		return fmt.Errorf("control run state is nil")
+	}
+	current := map[string]string{}
+	if facts != nil {
+		for target, targetFacts := range facts.Targets {
+			if !targetFacts.ProviderDialogVisible {
+				continue
+			}
+			current[target] = providerDialogAlertFingerprint(targetFacts)
+			if controlState.ProviderDialogAlerts[target] == current[target] {
+				continue
+			}
+			body := fmt.Sprintf("Provider dialog visible in unattended GoalX run; target=%s engine=%s kind=%s hint=%s", blankAsUnknown(target), blankAsUnknown(targetFacts.Engine), blankAsUnknown(targetFacts.ProviderDialogKind), blankAsUnknown(targetFacts.ProviderDialogHint))
+			if _, err := appendControlInboxMessage(runDir, "master", "provider-dialog-visible", "goalx sidecar", body, true); err != nil {
+				return err
+			}
+		}
+	}
+	if mapsEqual(controlState.ProviderDialogAlerts, current) {
+		return nil
+	}
+	if len(current) == 0 {
+		controlState.ProviderDialogAlerts = nil
+	} else {
+		controlState.ProviderDialogAlerts = current
+	}
+	controlState.UpdatedAt = ""
+	return SaveControlRunState(ControlRunStatePath(runDir), controlState)
+}
+
+func providerDialogAlertFingerprint(facts TransportTargetFacts) string {
+	return strings.Join([]string{
+		strings.TrimSpace(facts.Engine),
+		strings.TrimSpace(facts.ProviderDialogKind),
+		strings.TrimSpace(facts.ProviderDialogHint),
+	}, "|")
+}
+
+func mapsEqual(left, right map[string]string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		if right[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func ensureSidecarTransportWatcher(projectRoot, runName, runDir string, watcher *TmuxControlWatcher) *TmuxControlWatcher {

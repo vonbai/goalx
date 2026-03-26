@@ -31,6 +31,9 @@ type TransportTargetFacts struct {
 	LastSubmitMode        string `json:"last_submit_mode,omitempty"`
 	LastTransportAcceptAt string `json:"last_transport_accept_at,omitempty"`
 	LastTransportError    string `json:"last_transport_error,omitempty"`
+	ProviderDialogVisible bool   `json:"provider_dialog_visible,omitempty"`
+	ProviderDialogKind    string `json:"provider_dialog_kind,omitempty"`
+	ProviderDialogHint    string `json:"provider_dialog_hint,omitempty"`
 }
 
 func TransportFactsPath(runDir string) string {
@@ -155,6 +158,7 @@ func inspectTransportTarget(target, logicalTarget, window, engine string) Transp
 	facts.WorkingVisible = targetWorkingVisible(facts.Engine, recent)
 	facts.QueuedMessageVisible = targetQueuedMessageVisible(facts.Engine, recent)
 	facts.InputContainsWake = targetWakeBuffered(recent)
+	facts.ProviderDialogVisible, facts.ProviderDialogKind, facts.ProviderDialogHint = targetProviderDialogVisible(recent)
 	facts.TransportState = inferTransportState(facts.Engine, facts)
 	return facts
 }
@@ -242,6 +246,64 @@ func targetWakeBuffered(lines []string) bool {
 		}
 	}
 	return false
+}
+
+func targetProviderDialogVisible(lines []string) (bool, string, string) {
+	type dialogPattern struct {
+		kind    string
+		phrases []string
+	}
+	patterns := []dialogPattern{
+		{
+			kind: "permission_prompt",
+			phrases: []string{
+				"needs your permission",
+				"permission needed",
+				"approval required",
+				"requires approval",
+			},
+		},
+		{
+			kind: "auth_prompt",
+			phrases: []string{
+				"please authenticate",
+				"authentication required",
+				"authenticate in browser",
+				"continue in your browser",
+				"open this url",
+				"open the browser",
+				"login required",
+				"log in to continue",
+				"sign in to continue",
+				"authorize in your browser",
+			},
+		},
+		{
+			kind: "input_prompt",
+			phrases: []string{
+				"requires user input",
+				"waiting for user input",
+				"enter your credentials",
+				"provide your credentials",
+				"complete authentication",
+			},
+		},
+	}
+	for i := len(lines) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" {
+			continue
+		}
+		normalized := strings.ToLower(trimmed)
+		for _, pattern := range patterns {
+			for _, phrase := range pattern.phrases {
+				if strings.Contains(normalized, phrase) {
+					return true, pattern.kind, compactHookText(trimmed)
+				}
+			}
+		}
+	}
+	return false, "", ""
 }
 
 func trailingPromptLines(lines []string, limit int) []string {
