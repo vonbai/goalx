@@ -309,6 +309,13 @@ func Add(projectRoot string, args []string) (err error) {
 	if err := EnsureSessionControl(rc.RunDir, sName); err != nil {
 		return fmt.Errorf("init session control: %w", err)
 	}
+	assignmentType := string(sessionIdentity.Mode)
+	if assignmentType == "" {
+		assignmentType = "tell"
+	}
+	if _, err := AppendControlInboxMessage(rc.RunDir, sName, assignmentType, "master", hint); err != nil {
+		return fmt.Errorf("seed session inbox: %w", err)
+	}
 
 	// Generate adapter
 	if err := GenerateAdapter(engine, workdir, ControlInboxPath(rc.RunDir, sName), SessionCursorPath(rc.RunDir, sName)); err != nil {

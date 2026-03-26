@@ -725,6 +725,17 @@ local_validation:
 		t.Fatalf("Add: %v", err)
 	}
 
+	sessionInbox, err := os.ReadFile(ControlInboxPath(runDir, "session-2"))
+	if err != nil {
+		t.Fatalf("read session inbox: %v", err)
+	}
+	sessionText := string(sessionInbox)
+	for _, want := range []string{`"type":"develop"`, `"source":"master"`, `"body":"second direction"`} {
+		if !strings.Contains(sessionText, want) {
+			t.Fatalf("session inbox missing %q:\n%s", want, sessionText)
+		}
+	}
+
 	inbox, err := os.ReadFile(MasterInboxPath(runDir))
 	if err != nil {
 		t.Fatalf("read master inbox: %v", err)
