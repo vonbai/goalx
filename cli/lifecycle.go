@@ -187,9 +187,6 @@ func Resume(projectRoot string, args []string) error {
 		return fmt.Errorf("resolve engine: %w", err)
 	}
 	engineCmd := spec.Command
-	if sessionIdentity.Engine == "claude-code" {
-		engineCmd += " --disable-slash-commands"
-	}
 	coord, err := EnsureCoordinationState(rc.RunDir, rc.Config.Objective)
 	if err != nil {
 		return err
@@ -591,9 +588,6 @@ func Replace(projectRoot string, args []string) error {
 	checkSec, _ := normalizeSidecarInterval(rc.Config.Master.CheckInterval)
 	sessionLeaseTTL := time.Duration(checkSec) * time.Second * 2
 	engineCmd := launchSpec.Command
-	if sessionIdentity.Engine == "claude-code" {
-		engineCmd += " --disable-slash-commands"
-	}
 	protocolPath := filepath.Join(rc.RunDir, sessionNameToProgramFile(newNum))
 	prompt := goalx.ResolvePrompt(engines, sessionIdentity.Engine, protocolPath)
 	launchCmd := buildLeaseWrappedLaunchCommand(goalxBin, rc.Name, rc.RunDir, newSessionName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)

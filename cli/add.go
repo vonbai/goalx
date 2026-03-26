@@ -267,9 +267,6 @@ func Add(projectRoot string, args []string) (err error) {
 		return fmt.Errorf("write session identity: %w", err)
 	}
 	sessionIdentityWritten = true
-	if engine == "claude-code" {
-		engineCmd += " --disable-slash-commands"
-	}
 
 	workdir := runWT
 	wtPath := ""

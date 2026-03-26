@@ -96,6 +96,110 @@ func TestEnsureEngineTrustedClaudeWritesProjectTrust(t *testing.T) {
 	}
 }
 
+func TestEnsureEngineTrustedClaudeWritesLocalMCPPermissionHook(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	worktree := filepath.Join(t.TempDir(), "wt")
+	settingsDir := filepath.Join(worktree, ".claude")
+	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
+		t.Fatalf("mkdir settings dir: %v", err)
+	}
+	settingsPath := filepath.Join(settingsDir, "settings.local.json")
+	initial := map[string]any{
+		"hooks": map[string]any{
+			"SessionStart": []any{
+				map[string]any{
+					"matcher": "startup",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "echo existing"},
+					},
+				},
+			},
+		},
+	}
+	raw, err := json.Marshal(initial)
+	if err != nil {
+		t.Fatalf("marshal initial settings: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, raw, 0o644); err != nil {
+		t.Fatalf("write initial settings: %v", err)
+	}
+
+	if err := EnsureEngineTrusted("claude-code", worktree); err != nil {
+		t.Fatalf("EnsureEngineTrusted first: %v", err)
+	}
+	if err := EnsureEngineTrusted("claude-code", worktree); err != nil {
+		t.Fatalf("EnsureEngineTrusted second: %v", err)
+	}
+
+	out, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("read settings.local.json: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal settings.local.json: %v", err)
+	}
+	hooks := doc["hooks"].(map[string]any)
+	if _, ok := hooks["SessionStart"]; !ok {
+		t.Fatalf("existing SessionStart hook lost: %#v", hooks)
+	}
+	permissionHooks := hooks["PermissionRequest"].([]any)
+	count := 0
+	for _, entry := range permissionHooks {
+		entryObj := entry.(map[string]any)
+		if entryObj["matcher"] != "mcp__.*" {
+			continue
+		}
+		for _, hook := range entryObj["hooks"].([]any) {
+			hookObj := hook.(map[string]any)
+			if hookObj["type"] == "command" && strings.Contains(hookObj["command"].(string), "claude-hook permission-request") {
+				count++
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("permission hook count = %d, want 1; settings = %#v", count, hooks["PermissionRequest"])
+	}
+}
+
+func TestClaudePermissionRequestHookOutputPrefersLocalSettingsSuggestion(t *testing.T) {
+	input := []byte(`{
+	  "hook_event_name":"PermissionRequest",
+	  "tool_name":"mcp__playwright__browser_navigate",
+	  "permission_suggestions":[
+	    {"type":"addRules","behavior":"allow","destination":"session","rules":[{"toolName":"mcp__playwright__browser_navigate"}]},
+	    {"type":"addRules","behavior":"allow","destination":"localSettings","rules":[{"toolName":"mcp__playwright__browser_navigate"}]}
+	  ]
+	}`)
+
+	out, err := buildClaudePermissionRequestHookOutput(input)
+	if err != nil {
+		t.Fatalf("buildClaudePermissionRequestHookOutput: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal hook output: %v", err)
+	}
+	hookSpecific := doc["hookSpecificOutput"].(map[string]any)
+	if hookSpecific["hookEventName"] != "PermissionRequest" {
+		t.Fatalf("hookEventName = %#v, want PermissionRequest", hookSpecific["hookEventName"])
+	}
+	decision := hookSpecific["decision"].(map[string]any)
+	if decision["behavior"] != "allow" {
+		t.Fatalf("behavior = %#v, want allow", decision["behavior"])
+	}
+	updates := decision["updatedPermissions"].([]any)
+	if len(updates) != 1 {
+		t.Fatalf("updatedPermissions len = %d, want 1", len(updates))
+	}
+	update := updates[0].(map[string]any)
+	if update["destination"] != "localSettings" {
+		t.Fatalf("destination = %#v, want localSettings", update["destination"])
+	}
+}
+
 func TestEnsureEngineTrustedClaudeMergesAllowedTools(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

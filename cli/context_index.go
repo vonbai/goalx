@@ -222,12 +222,16 @@ func providerFactsForEngine(target, engine string) []ProviderFact {
 	switch strings.TrimSpace(engine) {
 	case "claude-code":
 		return []ProviderFact{
-			{Target: target, Engine: engine, Fact: "MCP approvals can remain target-scoped; unattended worktree sessions may block on confirmation."},
+			{Target: target, Engine: engine, Fact: "Installed personal/project/plugin skills can be auto-invoked when relevant; GoalX does not disable them for durable sessions."},
+			{Target: target, Engine: engine, Fact: "GoalX bootstraps a project-local PermissionRequest hook so unattended Claude MCP permission dialogs can be auto-allowed."},
+			{Target: target, Engine: engine, Fact: "MCP servers that require interactive user input or browser auth can still stall unattended work; prefer non-interactive auth or a non-MCP fallback when needed."},
 			{Target: target, Engine: engine, Fact: "Write/Edit requires prior read of the target file."},
 			{Target: target, Engine: engine, Fact: "Direct large-file edits can fail when the provider read window is exceeded."},
 		}
 	case "codex":
 		return []ProviderFact{
+			{Target: target, Engine: engine, Fact: "Installed named skills remain available in tmux and exec-style Codex sessions when present under Codex skill paths."},
+			{Target: target, Engine: engine, Fact: "Configured MCP servers are usable without an extra GoalX approval layer in this environment."},
 			{Target: target, Engine: engine, Fact: "Native subagents require explicit invocation."},
 		}
 	default:

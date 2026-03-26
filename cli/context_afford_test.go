@@ -128,7 +128,8 @@ func TestAffordCommandPrintsProviderFactsForClaudeSession(t *testing.T) {
 	for _, want := range []string{
 		"## provider-facts",
 		"claude-code",
-		"MCP approvals",
+		"project-local PermissionRequest hook",
+		"Installed personal/project/plugin skills",
 		"Write/Edit requires prior read",
 	} {
 		if !strings.Contains(out, want) {

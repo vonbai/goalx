@@ -409,11 +409,14 @@ local_validation:
 		"HOME='" + home + "'",
 		"PATH='" + fakeBin + ":/tmp/goalx-bin:/usr/bin'",
 		"ANTHROPIC_API_KEY='anthropic-after'",
-		"claude --model claude-opus-4-6 --permission-mode auto --disable-slash-commands",
+		"claude --model claude-opus-4-6 --permission-mode auto",
 	} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("add launch log missing %q:\n%s", want, logText)
 		}
+	}
+	if strings.Contains(logText, "--disable-slash-commands") {
+		t.Fatalf("claude sessions should keep provider-native skills enabled:\n%s", logText)
 	}
 	if strings.Contains(logText, "send-keys -t "+goalx.TmuxSessionName(repo, runName)+":session-2") {
 		t.Fatalf("add should launch session directly, not via send-keys:\n%s", logText)

@@ -54,6 +54,8 @@ func TestRenderSubagentProtocolIncludesResumeInstructions(t *testing.T) {
 		"Read unread session inbox entries",
 		"Inspect the current worktree state",
 		"Resume from the current files and latest durable state",
+		"Do NOT invoke orchestration/meta slash commands or skills",
+		"Installed provider-native domain skills and configured MCP tools are allowed when they materially help.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered protocol missing %q", want)
@@ -97,6 +99,7 @@ func TestRenderSubagentProtocolIncludesEngineSpecificGuidance(t *testing.T) {
 		"Native subagents are transient helpers inside this session.",
 		"short parallel reading, review, doc/API checks, or adversarial cross-checks",
 		"Summarize every native-helper result back into this session's journal, report, or `dispatchable_slices` before you continue.",
+		"Installed provider-native domain skills and configured MCP tools are allowed when they materially help.",
 		"Web search is available when local evidence is insufficient.",
 	} {
 		if !strings.Contains(text, want) {
@@ -137,6 +140,7 @@ func TestRenderSubagentProtocolIncludesCodexGuidance(t *testing.T) {
 		"This engine only starts native subagents when you explicitly invoke them.",
 		"Do not give them durable ownership.",
 		"Summarize every native-helper result back into this session's journal, report, or `dispatchable_slices` before you continue.",
+		"Installed provider-native domain skills and configured MCP tools are allowed when they materially help.",
 		"re-check `/tmp/control/inbox/session-1.jsonl` before idling",
 	} {
 		if !strings.Contains(text, want) {
@@ -1107,6 +1111,7 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		"Do not give them durable ownership.",
 		"If a slice needs worktree ownership, pause/resume, replace, keep, or mergeable output, use `goalx add`.",
 		"Summarize every native-helper result back into durable GoalX state before moving on.",
+		"Installed provider-native domain skills and configured MCP tools may also be available.",
 		"Treat narrowed causes as hypotheses until a failing regression test or decisive evidence confirms them.",
 		"If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated control cycles.",
 		"Keep detailed hypotheses, traces, and path comparisons in journals, not the coordination digest.",

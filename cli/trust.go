@@ -20,6 +20,8 @@ var claudeContext7Tools = []string{
 	"mcp__context7__query-docs",
 }
 
+const claudeMCPPermissionHookMatcher = "mcp__.*"
+
 // EnsureEngineTrusted pre-accepts workspace trust for interactive engines so
 // freshly created worktrees can start unattended.
 func EnsureEngineTrusted(engine, path string) error {
@@ -129,6 +131,48 @@ func ensureClaudeTrusted(path string) error {
 	out = append(out, '\n')
 	if err := writeFilePreserveMode(cfgPath, out, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", cfgPath, err)
+	}
+	if err := ensureClaudeProjectLocalHooks(path); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureClaudeProjectLocalHooks(path string) error {
+	goalxBin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve goalx executable for claude hook bootstrap: %w", err)
+	}
+	settingsPath := filepath.Join(path, ".claude", "settings.local.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		return fmt.Errorf("mkdir claude local settings dir: %w", err)
+	}
+
+	doc := map[string]any{}
+	if data, err := os.ReadFile(settingsPath); err == nil && len(data) > 0 {
+		if err := json.Unmarshal(data, &doc); err != nil {
+			return fmt.Errorf("parse %s: %w", settingsPath, err)
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", settingsPath, err)
+	}
+
+	hooks := coerceObject(doc["hooks"])
+	permissionCommand := shellQuote(goalxBin) + " claude-hook permission-request"
+	hooks["PermissionRequest"] = appendClaudeHookEntry(
+		coerceArray(hooks["PermissionRequest"]),
+		claudeMCPPermissionHookMatcher,
+		permissionCommand,
+	)
+	doc["hooks"] = hooks
+
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", settingsPath, err)
+	}
+	out = append(out, '\n')
+	if err := writeFilePreserveMode(settingsPath, out, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", settingsPath, err)
 	}
 	return nil
 }
@@ -300,4 +344,37 @@ func mergeObjects(base, overlay map[string]any) map[string]any {
 		merged[key] = value
 	}
 	return merged
+}
+
+func appendClaudeHookEntry(entries []any, matcher, command string) []any {
+	for _, raw := range entries {
+		entry := coerceObject(raw)
+		if strings.TrimSpace(toString(entry["matcher"])) != matcher {
+			continue
+		}
+		for _, hookRaw := range coerceArray(entry["hooks"]) {
+			hook := coerceObject(hookRaw)
+			if strings.TrimSpace(toString(hook["type"])) == "command" && strings.TrimSpace(toString(hook["command"])) == command {
+				return entries
+			}
+		}
+	}
+	out := append([]any(nil), entries...)
+	out = append(out, map[string]any{
+		"matcher": matcher,
+		"hooks": []any{
+			map[string]any{
+				"type":    "command",
+				"command": command,
+			},
+		},
+	})
+	return out
+}
+
+func toString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }

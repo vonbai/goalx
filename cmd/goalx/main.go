@@ -185,6 +185,8 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.Serve(cwd, args)
 	case "next":
 		return cli.Next(cwd, args)
+	case "claude-hook":
+		return cli.ClaudeHook(cwd, args)
 	case "sidecar":
 		return mainSidecar(cwd, args)
 	case "lease-loop":
