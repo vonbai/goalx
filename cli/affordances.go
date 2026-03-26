@@ -299,13 +299,13 @@ func providerFactsSummary(target string, facts []ProviderFact) string {
 		return ""
 	}
 	if strings.TrimSpace(target) == "" {
-		return "Provider-scoped execution facts for this run."
+		return "Provider-native capability facts for this run."
 	}
 	engine := facts[0].Engine
 	if strings.TrimSpace(engine) == "" {
-		return fmt.Sprintf("Provider-scoped execution facts for `%s`.", target)
+		return fmt.Sprintf("Provider-native capability facts for `%s`.", target)
 	}
-	return fmt.Sprintf("Provider-scoped execution facts for `%s` (`%s`).", target, engine)
+	return fmt.Sprintf("Provider-native capability facts for `%s` (`%s`).", target, engine)
 }
 
 func renderProviderFactLines(target string, facts []ProviderFact) []string {

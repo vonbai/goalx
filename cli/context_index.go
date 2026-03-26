@@ -222,7 +222,9 @@ func providerFactsForEngine(target, engine string) []ProviderFact {
 	switch strings.TrimSpace(engine) {
 	case "claude-code":
 		return []ProviderFact{
-			{Target: target, Engine: engine, Fact: "Installed personal/project/plugin skills can be auto-invoked when relevant; GoalX does not disable them for durable sessions."},
+			{Target: target, Engine: engine, Fact: "GoalX canonical provider runtime is tmux + interactive TUI."},
+			{Target: target, Engine: engine, Fact: "Interactive Claude sessions can use installed skills, plugins, and MCP servers from the native TUI."},
+			{Target: target, Engine: engine, Fact: "Claude root sessions cannot use --dangerously-skip-permissions or --permission-mode bypassPermissions."},
 			{Target: target, Engine: engine, Fact: "GoalX bootstraps a project-local PermissionRequest hook so unattended Claude MCP permission dialogs can be auto-allowed."},
 			{Target: target, Engine: engine, Fact: "GoalX bootstraps a project-local Elicitation hook so unattended Claude MCP user-input or browser-auth requests are cancelled instead of hanging forever."},
 			{Target: target, Engine: engine, Fact: "If a Claude permission or elicitation dialog still surfaces, GoalX writes an urgent master-inbox fact through a Notification hook so the run can recover."},
@@ -231,7 +233,8 @@ func providerFactsForEngine(target, engine string) []ProviderFact {
 		}
 	case "codex":
 		return []ProviderFact{
-			{Target: target, Engine: engine, Fact: "Installed named skills remain available in tmux and exec-style Codex sessions when present under Codex skill paths."},
+			{Target: target, Engine: engine, Fact: "GoalX canonical provider runtime is tmux + interactive TUI."},
+			{Target: target, Engine: engine, Fact: "Interactive Codex sessions can use installed skills and configured MCP servers from the native TUI."},
 			{Target: target, Engine: engine, Fact: "Configured MCP servers are usable without an extra GoalX approval layer in this environment."},
 			{Target: target, Engine: engine, Fact: "Native subagents require explicit invocation."},
 		}

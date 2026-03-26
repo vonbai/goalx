@@ -169,13 +169,29 @@ func TestBuildAffordancesIncludesProviderFactsForClaudeTargets(t *testing.T) {
 		if item.ID != "provider-facts" {
 			continue
 		}
-		found = strings.Contains(item.Summary, "claude-code")
+		summaryOK := strings.Contains(item.Summary, "Provider-native capability facts for `session-1` (`claude-code`).")
+		runtimeOK := false
+		claudeCapabilityOK := false
+		rootGuardOK := false
+		pathOK := false
+		for _, fact := range item.Facts {
+			if strings.Contains(fact, "GoalX canonical provider runtime is tmux + interactive TUI.") {
+				runtimeOK = true
+			}
+			if strings.Contains(fact, "Interactive Claude sessions can use installed skills, plugins, and MCP servers from the native TUI.") {
+				claudeCapabilityOK = true
+			}
+			if strings.Contains(fact, "Claude root sessions cannot use --dangerously-skip-permissions or --permission-mode bypassPermissions.") {
+				rootGuardOK = true
+			}
+		}
 		for _, path := range item.Paths {
 			if path == ContextIndexPath(runDir) {
-				found = true
+				pathOK = true
 				break
 			}
 		}
+		found = summaryOK && runtimeOK && claudeCapabilityOK && rootGuardOK && pathOK
 	}
 	if !found {
 		t.Fatalf("provider facts affordance missing for claude target: %+v", doc.Items)

@@ -92,6 +92,47 @@ func TestContextIndexIncludesSessionRoster(t *testing.T) {
 	}
 }
 
+func TestProviderFactsIncludeTUICapabilityFactsWithoutRoutingAdvice(t *testing.T) {
+	claudeFacts := providerFactsForEngine("master", "claude-code")
+	if len(claudeFacts) == 0 {
+		t.Fatalf("claude provider facts missing")
+	}
+	claudeText := joinProviderFactText(claudeFacts)
+	for _, want := range []string{
+		"tmux + interactive TUI",
+		"skills, plugins, and MCP servers",
+		"cannot use --dangerously-skip-permissions or --permission-mode bypassPermissions",
+	} {
+		if !strings.Contains(claudeText, want) {
+			t.Fatalf("claude provider facts missing %q:\n%s", want, claudeText)
+		}
+	}
+	for _, unwanted := range []string{"route", "routing", "dispatch", "prefer"} {
+		if strings.Contains(strings.ToLower(claudeText), unwanted) {
+			t.Fatalf("claude provider facts should not encode %q:\n%s", unwanted, claudeText)
+		}
+	}
+
+	codexFacts := providerFactsForEngine("master", "codex")
+	if len(codexFacts) == 0 {
+		t.Fatalf("codex provider facts missing")
+	}
+	codexText := joinProviderFactText(codexFacts)
+	for _, want := range []string{
+		"tmux + interactive TUI",
+		"skills and configured MCP servers",
+	} {
+		if !strings.Contains(codexText, want) {
+			t.Fatalf("codex provider facts missing %q:\n%s", want, codexText)
+		}
+	}
+	for _, unwanted := range []string{"route", "routing", "dispatch", "prefer"} {
+		if strings.Contains(strings.ToLower(codexText), unwanted) {
+			t.Fatalf("codex provider facts should not encode %q:\n%s", unwanted, codexText)
+		}
+	}
+}
+
 func TestContextIndexUsesRunWorktreeForSharedSession(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	sessionName := "session-1"
@@ -129,6 +170,14 @@ func TestContextIndexUsesRunWorktreeForSharedSession(t *testing.T) {
 	if index.Sessions[0].WorktreePath != RunWorktreePath(runDir) {
 		t.Fatalf("shared session worktree = %q, want %q", index.Sessions[0].WorktreePath, RunWorktreePath(runDir))
 	}
+}
+
+func joinProviderFactText(facts []ProviderFact) string {
+	parts := make([]string, 0, len(facts))
+	for _, fact := range facts {
+		parts = append(parts, fact.Fact)
+	}
+	return strings.Join(parts, "\n")
 }
 
 func TestContextIndexExcludesRawEnvSnapshot(t *testing.T) {

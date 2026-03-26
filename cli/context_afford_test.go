@@ -41,6 +41,9 @@ func TestContextCommandPrintsRunIndex(t *testing.T) {
 		"Objective:",
 		"Run dir:",
 		"Context index:",
+		"## Provider Facts",
+		"GoalX canonical provider runtime is tmux + interactive TUI.",
+		"Interactive Codex sessions can use installed skills and configured MCP servers from the native TUI.",
 		"session-1",
 	} {
 		if !strings.Contains(out, want) {
@@ -128,11 +131,10 @@ func TestAffordCommandPrintsProviderFactsForClaudeSession(t *testing.T) {
 	for _, want := range []string{
 		"## provider-facts",
 		"claude-code",
-		"project-local PermissionRequest hook",
-		"project-local Elicitation hook",
-		"urgent master-inbox fact",
-		"Installed personal/project/plugin skills",
-		"Write/Edit requires prior read",
+		"Provider-native capability facts for `session-1` (`claude-code`).",
+		"GoalX canonical provider runtime is tmux + interactive TUI.",
+		"Interactive Claude sessions can use installed skills, plugins, and MCP servers from the native TUI.",
+		"Claude root sessions cannot use --dangerously-skip-permissions or --permission-mode bypassPermissions.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("afford output missing %q:\n%s", want, out)
