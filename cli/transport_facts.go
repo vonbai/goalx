@@ -279,6 +279,30 @@ func targetProviderDialogVisible(lines []string) (bool, string, string) {
 			},
 		},
 		{
+			kind: "skill_ui",
+			phrases: []string{
+				"use /skills",
+				"available skills",
+				"choose a skill",
+				"select a skill",
+				"skill chooser",
+				"skill menu",
+				"skill browser",
+			},
+		},
+		{
+			kind: "capacity_picker",
+			phrases: []string{
+				"choose a model",
+				"select a model",
+				"model picker",
+				"capacity picker",
+				"model capacity",
+				"choose capacity",
+				"pick a capacity",
+			},
+		},
+		{
 			kind: "input_prompt",
 			phrases: []string{
 				"requires user input",

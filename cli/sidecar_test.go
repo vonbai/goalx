@@ -1302,6 +1302,41 @@ func TestRunSidecarTickElevatesProviderDialogToUrgentMasterFact(t *testing.T) {
 	}
 }
 
+func TestRunSidecarTickElevatesCapacityPickerDialogToUrgentMasterFact(t *testing.T) {
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	seedGuidanceSessionFixture(t, runDir, cfg)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	sessionCapture := filepath.Join(t.TempDir(), "session-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	if err := os.WriteFile(sessionCapture, []byte("Choose a model to continue\nModel capacity picker\n"), 0o644); err != nil {
+		t.Fatalf("write session capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
+	installGuidanceFakeTmux(t, []string{"session-1"})
+
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick: %v", err)
+	}
+
+	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("ReadFile master inbox: %v", err)
+	}
+	if !strings.Contains(string(inboxData), `"type":"provider-dialog-visible"`) {
+		t.Fatalf("master inbox missing provider-dialog-visible fact:\n%s", string(inboxData))
+	}
+	if !strings.Contains(string(inboxData), `"urgent":true`) {
+		t.Fatalf("master inbox missing urgent provider dialog fact:\n%s", string(inboxData))
+	}
+	if !strings.Contains(string(inboxData), `target=session-1 engine=codex kind=capacity_picker`) {
+		t.Fatalf("master inbox missing capacity picker body details:\n%s", string(inboxData))
+	}
+}
+
 func bootstrapSidecarIdentityFixture(t *testing.T, runDir, repo string, cfg *goalx.Config, meta *RunMetadata) {
 	t.Helper()
 
