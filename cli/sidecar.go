@@ -212,7 +212,7 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 		if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState); err != nil {
 			appendAuditLog(runDir, "transport watcher pre-queue snapshot warning: %v", err)
 		}
-		urgentUnread := hasUrgentUnread(runDir)
+		urgentUnread := hasUrgentUnread(runDir) || masterNeedsRecovery(runDir)
 		urgentTicks := controlState.UrgentUnreadTicks
 		if urgentUnread {
 			urgentTicks++
@@ -265,7 +265,7 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 	if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, nil, controlState); err != nil {
 		return err
 	}
-	urgentUnread := hasUrgentUnread(runDir)
+	urgentUnread := hasUrgentUnread(runDir) || masterNeedsRecovery(runDir)
 	urgentTicks := controlState.UrgentUnreadTicks
 	if urgentUnread {
 		urgentTicks++
@@ -474,6 +474,10 @@ func transportAcceptedRecently(facts TransportTargetFacts, window time.Duration,
 		}
 	}
 	return false
+}
+
+func masterNeedsRecovery(runDir string) bool {
+	return loadTransportTargetFacts(runDir, "master").ProviderDialogVisible
 }
 
 func defaultLaunchRunSidecar(projectRoot, runName string, interval time.Duration) error {

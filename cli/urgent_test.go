@@ -256,3 +256,105 @@ esac
 		}
 	}
 }
+
+func TestRunSidecarTickRecoversMasterWhenDialogVisibleWithoutUnread(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "base", "base commit")
+	cfg := &goalx.Config{
+		Name:      "sidecar-run",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	runDir := writeRunSpecFixture(t, repo, cfg)
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if err := os.MkdirAll(RunWorktreePath(runDir), 0o755); err != nil {
+		t.Fatalf("mkdir run worktree: %v", err)
+	}
+
+	fakeBin := t.TempDir()
+	logPath := filepath.Join(fakeBin, "tmux.log")
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("Authentication required\nPlease authenticate in browser to continue\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := `#!/bin/sh
+echo "$@" >> "$TMUX_LOG"
+case "$1" in
+  has-session)
+    exit 0
+    ;;
+  list-windows)
+    printf '%s\n' master
+    exit 0
+    ;;
+  list-panes)
+    printf '%%0\tmaster\n'
+    exit 0
+    ;;
+  capture-pane)
+    cat "$TMUX_MASTER_CAPTURE"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("TMUX_LOG", logPath)
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	orig := sendAgentNudge
+	defer func() { sendAgentNudge = orig }()
+	sendAgentNudge = func(target, engine string) error { return nil }
+
+	for tick := 1; tick <= 3; tick++ {
+		if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+			t.Fatalf("runSidecarTick #%d: %v", tick, err)
+		}
+	}
+
+	state, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if state.UrgentUnreadTicks != 0 {
+		t.Fatalf("urgent_unread_ticks = %d, want 0 after relaunch", state.UrgentUnreadTicks)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	logText := string(logData)
+	wantTarget := goalx.TmuxSessionName(repo, cfg.Name) + ":master"
+	if strings.Count(logText, "send-keys -t "+wantTarget+" Escape") != 1 {
+		t.Fatalf("expected one Escape interrupt before relaunch:\n%s", logText)
+	}
+	for _, want := range []string{
+		"kill-window -t " + wantTarget,
+		"new-window -t " + goalx.TmuxSessionName(repo, cfg.Name) + " -n master -c " + RunWorktreePath(runDir),
+	} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("tmux log missing %q:\n%s", want, logText)
+		}
+	}
+}

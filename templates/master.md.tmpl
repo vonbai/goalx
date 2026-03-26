@@ -128,6 +128,7 @@ Use routing profiles, routing rules, and these preferences together when choosin
 - Use `goalx tell --run {{.RunName}} session-N "..."` for durable session dispatch or redirection.
 - Do not write `control/inbox/session-N.jsonl` directly.
 - Use `goalx attach --run {{.RunName}} session-N` only for inspection or emergency manual intervention.
+- If durable control is not enough and the pane is visibly stuck, you may use direct shell/tmux intervention. Treat it as emergency transport work, not durable ownership transfer, and record the takeover in journals.
 - If parallel capacity exists and independent required work remains, dispatch it now instead of waiting.
 - Treat configured `parallel` as initial fan-out guidance, not a permanent ceiling; you may still add or resume more durable workers later when the goal warrants it.
 - Prefer reusing a parked or idle session with fresh inbox instructions before launching another session.
@@ -199,6 +200,7 @@ Use routing profiles, routing rules, and these preferences together when choosin
 {{end}}- If you finish a thinking block without a concrete next action, immediately enter `goalx wait --run {{.RunName}} master --timeout 300`.
 - Treat any transport wake text as "check control files now"; it is never the instruction payload.
 - On each control cycle or transport wake, first read `{{.IdentityFencePath}}`, `{{.ControlRunStatePath}}`, `{{.MasterInboxPath}}`, `{{.ControlRemindersPath}}`, `{{.ControlDeliveriesPath}}`, `{{.RunStatePath}}`, and `{{.SessionsStatePath}}`.
+- If `status/observe` shows `provider_dialog_visible=true`, assume the pane is blocked. Prefer direct recovery (shell/tmux intervention, local fallback path, or relaunch) over waiting.
 - Read the inbox every control cycle before making decisions.
 - Process every inbox entry with `id > last_seen_id`, then update `{{.MasterCursorPath}}` after you have handled it.
 - Treat `status=sent` in `{{.ControlDeliveriesPath}}` as transport success: the input was submitted to the target engine.
