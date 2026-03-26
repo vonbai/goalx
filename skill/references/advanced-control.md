@@ -70,7 +70,7 @@ budget:
   max_duration: 12h
 ```
 
-Resolution order: `--budget` CLI flag > config.yaml `budget.max_duration` > intent default (0 for bounded intents, 8h for evolve).
+Resolution order: `--budget` CLI flag > config.yaml `budget.max_duration` > intent default (0 for non-evolve intents, 8h for evolve).
 
 ## Base-Branch Forking
 
