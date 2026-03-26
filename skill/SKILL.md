@@ -147,13 +147,10 @@ goalx save                    # export to durable storage
 
 ```bash
 goalx add --run NAME --mode develop --worktree "task"   # add an isolated worker
-goalx add --run NAME --mode develop --base-branch session-1 --worktree "alt approach"  # fork from session-1's branch
 goalx park --run NAME session-3                          # pause, keep worktree
 goalx resume --run NAME session-3                        # restart parked
 goalx keep --run NAME session-1                          # merge session branch
 ```
-
-`--base-branch` forks the new worktree from an existing session's branch instead of from main. This is useful when you want to try an alternative approach starting from where another session left off. The source session must have its own worktree.
 
 ## Multi-Run Projects
 
