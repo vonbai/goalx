@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Save copies run artifacts to user-scoped durable storage.
@@ -208,6 +209,9 @@ func Save(projectRoot string, args []string) error {
 	}
 	if err := RefreshRunMemorySeeds(rc.RunDir); err != nil {
 		return fmt.Errorf("refresh run memory seeds: %w", err)
+	}
+	if err := AppendExtractedMemoryProposals(rc.RunDir, time.Now().UTC()); err != nil {
+		return fmt.Errorf("extract memory proposals: %w", err)
 	}
 
 	fmt.Printf("Saved run '%s' to %s\n", rc.Name, saveDir)

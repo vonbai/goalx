@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type MemoryKind string
@@ -50,6 +51,8 @@ type MemoryProposal struct {
 	Selectors  map[string]string `json:"selectors,omitempty"`
 	Evidence   []MemoryEvidence  `json:"evidence,omitempty"`
 	SourceRuns []string          `json:"source_runs,omitempty"`
+	ValidFrom  string            `json:"valid_from,omitempty"`
+	ValidTo    string            `json:"valid_to,omitempty"`
 	CreatedAt  string            `json:"created_at,omitempty"`
 	UpdatedAt  string            `json:"updated_at,omitempty"`
 }
@@ -144,6 +147,47 @@ func NormalizeMemoryEntry(entry *MemoryEntry) (*MemoryEntry, error) {
 	normalized.Selectors = normalizeMemorySelectors(normalized.Selectors)
 	if normalized.Kind == MemoryKindSecretRef && len(normalized.Selectors) == 0 {
 		return nil, fmt.Errorf("secret_ref memory entries require selectors")
+	}
+	return &normalized, nil
+}
+
+func NormalizeMemoryProposal(proposal *MemoryProposal) (*MemoryProposal, error) {
+	if proposal == nil {
+		return nil, fmt.Errorf("memory proposal is nil")
+	}
+	normalized := *proposal
+	normalized.ID = strings.TrimSpace(normalized.ID)
+	if normalized.ID == "" {
+		return nil, fmt.Errorf("memory proposal id is required")
+	}
+	normalized.State = strings.TrimSpace(normalized.State)
+	if normalized.State == "" {
+		normalized.State = "proposed"
+	}
+	normalized.Statement = strings.TrimSpace(normalized.Statement)
+	if normalized.Statement == "" {
+		return nil, fmt.Errorf("memory proposal statement is required")
+	}
+	switch normalized.Kind {
+	case MemoryKindFact, MemoryKindProcedure, MemoryKindPitfall, MemoryKindSecretRef:
+	default:
+		return nil, fmt.Errorf("unknown memory proposal kind %q", normalized.Kind)
+	}
+	normalized.Selectors = normalizeMemorySelectors(normalized.Selectors)
+	if normalized.Kind == MemoryKindSecretRef && len(normalized.Selectors) == 0 {
+		return nil, fmt.Errorf("secret_ref memory proposals require selectors")
+	}
+	normalized.Evidence = normalizeMemoryEvidence(normalized.Evidence)
+	normalized.SourceRuns = compactStrings(normalized.SourceRuns)
+	normalized.ValidFrom = strings.TrimSpace(normalized.ValidFrom)
+	normalized.ValidTo = strings.TrimSpace(normalized.ValidTo)
+	normalized.CreatedAt = strings.TrimSpace(normalized.CreatedAt)
+	if normalized.CreatedAt == "" {
+		normalized.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	normalized.UpdatedAt = strings.TrimSpace(normalized.UpdatedAt)
+	if normalized.UpdatedAt == "" {
+		normalized.UpdatedAt = normalized.CreatedAt
 	}
 	return &normalized, nil
 }
