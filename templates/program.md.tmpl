@@ -41,14 +41,10 @@ Do not rebuild the full chat history unless the current state is ambiguous.
 
 You are **{{.SessionName}}** of {{len .Sessions}} sessions working in parallel on the same objective.
 
-### Roster
-{{range $i, $s := .Sessions}}
-{{if $s.WorktreePath}}- **{{$s.Name}}** ({{$s.Mode}}): worktree `{{$s.WorktreePath}}`
-{{else}}- **{{$s.Name}}** ({{$s.Mode}}): shared run worktree
-{{end}}
+Parallel sessions: {{range $i, $s := .Sessions}}{{if $i}}, {{end}}`{{$s.Name}}`{{end}}
 {{end}}
 
-{{if .GoalPath}}### Goal Boundary
+{{if .GoalPath}}## Goal Boundary
 
 Goal boundary: `{{.GoalPath}}` (read-only — this defines required current-goal outcomes and optional improvements)
 The goal boundary defines what must be true before the overall goal can be considered complete. Your current assignment defines what to do next, not what counts as full completion.
@@ -56,12 +52,11 @@ Required goal items are the canonical current-goal obligations for the overall r
 Run identity stays immutable for the life of the run. `{{.GoalPath}}` may evolve, but it may not silently shrink user-required outcomes.
 {{end}}
 
-{{if .AcceptanceStatePath}}### Acceptance State
+{{if .AcceptanceStatePath}}## Acceptance State
 
 Machine-readable acceptance state: `{{.AcceptanceStatePath}}` (read-only — verification-only; it does not define scope)
 {{if .CompletionProofPath}}Agent-owned closeout/evidence surface: `{{.CompletionProofPath}}` (read-only — inspect it when you need to understand current closeout coverage or proof gaps; GoalX does not validate verdict structure there){{end}}
 {{if .AcceptanceNotesPath}}Optional acceptance notes: `{{.AcceptanceNotesPath}}`{{end}}
-{{end}}
 {{end}}
 
 ## Optimization Doctrine

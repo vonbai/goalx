@@ -1017,11 +1017,6 @@ func TestRenderMasterProtocolIncludesReportsRoutingAndResearchCompletionGuidance
 		"goalx dimension [--run NAME] <session-N|all> --set depth,adversarial",
 		"goalx dimension [--run NAME] <session-N> --add creative",
 		"goalx dimension [--run NAME] <session-N> --remove depth",
-		"deep-research",
-		"gpt-5.4",
-		"high",
-		"depth",
-		"evidence",
 		"/tmp/run/reports",
 		"/tmp/control/dimensions.json",
 	} {
@@ -1034,6 +1029,81 @@ func TestRenderMasterProtocolIncludesReportsRoutingAndResearchCompletionGuidance
 	}
 	if strings.Contains(text, "Goal items are your working decomposition, not the definition of done.") {
 		t.Fatalf("rendered master protocol should not describe goal items as decomposition:\n%s", text)
+	}
+}
+
+func TestRenderMasterProtocolOmitsDuplicatedColdTablesButKeepsDispatchGuidance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:   "audit auth",
+		RunName:     "demo",
+		Mode:        goalx.ModeResearch,
+		Master:      goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		TmuxSession: "ar-demo",
+		SummaryPath: "/tmp/summary.md",
+		StatusPath:  "/tmp/status.json",
+		GoalPath:    "/tmp/goal.json",
+		Sessions: []SessionData{
+			{Name: "session-1", WorktreePath: "/tmp/wt-1"},
+		},
+		Engines: map[string]goalx.EngineConfig{
+			"codex": {Description: "Fast code editing", Models: map[string]string{"best": "gpt-5.4"}},
+		},
+		Preferences: goalx.PreferencesConfig{
+			Research: goalx.PreferencePolicy{Guidance: "multi-perspective"},
+			Develop:  goalx.PreferencePolicy{Guidance: "speed"},
+		},
+		Routing: goalx.RoutingTableConfig{
+			Profiles: map[string]goalx.ExecutionProfile{
+				"deep-research": {Engine: "codex", Model: "gpt-5.4", Effort: goalx.EffortHigh},
+			},
+			Rules: []goalx.RoutingRule{
+				{Role: "research", AnyDimensions: []string{"depth"}, Profile: "deep-research"},
+			},
+		},
+		DimensionsPath: "/tmp/control/dimensions.json",
+		DimensionsCatalog: map[string]string{
+			"depth":    "Depth focus",
+			"evidence": "Evidence focus",
+		},
+		EngineCommand: "codex exec",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"### Preferences",
+		"| Research | multi-perspective |",
+		"| Develop | speed |",
+		"Prefer route-first session launches.",
+		"Explicit `--engine/--model` bypasses routing.",
+		"goalx dimension [--run NAME] <session-N|all> --set depth,adversarial",
+		"goalx dimension [--run NAME] <session-N> --add creative",
+		"goalx dimension [--run NAME] <session-N> --remove depth",
+		"/tmp/control/dimensions.json",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+	for _, unwanted := range []string{
+		"### Session Roster",
+		"### Engines",
+		"### Effort Levels",
+		"### Routing Profiles",
+		"### Routing Rules",
+		"| Dimension | Guidance |",
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("rendered master protocol should omit duplicated section %q:\n%s", unwanted, text)
+		}
 	}
 }
 

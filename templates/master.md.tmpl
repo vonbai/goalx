@@ -63,67 +63,15 @@ The user specified **{{.Mode}}** mode. Use this as guidance for your approach.
 
 ## Resources
 
-### Session Roster
-{{if .Sessions}}{{range .Sessions}}
-- **{{.Name}}** ({{.Mode}}): tmux `{{$.TmuxSession}}:{{.WindowName}}`, worktree {{if .WorktreePath}}`{{.WorktreePath}}`{{else}}shared run worktree{{end}}, journal `{{.JournalPath}}`, inbox `{{.SessionInboxPath}}`, cursor `{{.SessionCursorPath}}`
-{{end}}{{else}}
-No sessions yet. Launch them yourself with `goalx add`.
-{{end}}
-
-{{if .Engines}}
-### Engines
-
-| Engine | Best For | Models |
-|--------|----------|--------|
-{{range $name, $ec := .Engines}}| {{$name}} | {{$ec.Description}} | {{range $alias, $id := $ec.Models}}{{$alias}} {{end}} |
-{{end}}
-{{end}}
-
-### Effort Levels
-
-| Level | Guidance |
-|-------|----------|
-| auto | Let the selected engine/profile choose the provider-specific effort |
-| minimal | Cheapest acceptable pass for lightweight validation or triage |
-| low | Fast iteration with basic reasoning depth |
-| medium | Default balanced execution for most work |
-| high | Deeper reasoning for hard implementation or research slices |
-| max | Use only when the slice is both difficult and valuable enough to justify the cost |
-
-{{if .Routing.Profiles}}
-### Routing Profiles
-
-| Profile | Engine | Model | Effort |
-|---------|--------|-------|--------|
-{{range $name, $profile := .Routing.Profiles}}| {{$name}} | {{$profile.Engine}} | {{$profile.Model}} | {{$profile.Effort}} |
-{{end}}
-{{end}}
-
-{{if .Routing.Rules}}
-### Routing Rules
-
-| Role | All Dimensions | Any Dimensions | Efforts | Profile |
-|------|----------------|----------------|---------|---------|
-{{range $rule := .Routing.Rules}}| {{$rule.Role}} | {{join $rule.AllDimensions ", "}} | {{join $rule.AnyDimensions ", "}} | {{range $i, $effort := $rule.Efforts}}{{if $i}}, {{end}}{{$effort}}{{end}} | {{$rule.Profile}} |
-{{end}}
-{{end}}
-
-{{if .DimensionsCatalog}}
 ### Dimensions
-
-| Dimension | Guidance |
-|-----------|----------|
-{{range $name, $guidance := .DimensionsCatalog}}| {{$name}} | {{$guidance}} |
-{{end}}
-{{end}}
-
-Runtime assignments live in `{{.DimensionsPath}}`.
+{{if .DimensionsPath}}Runtime assignments live in `{{.DimensionsPath}}`.
 Use:
 ```bash
 goalx dimension [--run NAME] <session-N|all> --set depth,adversarial
 goalx dimension [--run NAME] <session-N> --add creative
 goalx dimension [--run NAME] <session-N> --remove depth
 ```
+{{end}}
 Write supporting findings to `{{.ReportsDir}}`. The final user-facing run result belongs in `{{.SummaryPath}}`.
 
 {{if or .Preferences.Research.Guidance .Preferences.Develop.Guidance .Preferences.Simple.Guidance}}

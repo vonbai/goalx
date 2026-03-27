@@ -106,7 +106,7 @@ func TestRelaunchMasterRerendersProtocolWithFreshFacts(t *testing.T) {
 		"Intent: evolve",
 		"This run was launched with explicit `evolve` intent.",
 		"evolution.jsonl",
-		"session-2",
+		"`goalx afford --run lifecycle-run master`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("master.md missing %q:\n%s", want, text)
