@@ -311,6 +311,50 @@ func TestStatusShowsSessionTransportFacts(t *testing.T) {
 	}
 }
 
+func TestStatusDoesNotSurfaceAckSessionAsSessionLifecycleState(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	installGuidanceFakeTmux(t, []string{"session-1"})
+
+	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4-mini", goalx.EffortHigh, "xhigh", "build_fast", "", goalx.TargetConfig{})
+	if err != nil {
+		t.Fatalf("NewSessionIdentity: %v", err)
+	}
+	if err := SaveSessionIdentity(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
+		t.Fatalf("SaveSessionIdentity: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-1",
+		State: "active",
+		Mode:  string(goalx.ModeDevelop),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+	if err := os.WriteFile(JournalPath(runDir, "session-1"), []byte("{\"round\":1,\"status\":\"ack-session\",\"desc\":\"read inbox\"}\n"), 0o644); err != nil {
+		t.Fatalf("write session journal: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "session-1") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			t.Fatalf("session line too short: %q", line)
+		}
+		if fields[2] != "active" {
+			t.Fatalf("session lifecycle status = %q, want active in line %q", fields[2], line)
+		}
+		return
+	}
+	t.Fatalf("status output missing session-1 line:\n%s", out)
+}
+
 func TestStatusShowsProviderDialogFactsForMasterAndSession(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	cfg.Master.Engine = "claude-code"
@@ -579,6 +623,120 @@ func TestStatusWarnsAboutPotentialEvolveStallAndMissingCloseoutArtifacts(t *test
 		"completion_proof_exists=false",
 		"Closeout artifacts missing:",
 		"required_remaining=0",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestStatusShowsCoverageUnknownWhenOwnersMissing(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship feature", State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"Coverage:",
+		"coverage=unknown",
+		"open_required=req-1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestStatusShowsExplicitCoverageFacts(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "first open item", State: goalItemStateOpen},
+			{ID: "req-2", Text: "second open item", State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Owners: map[string]string{
+			"req-1": "session-9",
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-4", State: "idle", Mode: string(goalx.ModeDevelop)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-5", State: "parked", Mode: string(goalx.ModeDevelop)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-5: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"Coverage:",
+		"open_required=req-1,req-2",
+		"unmapped_open=req-2",
+		"owner_session_missing=req-1",
+		"idle_reusable=session-4",
+		"parked_reusable=session-5",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestStatusWarnsAboutExplicitCoverageGapOutsideEvolve(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := os.WriteFile(RunStatusPath(runDir), []byte(`{"phase":"working","required_remaining":2,"active_sessions":[]}`), 0o644); err != nil {
+		t.Fatalf("write status record: %v", err)
+	}
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "first open item", State: goalItemStateOpen},
+			{ID: "req-2", Text: "second open item", State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Owners: map[string]string{
+			"req-1": "session-9",
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-4", State: "idle", Mode: string(goalx.ModeDevelop)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"### advisories",
+		"Coverage facts:",
+		"unmapped_open=req-2",
+		"owner_session_missing=req-1",
+		"reusable_sessions=session-4",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status output missing %q:\n%s", want, out)

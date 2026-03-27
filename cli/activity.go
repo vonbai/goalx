@@ -19,6 +19,7 @@ type ActivitySnapshot struct {
 	Run       ActivityRunInfo            `json:"run"`
 	Lifecycle ActivityLifecycle          `json:"lifecycle"`
 	Queue     ActivityQueue              `json:"queue"`
+	Coverage  RequiredCoverage           `json:"coverage,omitempty"`
 	Root      WorktreeDiffStat           `json:"root"`
 	Actors    map[string]ActivityActor   `json:"actors,omitempty"`
 	Sessions  map[string]ActivitySession `json:"sessions,omitempty"`
@@ -169,6 +170,11 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 		snapshot.Lifecycle.RuntimePhase = runtimeState.Phase
 		snapshot.Lifecycle.RunActive = runtimeState.Active
 	}
+	coverage, err := BuildRequiredCoverage(runDir)
+	if err != nil {
+		return nil, err
+	}
+	snapshot.Coverage = coverage
 	snapshot.Actors["master"] = buildActivityActor(runDir, "master", tmuxSession, "master", previousActor(previous, "master"), snapshot.CheckedAt)
 	snapshot.Actors["sidecar"] = buildActivityActor(runDir, "sidecar", tmuxSession, "", previousActor(previous, "sidecar"), snapshot.CheckedAt)
 

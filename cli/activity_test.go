@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 func TestBuildActivitySnapshotAggregatesControlFacts(t *testing.T) {
@@ -166,9 +169,114 @@ func TestActivitySnapshotContainsNoJudgmentFields(t *testing.T) {
 		"should_verify",
 		"done",
 		"stuck",
+		"parallel_opportunity",
+		"should_dispatch",
+		"serial_bottleneck",
 	} {
 		if strings.Contains(text, unwanted) {
 			t.Fatalf("activity snapshot should not contain %q: %s", unwanted, text)
+		}
+	}
+}
+
+func TestBuildActivitySnapshotIncludesCoverageFacts(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	sessionCapture := filepath.Join(t.TempDir(), "session-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	if err := os.WriteFile(sessionCapture, []byte("session pane\n"), 0o644); err != nil {
+		t.Fatalf("write session capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
+	installGuidanceFakeTmux(t, []string{"session-1", "session-2"})
+
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "first open item", State: goalItemStateOpen},
+			{ID: "req-2", Text: "second open item", State: goalItemStateOpen},
+			{ID: "req-3", Text: "claimed item", State: goalItemStateClaimed, EvidencePaths: []string{"/tmp/evidence.txt"}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Owners: map[string]string{
+			"req-1": "session-9",
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-1", State: "idle", Mode: string(goalx.ModeDevelop)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-1: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-2", State: "parked", Mode: string(goalx.ModeDevelop)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-2: %v", err)
+	}
+
+	snapshot, err := BuildActivitySnapshot(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildActivitySnapshot: %v", err)
+	}
+
+	if !snapshot.Coverage.OwnersPresent {
+		t.Fatal("coverage owners_present = false, want true")
+	}
+	if got, want := snapshot.Coverage.OpenRequiredIDs, []string{"req-1", "req-2"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage open_required_ids = %v, want %v", got, want)
+	}
+	if got, want := snapshot.Coverage.OwnedOpenIDs, []string{"req-1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage owned_open_ids = %v, want %v", got, want)
+	}
+	if got, want := snapshot.Coverage.UnmappedOpenIDs, []string{"req-2"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage unmapped_open_ids = %v, want %v", got, want)
+	}
+	if got, want := snapshot.Coverage.OwnerSessionMissingIDs, []string{"req-1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage owner_session_missing_ids = %v, want %v", got, want)
+	}
+	if got, want := snapshot.Coverage.IdleReusableSessions, []string{"session-1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage idle_reusable_sessions = %v, want %v", got, want)
+	}
+	if got, want := snapshot.Coverage.ParkedReusableSessions, []string{"session-2"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage parked_reusable_sessions = %v, want %v", got, want)
+	}
+}
+
+func TestBuildActivitySnapshotSerializesCoverageUnknownExplicitly(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship feature", State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+
+	snapshot, err := BuildActivitySnapshot(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildActivitySnapshot: %v", err)
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		`"owners_present":false`,
+		`"open_required_ids":["req-1"]`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("activity snapshot missing %q: %s", want, text)
 		}
 	}
 }

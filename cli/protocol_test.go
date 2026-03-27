@@ -1361,6 +1361,52 @@ func TestRenderMasterProtocolUsesCondensedOperatingSections(t *testing.T) {
 	}
 }
 
+func TestRenderMasterProtocolIncludesExplicitCoverageOwnershipGuidance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:           "ship it",
+		RunName:             "demo",
+		Mode:                goalx.ModeDevelop,
+		Master:              goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		TmuxSession:         "ar-demo",
+		SummaryPath:         "/tmp/summary.md",
+		AcceptanceStatePath: "/tmp/acceptance.json",
+		GoalPath:            "/tmp/goal.json",
+		CoordinationPath:    "/tmp/coordination.json",
+		StatusPath:          "/tmp/status.json",
+		MasterJournalPath:   "/tmp/master.jsonl",
+		EngineCommand:       "codex --model gpt-5.4",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"When durable ownership becomes explicit, record it in `/tmp/coordination.json` as `owners` entries mapping `req-*` required items to owner tokens.",
+		"If `/tmp/coordination.json` has a non-empty `owners` map, open required items must not remain silently unmapped.",
+		"When explicit coverage facts show uncovered open work and reusable capacity exists, either dispatch or reassign it now, or record why this control cycle stays serial.",
+		"Do not infer ownership from journals or `owner_scope`.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+	for _, unwanted := range []string{
+		"The framework decides next action.",
+		"The framework infers ownership from journals.",
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("rendered master protocol should omit %q:\n%s", unwanted, text)
+		}
+	}
+}
+
 func TestRenderMasterProtocolTightensClaudeNativeSubagentUsage(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{

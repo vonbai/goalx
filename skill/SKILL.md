@@ -104,7 +104,7 @@ goalx observe --run NAME               # live transport + control summary
 goalx attach --run NAME                # enter the master's tmux pane
 ```
 
-Report what matters: run status, goal-boundary progress, session health, unread inbox. Don't dump raw transport noise.
+Report what matters: run status, goal-boundary progress, explicit required-coverage facts when present, session health, unread inbox. Don't dump raw transport noise.
 
 ```bash
 goalx tell --run NAME "focus on payments first"

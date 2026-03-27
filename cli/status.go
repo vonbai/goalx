@@ -75,8 +75,8 @@ func Status(projectRoot string, args []string) error {
 			if last.Round > 0 {
 				lastRound = fmt.Sprintf("%d", last.Round)
 			}
-			if last.Status != "" && (status == "pending" || status == "active") {
-				status = last.Status
+			if projected := sessionLifecycleStateFromJournalStatus(last.Status); projected != "" && (status == "pending" || status == "active") {
+				status = projected
 			}
 		}
 
@@ -215,6 +215,11 @@ func printStatusControlSummary(rc *RunContext) {
 		}
 	}
 	fmt.Printf("Control: run_id=%s epoch=%s charter=%s run_status=%s unread_inbox=%d master_lease=%s sidecar_lease=%s reminders_due=%d deliveries_failed=%d\n", runID, epoch, charter, runStatus, unread, masterLease, sidecarLease, remindersDue, deliveriesFailed)
+	if activity, err := LoadActivitySnapshot(ActivityPath(rc.RunDir)); err == nil && activity != nil {
+		if coverage := formatCoverageSummary(activity.Coverage); coverage != "" {
+			fmt.Printf("Coverage: %s\n", coverage)
+		}
+	}
 	fmt.Println()
 }
 

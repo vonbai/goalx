@@ -343,3 +343,59 @@ func TestObserveWarnsAboutPotentialEvolveStallAndMissingCloseoutArtifacts(t *tes
 		}
 	}
 }
+
+func TestObserveShowsExplicitCoverageFacts(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	sessionCapture := filepath.Join(t.TempDir(), "session-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	if err := os.WriteFile(sessionCapture, []byte("session pane\n"), 0o644); err != nil {
+		t.Fatalf("write session capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
+	installGuidanceFakeTmux(t, []string{"session-1"})
+
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "first open item", State: goalItemStateOpen},
+			{ID: "req-2", Text: "second open item", State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Owners: map[string]string{
+			"req-1": "session-9",
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-4", State: "idle", Mode: string(goalx.ModeDevelop)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-5", State: "parked", Mode: string(goalx.ModeDevelop)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-5: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Observe(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"Coverage:",
+		"open_required=req-1,req-2",
+		"unmapped_open=req-2",
+		"owner_session_missing=req-1",
+		"idle_reusable=session-4",
+		"parked_reusable=session-5",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("observe output missing %q:\n%s", want, out)
+		}
+	}
+}

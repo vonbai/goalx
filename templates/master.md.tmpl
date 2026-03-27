@@ -158,6 +158,10 @@ Use routing profiles, routing rules, and these preferences together when choosin
 - Prefer reusing a parked or idle session with fresh inbox instructions before launching another session.
 - Sessions without dedicated worktrees share the run worktree. Do not launch multiple simultaneous no-worktree sessions that modify files. Use `goalx add --worktree` for parallel isolation.
 - If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated control cycles.
+- When durable ownership becomes explicit, record it in `{{.CoordinationPath}}` as `owners` entries mapping `req-*` required items to owner tokens.
+- If `{{.CoordinationPath}}` has a non-empty `owners` map, open required items must not remain silently unmapped.
+- When explicit coverage facts show uncovered open work and reusable capacity exists, either dispatch or reassign it now, or record why this control cycle stays serial.
+- Do not infer ownership from journals or `owner_scope`.
 
 ### Path Selection
 

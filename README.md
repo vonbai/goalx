@@ -228,8 +228,8 @@ local_validation:
 | `goalx run --intent evolve --budget 8h` | Open-ended iterative improvement until budget or user stop |
 | `goalx run --from RUN --intent debate\|implement\|explore` | Continue an existing run with an explicit next-step intent |
 | **Observe** | |
-| `goalx observe` | Live transport capture + control summary |
-| `goalx status` | Progress, lease health, inbox, reminders |
+| `goalx observe` | Live transport capture + control summary, including explicit required-coverage facts when present |
+| `goalx status` | Progress, lease health, inbox, reminders, and explicit required-coverage facts when present |
 | `goalx list` | All runs across states |
 | `goalx context` | Run-scoped paths, roster, roles |
 | `goalx afford` | Available commands and paths |

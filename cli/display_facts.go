@@ -18,6 +18,7 @@ func refreshDisplayFacts(rc *RunContext) {
 	if rc == nil {
 		return
 	}
+	_ = reconcileControlDeliveries(rc.RunDir)
 	if snapshot, err := BuildActivitySnapshot(rc.ProjectRoot, rc.Name, rc.RunDir); err == nil && snapshot != nil {
 		_ = SaveActivitySnapshot(rc.RunDir, snapshot)
 	}
@@ -63,6 +64,24 @@ func collectRunAdvisories(rc *RunContext) []string {
 	if status.RequiredRemaining != nil && *status.RequiredRemaining == 0 && (!summaryExists || !completionExists) {
 		advisories = append(advisories, fmt.Sprintf("Closeout artifacts missing: required_remaining=0 summary_exists=%t completion_proof_exists=%t", summaryExists, completionExists))
 	}
+	if activity, err := LoadActivitySnapshot(ActivityPath(rc.RunDir)); err == nil && activity != nil {
+		coverage := activity.Coverage
+		if coverage.OwnersPresent && (len(coverage.UnmappedOpenIDs) > 0 || len(coverage.OwnerSessionMissingIDs) > 0) {
+			parts := make([]string, 0, 3)
+			if len(coverage.UnmappedOpenIDs) > 0 {
+				parts = append(parts, "unmapped_open="+strings.Join(coverage.UnmappedOpenIDs, ","))
+			}
+			if len(coverage.OwnerSessionMissingIDs) > 0 {
+				parts = append(parts, "owner_session_missing="+strings.Join(coverage.OwnerSessionMissingIDs, ","))
+			}
+			reusable := append([]string{}, coverage.IdleReusableSessions...)
+			reusable = append(reusable, coverage.ParkedReusableSessions...)
+			if len(reusable) > 0 {
+				parts = append(parts, "reusable_sessions="+strings.Join(reusable, ","))
+			}
+			advisories = append(advisories, "Coverage facts: "+strings.Join(parts, " "))
+		}
+	}
 	meta, err := LoadRunMetadata(RunMetadataPath(rc.RunDir))
 	if err != nil || meta == nil || strings.TrimSpace(meta.Intent) != runIntentEvolve {
 		return advisories
@@ -83,6 +102,32 @@ func collectRunAdvisories(rc *RunContext) []string {
 	}
 	advisories = append(advisories, "Potential evolve stall: "+strings.Join(parts, " "))
 	return advisories
+}
+
+func formatCoverageSummary(coverage RequiredCoverage) string {
+	if len(coverage.OpenRequiredIDs) == 0 && len(coverage.OwnedOpenIDs) == 0 && len(coverage.UnmappedOpenIDs) == 0 && len(coverage.OwnerSessionMissingIDs) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, 7)
+	if !coverage.OwnersPresent {
+		parts = append(parts, "coverage=unknown")
+	} else {
+		parts = append(parts, "coverage=explicit")
+	}
+	appendCoverageSummaryPart(&parts, "open_required", coverage.OpenRequiredIDs)
+	appendCoverageSummaryPart(&parts, "owned_open", coverage.OwnedOpenIDs)
+	appendCoverageSummaryPart(&parts, "unmapped_open", coverage.UnmappedOpenIDs)
+	appendCoverageSummaryPart(&parts, "owner_session_missing", coverage.OwnerSessionMissingIDs)
+	appendCoverageSummaryPart(&parts, "idle_reusable", coverage.IdleReusableSessions)
+	appendCoverageSummaryPart(&parts, "parked_reusable", coverage.ParkedReusableSessions)
+	return strings.Join(parts, " ")
+}
+
+func appendCoverageSummaryPart(parts *[]string, label string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	*parts = append(*parts, label+"="+strings.Join(values, ","))
 }
 
 func loadDisplayStatusRecord(path string) (*displayStatusRecord, error) {
