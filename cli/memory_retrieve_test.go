@@ -33,7 +33,7 @@ func TestBuildMemoryQueryFromRunFacts(t *testing.T) {
 		t.Fatalf("write profile: %v", err)
 	}
 
-	query, err := BuildMemoryQuery(repo, "guidance-run", runDir)
+	query, err := BuildMemoryQuery(runDir)
 	if err != nil {
 		t.Fatalf("BuildMemoryQuery: %v", err)
 	}
