@@ -98,48 +98,37 @@ func AppendMemoryProposals(now time.Time, proposals []MemoryProposal) error {
 	if len(proposals) == 0 {
 		return nil
 	}
-	if err := EnsureMemoryStore(); err != nil {
-		return err
-	}
-	path := MemoryProposalPath(now)
-	existing, err := loadMemoryProposals(path)
-	if err != nil {
-		if !os.IsNotExist(err) {
+	return withMemoryStoreLock(func() error {
+		if err := EnsureMemoryStore(); err != nil {
 			return err
 		}
-		existing = nil
-	}
-	seen := map[string]struct{}{}
-	for _, proposal := range existing {
-		seen[proposal.ID] = struct{}{}
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	for _, proposal := range proposals {
-		normalized, err := NormalizeMemoryProposal(&proposal)
+		path := MemoryProposalPath(now)
+		existing, err := loadMemoryProposals(path)
 		if err != nil {
-			return err
+			if !os.IsNotExist(err) {
+				return err
+			}
+			existing = nil
 		}
-		proposal = *normalized
-		if _, ok := seen[proposal.ID]; ok {
-			continue
+		merged := append([]MemoryProposal(nil), existing...)
+		seen := map[string]struct{}{}
+		for _, proposal := range existing {
+			seen[proposal.ID] = struct{}{}
 		}
-		data, err := json.Marshal(proposal)
-		if err != nil {
-			return err
+		for _, proposal := range proposals {
+			normalized, err := NormalizeMemoryProposal(&proposal)
+			if err != nil {
+				return err
+			}
+			proposal = *normalized
+			if _, ok := seen[proposal.ID]; ok {
+				continue
+			}
+			merged = append(merged, proposal)
+			seen[proposal.ID] = struct{}{}
 		}
-		if _, err := file.Write(append(data, '\n')); err != nil {
-			return err
-		}
-		seen[proposal.ID] = struct{}{}
-	}
-	return nil
+		return saveMemoryProposalShard(path, merged)
+	})
 }
 
 func loadMemoryProposals(path string) ([]MemoryProposal, error) {
@@ -171,6 +160,23 @@ func loadMemoryProposals(path string) ([]MemoryProposal, error) {
 		return nil, fmt.Errorf("scan memory proposals %s: %w", path, err)
 	}
 	return out, nil
+}
+
+func saveMemoryProposalShard(path string, proposals []MemoryProposal) error {
+	lines := make([]byte, 0)
+	for _, proposal := range proposals {
+		normalized, err := NormalizeMemoryProposal(&proposal)
+		if err != nil {
+			return err
+		}
+		data, err := json.Marshal(normalized)
+		if err != nil {
+			return err
+		}
+		lines = append(lines, data...)
+		lines = append(lines, '\n')
+	}
+	return writeMemoryFileAtomic(path, lines)
 }
 
 func extractProposalsFromSeed(seed MemorySeed) []MemoryProposal {

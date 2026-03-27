@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -162,6 +163,62 @@ func TestAppendMemoryProposalsUsesDailyShardAndDedupes(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	if len(lines) != 1 {
 		t.Fatalf("proposal shard lines = %d, want 1: %s", len(lines), string(data))
+	}
+}
+
+func TestAppendMemoryProposalsWaitsForMemoryStoreLock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := EnsureMemoryStore(); err != nil {
+		t.Fatalf("EnsureMemoryStore: %v", err)
+	}
+	lockFile, err := os.OpenFile(MemoryLockPath(), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		t.Fatalf("OpenFile lock: %v", err)
+	}
+	defer lockFile.Close()
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatalf("Flock lock: %v", err)
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+
+	now := time.Date(2026, time.March, 27, 10, 30, 0, 0, time.UTC)
+	done := make(chan error, 1)
+	go func() {
+		done <- AppendMemoryProposals(now, []MemoryProposal{
+			{
+				ID:         "prop_locked",
+				State:      "proposed",
+				Kind:       MemoryKindFact,
+				Statement:  "provider is cloudflare",
+				Selectors:  map[string]string{"project_id": "demo"},
+				CreatedAt:  now.Format(time.RFC3339),
+				UpdatedAt:  now.Format(time.RFC3339),
+				SourceRuns: []string{"demo"},
+			},
+		})
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("AppendMemoryProposals completed before lock release: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {
+		t.Fatalf("Flock unlock: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("AppendMemoryProposals(after unlock): %v", err)
+	}
+
+	proposals, err := loadMemoryProposals(MemoryProposalPath(now))
+	if err != nil {
+		t.Fatalf("loadMemoryProposals: %v", err)
+	}
+	if len(proposals) != 1 || proposals[0].ID != "prop_locked" {
+		t.Fatalf("proposal shard = %+v, want locked proposal", proposals)
 	}
 }
 

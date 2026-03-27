@@ -113,6 +113,10 @@ func BuildMemoryTrustIndex() (*MemoryTrustIndex, error) {
 }
 
 func RebuildMemoryIndexes() error {
+	return withMemoryStoreLock(rebuildMemoryIndexesUnlocked)
+}
+
+func rebuildMemoryIndexesUnlocked() error {
 	selectorIndex, err := BuildMemorySelectorIndex()
 	if err != nil {
 		return err

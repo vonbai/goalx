@@ -23,6 +23,10 @@ func MemoryRootDir() string {
 	return filepath.Join(userGoalxDir(), "memory")
 }
 
+func MemoryLockPath() string {
+	return filepath.Join(MemoryRootDir(), ".lock")
+}
+
 func MemoryEntriesDir() string {
 	return filepath.Join(MemoryRootDir(), "entries")
 }

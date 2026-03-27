@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -240,6 +241,61 @@ func TestUsageStatsDoNotPromoteEntry(t *testing.T) {
 
 	if entries := loadCanonicalEntriesByKind(t, MemoryKindProcedure); len(entries) != 0 {
 		t.Fatalf("procedure entries after usage-biased promotion = %+v, want none", entries)
+	}
+}
+
+func TestPromoteMemoryProposalsWaitsForMemoryStoreLock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	now := time.Date(2026, time.March, 27, 19, 0, 0, 0, time.UTC)
+	if err := writeProposalShard(now, []MemoryProposal{
+		{
+			ID:         "prop_fact_locked",
+			State:      "proposed",
+			Kind:       MemoryKindFact,
+			Statement:  "host is ops-3",
+			Selectors:  map[string]string{"project_id": "demo", "service": "deploy"},
+			Evidence:   []MemoryEvidence{{Kind: "report", Path: "/tmp/report.md"}},
+			SourceRuns: []string{"run-1"},
+			CreatedAt:  now.Format(time.RFC3339),
+			UpdatedAt:  now.Format(time.RFC3339),
+		},
+	}); err != nil {
+		t.Fatalf("writeProposalShard: %v", err)
+	}
+
+	lockFile, err := os.OpenFile(MemoryLockPath(), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		t.Fatalf("OpenFile lock: %v", err)
+	}
+	defer lockFile.Close()
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatalf("Flock lock: %v", err)
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- PromoteMemoryProposals()
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("PromoteMemoryProposals completed before lock release: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {
+		t.Fatalf("Flock unlock: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("PromoteMemoryProposals(after unlock): %v", err)
+	}
+
+	entries := loadCanonicalEntriesByKind(t, MemoryKindFact)
+	if len(entries) != 1 || entries[0].ID != stableMemoryEntryID(MemoryKindFact, map[string]string{"project_id": "demo", "service": "deploy"}, "host is ops-3") {
+		t.Fatalf("canonical fact entries = %+v, want promoted locked fact", entries)
 	}
 }
 

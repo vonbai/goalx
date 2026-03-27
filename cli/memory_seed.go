@@ -68,9 +68,6 @@ func AppendMemorySeed(runDir string, seed MemorySeed) error {
 }
 
 func SaveMemorySeeds(path string, seeds []MemorySeed) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	var lines []byte
 	for _, seed := range dedupeMemorySeeds(seeds) {
 		data, err := json.Marshal(seed)
@@ -80,7 +77,7 @@ func SaveMemorySeeds(path string, seeds []MemorySeed) error {
 		lines = append(lines, data...)
 		lines = append(lines, '\n')
 	}
-	return os.WriteFile(path, lines, 0o644)
+	return writeMemoryFileAtomic(path, lines)
 }
 
 func NormalizeMemorySeed(seed *MemorySeed) (*MemorySeed, error) {

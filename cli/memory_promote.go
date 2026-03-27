@@ -29,6 +29,33 @@ type memoryProposalAggregate struct {
 }
 
 func PromoteMemoryProposals() error {
+	return withMemoryStoreLock(promoteMemoryProposalsLocked)
+}
+
+func SupersedeMemoryEntry(oldID, newID string) error {
+	return withMemoryStoreLock(func() error {
+		if err := EnsureMemoryStore(); err != nil {
+			return err
+		}
+		byKind, err := loadCanonicalMemoryByKind()
+		if err != nil {
+			return err
+		}
+		changed, err := supersedeMemoryEntryInStore(byKind, oldID, newID, time.Now().UTC().Format(time.RFC3339))
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return nil
+		}
+		if err := saveCanonicalMemoryByKind(byKind); err != nil {
+			return err
+		}
+		return rebuildMemoryIndexesUnlocked()
+	})
+}
+
+func promoteMemoryProposalsLocked() error {
 	if err := EnsureMemoryStore(); err != nil {
 		return err
 	}
@@ -61,28 +88,7 @@ func PromoteMemoryProposals() error {
 	if err := saveCanonicalMemoryByKind(byKind); err != nil {
 		return err
 	}
-	return RebuildMemoryIndexes()
-}
-
-func SupersedeMemoryEntry(oldID, newID string) error {
-	if err := EnsureMemoryStore(); err != nil {
-		return err
-	}
-	byKind, err := loadCanonicalMemoryByKind()
-	if err != nil {
-		return err
-	}
-	changed, err := supersedeMemoryEntryInStore(byKind, oldID, newID, time.Now().UTC().Format(time.RFC3339))
-	if err != nil {
-		return err
-	}
-	if !changed {
-		return nil
-	}
-	if err := saveCanonicalMemoryByKind(byKind); err != nil {
-		return err
-	}
-	return RebuildMemoryIndexes()
+	return rebuildMemoryIndexesUnlocked()
 }
 
 func loadAllMemoryProposals() ([]MemoryProposal, error) {
@@ -341,7 +347,7 @@ func saveCanonicalMemoryByKind(byKind map[MemoryKind][]MemoryEntry) error {
 			lines = append(lines, data...)
 			lines = append(lines, '\n')
 		}
-		if err := os.WriteFile(path, lines, 0o644); err != nil {
+		if err := writeMemoryFileAtomic(path, lines); err != nil {
 			return err
 		}
 	}
