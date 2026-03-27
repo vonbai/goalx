@@ -70,6 +70,7 @@ type MemoryContext struct {
 	Procedures []string `json:"procedures,omitempty"`
 	Pitfalls   []string `json:"pitfalls,omitempty"`
 	SecretRefs []string `json:"secret_refs,omitempty"`
+	BuiltAt    string   `json:"built_at,omitempty"`
 }
 
 func EnsureMemoryStore() error {
