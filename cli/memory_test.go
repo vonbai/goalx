@@ -97,6 +97,36 @@ func TestEnsureMemoryControlCreatesRunLocalFiles(t *testing.T) {
 	}
 }
 
+func TestEnsureMemoryStoreRejectsInvalidExistingIndexJSON(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := os.MkdirAll(MemoryIndexesDir(), 0o755); err != nil {
+		t.Fatalf("mkdir indexes dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(MemoryIndexesDir(), "selectors.json"), []byte("{not-json"), 0o644); err != nil {
+		t.Fatalf("write selectors index: %v", err)
+	}
+
+	if err := EnsureMemoryStore(); err == nil {
+		t.Fatal("EnsureMemoryStore accepted invalid existing selectors.json")
+	}
+}
+
+func TestEnsureMemoryControlRejectsInvalidExistingJSON(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	_, runDir, _, _ := writeReadOnlyRunFixture(t, repo)
+
+	if err := os.WriteFile(MemoryQueryPath(runDir), []byte("{not-json"), 0o644); err != nil {
+		t.Fatalf("write memory query: %v", err)
+	}
+
+	if err := EnsureMemoryControl(runDir); err == nil {
+		t.Fatal("EnsureMemoryControl accepted invalid existing memory-query.json")
+	}
+}
+
 func TestMemoryEntryRejectsNil(t *testing.T) {
 	if _, err := NormalizeMemoryEntry(nil); err == nil {
 		t.Fatal("NormalizeMemoryEntry accepted nil entry")

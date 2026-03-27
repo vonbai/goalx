@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -87,33 +88,36 @@ func EnsureMemoryStore() error {
 	if err := ensureDir(MemoryProposalsDir()); err != nil {
 		return err
 	}
-	if err := ensureEmptyFile(filepath.Join(MemoryIndexesDir(), "selectors.json")); err != nil {
+	if err := ensureJSONFile(filepath.Join(MemoryIndexesDir(), "selectors.json"), map[string]any{}); err != nil {
 		return err
 	}
-	if err := ensureEmptyFile(filepath.Join(MemoryIndexesDir(), "tokens.json")); err != nil {
+	if err := ensureJSONFile(filepath.Join(MemoryIndexesDir(), "tokens.json"), map[string]any{}); err != nil {
 		return err
 	}
-	if err := ensureEmptyFile(filepath.Join(MemoryIndexesDir(), "trust.json")); err != nil {
+	if err := ensureJSONFile(filepath.Join(MemoryIndexesDir(), "trust.json"), map[string]any{}); err != nil {
 		return err
 	}
-	if err := ensureEmptyFile(filepath.Join(MemoryIndexesDir(), "stats.json")); err != nil {
+	if err := ensureJSONFile(filepath.Join(MemoryIndexesDir(), "stats.json"), map[string]any{}); err != nil {
 		return err
 	}
 	if err := ensureDir(MemoryProjectsDir()); err != nil {
+		return err
+	}
+	if err := ensureJSONFile(MemoryGCPath(), map[string]any{}); err != nil {
 		return err
 	}
 	return nil
 }
 
 func EnsureMemoryControl(runDir string) error {
-	for _, path := range []string{
-		MemorySeedsPath(runDir),
-		MemoryQueryPath(runDir),
-		MemoryContextPath(runDir),
-	} {
-		if err := ensureEmptyFile(path); err != nil {
-			return err
-		}
+	if err := ensureEmptyFile(MemorySeedsPath(runDir)); err != nil {
+		return err
+	}
+	if err := ensureJSONFile(MemoryQueryPath(runDir), &MemoryQuery{}); err != nil {
+		return err
+	}
+	if err := ensureJSONFile(MemoryContextPath(runDir), &MemoryContext{}); err != nil {
+		return err
 	}
 	return nil
 }
@@ -124,6 +128,9 @@ func NormalizeMemoryEntry(entry *MemoryEntry) (*MemoryEntry, error) {
 	}
 	normalized := *entry
 	normalized.ID = strings.TrimSpace(normalized.ID)
+	if normalized.ID == "" {
+		return nil, fmt.Errorf("memory entry id is required")
+	}
 	normalized.Statement = strings.TrimSpace(normalized.Statement)
 	if normalized.Statement == "" {
 		return nil, fmt.Errorf("memory entry statement is required")
@@ -161,4 +168,47 @@ func normalizeMemorySelectors(selectors map[string]string) map[string]string {
 
 func ensureDir(path string) error {
 	return os.MkdirAll(path, 0o755)
+}
+
+func ensureJSONFile(path string, v any) error {
+	info, err := os.Stat(path)
+	if err == nil {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("%s is not a regular file", path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		if len(strings.TrimSpace(string(data))) == 0 {
+			return fmt.Errorf("%s is empty", path)
+		}
+		target, err := zeroJSONTarget(v)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(data, target); err != nil {
+			return fmt.Errorf("parse %s: %w", path, err)
+		}
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	return writeJSONFile(path, v)
+}
+
+func zeroJSONTarget(v any) (any, error) {
+	switch value := v.(type) {
+	case nil:
+		return nil, fmt.Errorf("json target is nil")
+	case *MemoryQuery:
+		return &MemoryQuery{}, nil
+	case *MemoryContext:
+		return &MemoryContext{}, nil
+	case map[string]any:
+		return &map[string]any{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported json target %T", value)
+	}
 }
