@@ -206,6 +206,9 @@ func Save(projectRoot string, args []string) error {
 	if err := RegisterSavedRun(rc.ProjectRoot, rc.Config); err != nil {
 		return fmt.Errorf("register saved run: %w", err)
 	}
+	if err := RefreshRunMemorySeeds(rc.RunDir); err != nil {
+		return fmt.Errorf("refresh run memory seeds: %w", err)
+	}
 
 	fmt.Printf("Saved run '%s' to %s\n", rc.Name, saveDir)
 	return nil

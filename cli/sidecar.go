@@ -259,6 +259,9 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 		if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState); err != nil {
 			appendAuditLog(runDir, "transport watcher snapshot warning: %v", err)
 		}
+		if err := RefreshRunMemorySeeds(runDir); err != nil {
+			return err
+		}
 		if err := RefreshRunGuidance(projectRoot, runName, runDir); err != nil {
 			appendAuditLog(runDir, "guidance refresh warning: %v", err)
 		}
@@ -313,6 +316,9 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 		return err
 	}
 	if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, nil, controlState); err != nil {
+		return err
+	}
+	if err := RefreshRunMemorySeeds(runDir); err != nil {
 		return err
 	}
 	if err := RefreshRunGuidance(projectRoot, runName, runDir); err != nil {

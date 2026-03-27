@@ -89,6 +89,9 @@ func Verify(projectRoot string, args []string) error {
 	if err := SaveAcceptanceState(AcceptanceStatePath(rc.RunDir), state); err != nil {
 		return fmt.Errorf("save acceptance state: %w", err)
 	}
+	if err := AppendMemorySeedFromVerifyResult(rc.RunDir); err != nil {
+		return fmt.Errorf("append memory seed from verify result: %w", err)
+	}
 
 	if runErr != nil {
 		return fmt.Errorf("acceptance command failed (%d): %w", exitCode, runErr)
