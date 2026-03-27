@@ -125,6 +125,15 @@ goalx run "goal" --intent evolve --budget 0s    # explicit no limit
 
 Non-evolve intents default to no budget — the master stops when the goal is met. Evolve defaults to 8h because open-ended runs need a safety boundary.
 
+## Long-Term Memory
+
+GoalX keeps a user-scoped working-memory store under `~/.goalx/memory/`. It is file-backed, local, and does not require an external database.
+
+- Canonical memory lives under `entries/` and only stores evidence-gated facts, procedures, pitfalls, and secret references.
+- Noisy extraction lands in daily `proposals/` shards first; proposals do not become canonical truth until promotion rules pass.
+- Each run gets a compiled `control/memory-query.json` and `control/memory-context.json`; the master reads those run-local artifacts instead of scanning canonical memory directly.
+- GoalX never persists secret values in memory. It only stores secret references such as where a credential lives or which environment uses it.
+
 ## Runtime Control
 
 ```bash
@@ -231,7 +240,7 @@ local_validation:
 | `goalx observe` | Live transport capture + control summary, including explicit required-coverage facts when present |
 | `goalx status` | Progress, lease health, inbox, reminders, and explicit required-coverage facts when present |
 | `goalx list` | All runs across states |
-| `goalx context` | Run-scoped paths, roster, roles |
+| `goalx context` | Run-scoped paths, roster, roles, memory query/context files |
 | `goalx afford` | Available commands and paths |
 | **Control** | |
 | `goalx tell` | Durable instruction to master/session |
