@@ -30,6 +30,10 @@ func ScanLiveness(runDir string) (*LivenessState, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load session runtime state: %w", err)
 	}
+	parkedTargets, err := loadParkedSessionTargets(runDir)
+	if err != nil {
+		return nil, err
+	}
 	previous, err := LoadLivenessState(LivenessPath(runDir))
 	if err != nil {
 		return nil, err
@@ -53,6 +57,9 @@ func ScanLiveness(runDir string) (*LivenessState, error) {
 		worktreePath := resolvedSessionWorktreePath(runDir, cfg.Name, sessionName, sessionsState)
 		entry := scanLivenessEntry(runDir, sessionName, worktreePath != "", now)
 		state.Sessions[sessionName] = entry
+		if parkedTargets[sessionName] {
+			continue
+		}
 		if shouldNotifySessionDied(previous, sessionName, entry) {
 			if _, err := AppendMasterInboxMessage(runDir, "session-died", "goalx sidecar", fmt.Sprintf("%s lease expired and its process is no longer alive.", sessionName)); err != nil {
 				return nil, err

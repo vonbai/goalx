@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 func TestSaveRunRuntimeStateDoesNotPersistRecommendationField(t *testing.T) {
@@ -56,5 +58,37 @@ func TestSnapshotSessionRuntimeDoesNotProjectAckSessionAsLifecycleState(t *testi
 	}
 	if snapshot.LastRound != 2 {
 		t.Fatalf("last round = %d, want 2", snapshot.LastRound)
+	}
+}
+
+func TestRefreshSessionRuntimeProjectionPreservesParkedState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "base", "base commit")
+
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-1",
+		State: "parked",
+		Mode:  string(goalx.ModeDevelop),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+	if err := os.WriteFile(JournalPath(runDir, "session-1"), []byte("{\"round\":3,\"status\":\"progress\",\"desc\":\"still working\",\"owner_scope\":\"ui slice\"}\n"), 0o644); err != nil {
+		t.Fatalf("write journal: %v", err)
+	}
+
+	if err := RefreshSessionRuntimeProjection(runDir, runName); err != nil {
+		t.Fatalf("RefreshSessionRuntimeProjection: %v", err)
+	}
+
+	state, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadSessionsRuntimeState: %v", err)
+	}
+	if got := state.Sessions["session-1"].State; got != "parked" {
+		t.Fatalf("session-1 state = %q, want parked", got)
 	}
 }

@@ -1209,6 +1209,58 @@ func TestRunSidecarTickAlertsMissingSessionWindowOnceWithoutRespawn(t *testing.T
 	}
 }
 
+func TestRunSidecarTickDoesNotAlertMissingParkedSession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
+	logPath := installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-1",
+		State: "parked",
+		Mode:  string(goalx.ModeDevelop),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+	coord, err := EnsureCoordinationState(runDir, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureCoordinationState: %v", err)
+	}
+	coord.Sessions["session-1"] = CoordinationSession{State: "parked", Scope: "reusable slice"}
+	coord.Version++
+	if err := SaveCoordinationState(CoordinationPath(runDir), coord); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick: %v", err)
+	}
+
+	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	if strings.Contains(string(inboxData), `"type":"target-missing"`) {
+		t.Fatalf("parked session should not trigger missing alert:\n%s", string(inboxData))
+	}
+
+	auditData, err := os.ReadFile(filepath.Join(runDir, "sidecar.log"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("read sidecar audit log: %v", err)
+	}
+	if strings.Contains(string(auditData), "target_missing_alert target=session-1") {
+		t.Fatalf("parked session should not emit missing alert:\n%s", string(auditData))
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	if strings.Contains(string(logData), "new-window -t "+goalx.TmuxSessionName(repo, cfg.Name)+" -n session-1") {
+		t.Fatalf("parked session should not respawn worker:\n%s", string(logData))
+	}
+}
+
 func TestRunSidecarTickQueuesSessionWakeForUnreadSessionInbox(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

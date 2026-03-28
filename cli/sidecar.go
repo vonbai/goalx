@@ -505,8 +505,10 @@ func processUrgentTransportTargets(runDir, runName, tmuxSession string, cfg *goa
 			continue
 		}
 		if presence != nil {
-			if targetFacts, ok := presence[target.name]; ok && targetPresenceMissing(targetFacts) {
-				continue
+			if targetFacts, ok := presence[target.name]; ok {
+				if targetPresenceMissing(targetFacts) || !targetPresenceAvailableForTransport(targetFacts) {
+					continue
+				}
 			}
 		}
 		facts := loadTransportTargetFacts(runDir, target.name)

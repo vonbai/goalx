@@ -149,6 +149,78 @@ func TestScanLivenessNotifiesMasterWhenSessionDies(t *testing.T) {
 	}
 }
 
+func TestScanLivenessDoesNotNotifyMasterWhenParkedSessionDies(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "base", "base commit")
+	cfg := &goalx.Config{
+		Name:      "sidecar-run",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	runDir := writeRunSpecFixture(t, repo, cfg)
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+
+	sessionWT := WorktreePath(runDir, cfg.Name, 1)
+	if err := os.MkdirAll(sessionWT, 0o755); err != nil {
+		t.Fatalf("mkdir session worktree: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:         "session-1",
+		State:        "parked",
+		Mode:         string(goalx.ModeDevelop),
+		WorktreePath: sessionWT,
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+	if err := SaveLivenessState(runDir, &LivenessState{
+		CheckedAt: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
+		Master:    LivenessEntry{Lease: "healthy", PIDAlive: true},
+		Sessions: map[string]LivenessEntry{
+			"session-1": {Lease: "healthy", PIDAlive: true, HasWorktree: true},
+		},
+	}); err != nil {
+		t.Fatalf("SaveLivenessState: %v", err)
+	}
+	if err := SaveControlLease(ControlLeasePath(runDir, "session-1"), &ControlLease{
+		Version:   1,
+		Holder:    "session-1",
+		RunID:     meta.RunID,
+		Epoch:     meta.Epoch,
+		RenewedAt: time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339),
+		ExpiresAt: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
+		PID:       999999,
+		Transport: "tmux",
+	}); err != nil {
+		t.Fatalf("SaveControlLease: %v", err)
+	}
+
+	if _, err := ScanLiveness(runDir); err != nil {
+		t.Fatalf("ScanLiveness: %v", err)
+	}
+
+	inbox, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	if strings.Contains(string(inbox), `"type":"session-died"`) {
+		t.Fatalf("parked session should not trigger session-died:\n%s", string(inbox))
+	}
+}
+
 func TestRunSidecarTickWritesLivenessState(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

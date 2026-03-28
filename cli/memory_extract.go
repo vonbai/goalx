@@ -640,21 +640,7 @@ func runCodexMemoryLLMExtract(req memoryLLMExtractRequest) (memoryLLMExtractResp
 	}
 	defer os.Remove(outputPath)
 
-	args := []string{
-		"exec",
-		"--cd", req.ProjectRoot,
-		"--skip-git-repo-check",
-		"--sandbox", "read-only",
-		"-a", "never",
-		"--ephemeral",
-		"--output-schema", schemaPath,
-		"-o", outputPath,
-		"-m", req.Target.ModelID,
-	}
-	if effortArg := codexMemoryEffortArg(req.Target.Effort); effortArg != "" {
-		args = append(args, "-c", effortArg)
-	}
-	args = append(args, "-")
+	args := buildCodexMemoryLLMExtractArgs(req, schemaPath, outputPath)
 
 	cmd := exec.CommandContext(ctx, "codex", args...)
 	cmd.Dir = req.ProjectRoot
@@ -668,6 +654,23 @@ func runCodexMemoryLLMExtract(req memoryLLMExtractRequest) (memoryLLMExtractResp
 		return memoryLLMExtractResponse{}, err
 	}
 	return parseMemoryLLMExtractResponse(data)
+}
+
+func buildCodexMemoryLLMExtractArgs(req memoryLLMExtractRequest, schemaPath, outputPath string) []string {
+	args := []string{
+		"exec",
+		"--cd", req.ProjectRoot,
+		"--skip-git-repo-check",
+		"--sandbox", "read-only",
+		"--ephemeral",
+		"--output-schema", schemaPath,
+		"-o", outputPath,
+		"-m", req.Target.ModelID,
+	}
+	if effortArg := codexMemoryEffortArg(req.Target.Effort); effortArg != "" {
+		args = append(args, "-c", effortArg)
+	}
+	return append(args, "-")
 }
 
 func codexMemoryEffortArg(effort goalx.EffortLevel) string {

@@ -3,6 +3,8 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -451,6 +453,96 @@ memory:
 	}
 }
 
+func TestBuildCodexMemoryLLMExtractArgsOmitsLegacyApprovalFlag(t *testing.T) {
+	req := memoryLLMExtractRequest{
+		ProjectRoot: "/tmp/project",
+		Target: memoryLLMExtractTarget{
+			Engine:  "codex",
+			ModelID: "gpt-5.4-mini",
+			Effort:  goalx.EffortMinimal,
+		},
+		Schema: `{}`,
+	}
+
+	args := buildCodexMemoryLLMExtractArgs(req, "/tmp/schema.json", "/tmp/output.json")
+
+	if slices.Contains(args, "-a") || slices.Contains(args, "--ask-for-approval") {
+		t.Fatalf("codex args still include legacy approval flag: %v", args)
+	}
+	want := []string{
+		"exec",
+		"--cd", "/tmp/project",
+		"--skip-git-repo-check",
+		"--sandbox", "read-only",
+		"--ephemeral",
+		"--output-schema", "/tmp/schema.json",
+		"-o", "/tmp/output.json",
+		"-m", "gpt-5.4-mini",
+		"-",
+	}
+	for _, item := range want {
+		if !slices.Contains(args, item) {
+			t.Fatalf("codex args missing %q: %v", item, args)
+		}
+	}
+}
+
+func TestRunCodexMemoryLLMExtractUsesCurrentExecCLIContract(t *testing.T) {
+	fakeBin := t.TempDir()
+	argsPath := filepath.Join(fakeBin, "args.txt")
+	outputPayload := `{"proposals":[{"kind":"procedure","statement":"check scheduler first","evidence_paths":["/tmp/summary.md"]}]}`
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$@\" > \"$GOALX_ARGS_PATH\"\n" +
+		"out=''\n" +
+		"while [ $# -gt 0 ]; do\n" +
+		"  if [ \"$1\" = \"-o\" ]; then out=\"$2\"; shift 2; continue; fi\n" +
+		"  shift\n" +
+		"done\n" +
+		"printf '%s' '" + outputPayload + "' > \"$out\"\n"
+	codexPath := filepath.Join(fakeBin, "codex")
+	if err := os.WriteFile(codexPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake codex: %v", err)
+	}
+	t.Setenv("GOALX_ARGS_PATH", argsPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	resp, err := runCodexMemoryLLMExtract(memoryLLMExtractRequest{
+		ProjectRoot: t.TempDir(),
+		Target: memoryLLMExtractTarget{
+			Engine:  "codex",
+			ModelID: "gpt-5.4-mini",
+			Effort:  goalx.EffortMinimal,
+		},
+		Bundle:  "grounded bundle",
+		Schema:  `{}`,
+		Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("runCodexMemoryLLMExtract: %v", err)
+	}
+	if !reflect.DeepEqual(resp.Proposals, []memoryLLMExtractItem{{
+		Kind:          MemoryKindProcedure,
+		Statement:     "check scheduler first",
+		EvidencePaths: []string{"/tmp/summary.md"},
+	}}) {
+		t.Fatalf("response = %+v", resp)
+	}
+
+	rawArgs, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("read args: %v", err)
+	}
+	argsText := string(rawArgs)
+	if strings.Contains(argsText, "\n-a\n") || strings.Contains(argsText, "\n--ask-for-approval\n") {
+		t.Fatalf("codex exec args still include legacy approval flag:\n%s", argsText)
+	}
+	for _, want := range []string{"exec", "--sandbox", "read-only", "--ephemeral", "--output-schema", "-o", "-m", "gpt-5.4-mini"} {
+		if !strings.Contains(argsText, want) {
+			t.Fatalf("codex exec args missing %q:\n%s", want, argsText)
+		}
+	}
+}
+
 func TestSaveAppendsExtractedMemoryProposals(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -474,7 +566,7 @@ func TestSaveAppendsExtractedMemoryProposals(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	proposals, err := loadMemoryProposals(MemoryProposalPath(time.Date(2026, time.March, 27, 12, 0, 0, 0, time.UTC)))
+	proposals, err := loadMemoryProposals(MemoryProposalPath(time.Now().UTC()))
 	if err != nil {
 		t.Fatalf("loadMemoryProposals: %v", err)
 	}

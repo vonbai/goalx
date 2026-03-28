@@ -7,6 +7,7 @@ import (
 
 const (
 	TargetPresencePresent        = "present"
+	TargetPresenceParked         = "parked"
 	TargetPresenceUnknown        = "unknown"
 	TargetPresenceSessionMissing = "session_missing"
 	TargetPresenceWindowMissing  = "window_missing"
@@ -44,9 +45,13 @@ func BuildTargetPresenceFacts(runDir, tmuxSession string) (map[string]TargetPres
 	if err != nil {
 		return nil, err
 	}
+	parkedTargets, err := loadParkedSessionTargets(runDir)
+	if err != nil {
+		return nil, err
+	}
 
 	targets := map[string]TargetPresenceFacts{
-		"master": buildTmuxTargetPresence("master", "master", "master", checkedAt, sessionExists, windowsByName, panesByWindow),
+		"master": buildTmuxTargetPresence("master", "master", "master", checkedAt, sessionExists, true, windowsByName, panesByWindow),
 	}
 
 	indexes, err := existingSessionIndexes(runDir)
@@ -55,7 +60,7 @@ func BuildTargetPresenceFacts(runDir, tmuxSession string) (map[string]TargetPres
 	}
 	for _, idx := range indexes {
 		name := SessionName(idx)
-		targets[name] = buildTmuxTargetPresence(name, "session", name, checkedAt, sessionExists, windowsByName, panesByWindow)
+		targets[name] = buildTmuxTargetPresence(name, "session", name, checkedAt, sessionExists, !parkedTargets[name], windowsByName, panesByWindow)
 	}
 	targets["sidecar"] = buildLeaseTargetPresence(runDir, "sidecar", checkedAt)
 	return targets, nil
@@ -76,18 +81,31 @@ func targetPresenceAvailableForTransport(facts TargetPresenceFacts) bool {
 
 func targetPresenceMissing(facts TargetPresenceFacts) bool {
 	state := strings.TrimSpace(facts.State)
-	return state != "" && state != TargetPresencePresent && state != TargetPresenceUnknown
+	return state != "" && state != TargetPresencePresent && state != TargetPresenceUnknown && state != TargetPresenceParked
 }
 
-func buildTmuxTargetPresence(target, kind, window, checkedAt string, sessionExists bool, windowsByName map[string]struct{}, panesByWindow map[string]tmuxPaneRef) TargetPresenceFacts {
+func buildTmuxTargetPresence(target, kind, window, checkedAt string, sessionExists, windowExpected bool, windowsByName map[string]struct{}, panesByWindow map[string]tmuxPaneRef) TargetPresenceFacts {
 	facts := TargetPresenceFacts{
 		Target:          target,
 		Kind:            kind,
 		Window:          window,
 		SessionExpected: true,
 		SessionExists:   sessionExists,
-		WindowExpected:  true,
+		WindowExpected:  windowExpected,
 		CheckedAt:       checkedAt,
+	}
+	if !windowExpected {
+		if sessionExists {
+			if _, ok := windowsByName[window]; ok {
+				facts.WindowExists = true
+			}
+			if pane, ok := panesByWindow[window]; ok {
+				facts.PaneExists = true
+				facts.PaneID = strings.TrimSpace(pane.PaneID)
+			}
+		}
+		facts.State = TargetPresenceParked
+		return facts
 	}
 	if !sessionExists {
 		facts.State = TargetPresenceSessionMissing
@@ -111,6 +129,33 @@ func buildTmuxTargetPresence(target, kind, window, checkedAt string, sessionExis
 	facts.PaneID = strings.TrimSpace(pane.PaneID)
 	facts.State = TargetPresencePresent
 	return facts
+}
+
+func loadParkedSessionTargets(runDir string) (map[string]bool, error) {
+	parked := map[string]bool{}
+	runtimeState, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+	if err != nil {
+		return nil, err
+	}
+	if runtimeState != nil {
+		for name, session := range runtimeState.Sessions {
+			if strings.TrimSpace(session.State) == "parked" {
+				parked[name] = true
+			}
+		}
+	}
+	coordination, err := LoadCoordinationState(CoordinationPath(runDir))
+	if err != nil {
+		return nil, err
+	}
+	if coordination != nil {
+		for name, session := range coordination.Sessions {
+			if strings.TrimSpace(session.State) == "parked" {
+				parked[name] = true
+			}
+		}
+	}
+	return parked, nil
 }
 
 func buildLeaseTargetPresence(runDir, target, checkedAt string) TargetPresenceFacts {

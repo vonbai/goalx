@@ -99,6 +99,49 @@ func TestBuildTargetPresenceFactsReportsMissingSessionWindow(t *testing.T) {
 	}
 }
 
+func TestBuildTargetPresenceFactsTreatsParkedSessionAsNotMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
+	installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
+	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease sidecar: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-1",
+		State: "parked",
+		Mode:  string(goalx.ModeDevelop),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+	coord, err := EnsureCoordinationState(runDir, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureCoordinationState: %v", err)
+	}
+	coord.Sessions["session-1"] = CoordinationSession{State: "parked", Scope: "reusable slice"}
+	coord.Version++
+	if err := SaveCoordinationState(CoordinationPath(runDir), coord); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+
+	facts, err := BuildTargetPresenceFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name))
+	if err != nil {
+		t.Fatalf("BuildTargetPresenceFacts: %v", err)
+	}
+
+	sessionFacts := facts["session-1"]
+	if sessionFacts.State != TargetPresenceParked {
+		t.Fatalf("session state = %q, want %q", sessionFacts.State, TargetPresenceParked)
+	}
+	if sessionFacts.WindowExpected {
+		t.Fatalf("parked session should not expect a window: %+v", sessionFacts)
+	}
+	if !sessionFacts.SessionExists || sessionFacts.WindowExists || sessionFacts.PaneExists {
+		t.Fatalf("parked session presence wrong: %+v", sessionFacts)
+	}
+}
+
 func TestBuildTargetPresenceFactsReportsTmuxSessionMissingForTmuxTargets(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

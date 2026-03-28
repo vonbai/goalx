@@ -305,6 +305,9 @@ func RefreshSessionRuntimeProjection(runDir, runName string) error {
 		if session, ok := state.Sessions[sessionName]; ok && session.Mode != "" {
 			snapshot.Mode = session.Mode
 		}
+		if session, ok := state.Sessions[sessionName]; ok && strings.TrimSpace(session.State) == "parked" {
+			snapshot.State = "parked"
+		}
 		if err := UpsertSessionRuntimeState(runDir, snapshot); err != nil {
 			return err
 		}
