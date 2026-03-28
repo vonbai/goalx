@@ -703,6 +703,7 @@ func TestRenderMasterProtocolAddsConditionalRacingPattern(t *testing.T) {
 		"Race only when the paths are worktree-safe, touch separable areas, and can be evaluated independently.",
 		"Compare the resulting branches with `goalx diff`, then `goalx keep` or manually adopt the winner.",
 		"Do not race shared config/schema changes, API contract changes, or naming/cross-cutting refactors that require one coherent decision.",
+		"When uncertainty is material, do not rely on a single path or perspective if an independent cross-check is cost-effective.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
