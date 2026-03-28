@@ -159,5 +159,23 @@ func syncTmuxGlobalPath() error {
 	if path == "" {
 		return nil
 	}
-	return exec.Command("tmux", "set-environment", "-g", "PATH", path).Run()
+	output, err := exec.Command("tmux", "set-environment", "-g", "PATH", path).CombinedOutput()
+	if err != nil && tmuxNoServerError(string(output)) {
+		return nil
+	}
+	return err
+}
+
+func tmuxNoServerError(output string) bool {
+	text := strings.ToLower(strings.TrimSpace(output))
+	switch {
+	case strings.Contains(text, "no server running on"):
+		return true
+	case strings.Contains(text, "error connecting to"):
+		return true
+	case strings.Contains(text, "failed to connect to server"):
+		return true
+	default:
+		return false
+	}
 }

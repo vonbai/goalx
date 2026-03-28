@@ -99,7 +99,8 @@ esac
 	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake tmux: %v", err)
 	}
-	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", binDir+":"+origPath)
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 	tmuxSess := goalx.TmuxSessionName(repo, cfg.Name)
 
@@ -214,7 +215,8 @@ esac
 	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake tmux: %v", err)
 	}
-	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", binDir+":"+origPath)
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
 	origLaunchSidecar := launchRunSidecar
@@ -438,7 +440,8 @@ esac
 	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake tmux: %v", err)
 	}
-	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", binDir+":"+origPath)
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
 	origLaunchSidecar := launchRunSidecar
@@ -516,7 +519,8 @@ esac
 	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake tmux: %v", err)
 	}
-	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", binDir+":"+origPath)
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
 	origLaunchSidecar := launchRunSidecar
@@ -654,7 +658,8 @@ esac
 	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake tmux: %v", err)
 	}
-	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", binDir+":"+origPath)
 
 	origLaunchSidecar := launchRunSidecar
 	defer func() { launchRunSidecar = origLaunchSidecar }()
@@ -1009,7 +1014,8 @@ esac
 	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake tmux: %v", err)
 	}
-	t.Setenv("PATH", binDir+":"+"/tmp/goalx-bin:/usr/bin")
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", binDir+":"+origPath)
 	t.Setenv("OPENAI_API_KEY", "sk-goalx")
 	t.Setenv("FOO_TOOLCHAIN_ROOT", "/opt/goalx-toolchain")
 	t.Setenv("TMUX_PANE", "%99")
@@ -1038,7 +1044,7 @@ esac
 		"master",
 		"FOO_TOOLCHAIN_ROOT='/opt/goalx-toolchain'",
 		"HOME='" + home + "'",
-		"PATH='" + binDir + ":/tmp/goalx-bin:/usr/bin'",
+			"PATH='" + binDir + ":" + origPath + "'",
 		"OPENAI_API_KEY='sk-goalx'",
 		"codex -m gpt-5.4 -a never -s danger-full-access",
 	} {

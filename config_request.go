@@ -9,6 +9,7 @@ type ResolveRequest struct {
 	Preset                  string
 	Parallel                int
 	ClearSessions           bool
+	RequireEngineAvailability bool
 	TargetOverride          *TargetConfig
 	LocalValidationOverride *LocalValidationConfig
 	MasterOverride          *MasterConfig

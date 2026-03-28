@@ -3,17 +3,8 @@
 # This file configures goalx for all projects on this machine.
 # Copy to ~/.goalx/config.yaml and edit.
 
-# HTTP API server (goalx serve)
-serve:
-  bind: "127.0.0.1:9800"    # bind to internal IP, not 0.0.0.0
-  token: "your-secret-token-here"  # Bearer token for API auth
-  workspaces:
-    myproject: /data/dev/myproject
-    services: /data/services
-  notification_url: ""  # Webhook URL called on auto completion (optional)
-
 # Engine presets
-# Uncomment to override built-in defaults
+# Uncomment to override built-in defaults.
 # engines:
 #   claude-code:
 #     command: "claude --model {model_id} --permission-mode bypassPermissions"
@@ -31,8 +22,23 @@ serve:
 #     develop: {engine: codex, model: gpt-5.4}
 
 # Custom goal dimensions (extend built-in: depth, breadth, creative, feasibility, adversarial, evidence, comparative, user)
-# strategies:
-#   architecture:
-#     "Architecture focus: evaluate system boundaries, coupling, cohesion, and extensibility"
-#   cost:
-#     "Cost analysis: estimate compute, API, infrastructure, and maintenance costs for each approach"
+# dimensions:
+#   architecture: "Architecture focus: evaluate system boundaries, coupling, cohesion, and extensibility"
+#   cost: "Cost analysis: estimate compute, API, infrastructure, and maintenance costs for each approach"
+
+# Local execution defaults
+# master:
+#   engine: codex
+#   model: gpt-5.4
+# routing:
+#   profiles:
+#     build_fast: {engine: codex, model: gpt-5.4-mini, effort: minimal}
+#   rules:
+#     - role: develop
+#       efforts: [minimal, low]
+#       profile: build_fast
+# preferences:
+#   develop:
+#     guidance: "Use fast for simple fixes."
+# local_validation:
+#   command: "go build ./... && go test ./... -count=1 && go vet ./..."

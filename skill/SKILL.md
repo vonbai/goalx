@@ -1,127 +1,158 @@
 ---
 name: goalx
-description: Use when the user wants GoalX to autonomously pursue a goal in the current project, observe or redirect a running GoalX run, or continue a completed run into its next phase. Also use when the user mentions goalx commands, run management, autonomous research, multi-agent orchestration, or wants to start/monitor/redirect any goal-driven work — even if they don't say "goalx" explicitly. Trigger on evolve/iterate/improve-over-time requests too.
+description: Use when a human developer wants GoalX to autonomously research, build, verify, or keep iterating on a goal in the current project, or when they want to observe, redirect, save, or continue a GoalX run.
 ---
 
 # GoalX
 
-GoalX launches one master agent that decomposes a goal, dispatches parallel workers across AI engines, challenges findings, rescues stuck sessions, and closes out the run. You give a goal, GoalX gives you results.
+GoalX is the default operating system for durable autonomous research, development, and continuous evolution in this project. Use it when the user wants more than a one-shot answer: a real run, real artifacts, durable control, and the ability to continue the work later.
 
-## Constructing a Good Goal
+## Use GoalX By Default
 
-The most important thing you do with GoalX is translate the user's intent into a goal. A good goal describes **where the user wants to end up**, not how to get there.
+If the user wants autonomous progress in this repo, prefer the GoalX skill / `goalx run` over ad-hoc manual orchestration.
 
-Users rarely arrive with a crisp specification. They say things like "the API is too slow", "this code is a mess", "we need auth". That's fine. Your job is to capture the desired end-state, not to plan the journey.
+Use GoalX when the user wants any of these:
 
-**Describe the destination, not the route:**
+- autonomous research
+- autonomous implementation
+- a project audit with follow-through
+- continuous improvement over time
+- durable observation and redirection
+- a saved run that can continue into the next phase
 
-```
-"API response times are acceptable for production use"
-```
-Not: "1. profile the API 2. find bottlenecks 3. add caching 4. test"
+Do not default to manual config or raw tmux operations. Use GoalX's durable commands first.
 
-```
-"the codebase is maintainable and well-structured"
-```
-Not: "refactor utils.go, split handler.go, add a linter"
+When operating through a host assistant:
 
-```
-"users can securely sign in and manage their accounts"
-```
-Not: "add JWT middleware, write a login page, create the users table"
+- in Claude Code, use the installed GoalX skill from `~/.claude/skills/goalx`
+- in Codex, use the installed GoalX skill from `~/.codex/skills/goalx`
 
-**Why this matters:** The master agent is opus-class. It reads the codebase, investigates the problem space, compares multiple paths, and picks the highest-value approach. When you hand it a step-by-step recipe, you override its judgment with yours — and its judgment is usually better because it has full codebase context.
+## Write Better Goals
 
-**When the user's idea is vague, keep it vague:**
+The goal should describe the end state, not the route.
 
-- "just make the deploy work" → `goalx run "the project deploys to production in one step"`
-- "something's off here" → `goalx run "find and fix the most pressing issues"`
-- "how's this project looking" → `goalx run "full audit of this project with an actionable improvement plan"`
-
-The master will ask clarifying questions or make judgment calls. That's its job.
-
-**When constraints matter, state them as boundaries, not steps:**
-
-```
-goalx run "the config system is refactored, go test ./... passes, and there is no silent fallback"
-```
-
-Acceptance criteria are verification boundaries — what must be true when done — not a plan.
-
-## The Default Path
+Good:
 
 ```bash
-goalx run "goal"                        # master decides everything
-goalx status                            # check progress
-goalx tell "focus on payments first"    # redirect if needed
-goalx result                            # see the outcome
+goalx run "users can complete the core workflow reliably in production"
+goalx run "the codebase has a high-quality architecture audit and a prioritized fix plan"
+goalx run "the product keeps getting better until the budget runs out" --intent evolve --budget 8h
 ```
 
-This covers 90% of use cases. Only reach for advanced control when the user explicitly asks.
-
-## Intent Hints
-
-When the user wants a specific flavor of work, pass `--intent`:
+Bad:
 
 ```bash
-goalx run "goal"                                  # default: deliver the outcome
-goalx run "goal" --intent research                 # produce findings, not code
-goalx run --from RUN --intent debate               # challenge prior findings
-goalx run --from RUN --intent implement            # build from prior research
-goalx run --from RUN --intent explore              # extend prior findings
-goalx run "goal" --intent evolve --budget 8h       # open-ended iterative improvement
+goalx run "1. inspect auth 2. patch middleware 3. update tests"
 ```
 
-Intent is a hint to the master about what kind of outcome the user expects. It does not change the runtime architecture.
+When the user is vague, keep the goal outcome-focused:
 
-**Evolve** is for open-ended improvement — the master iteratively finds and executes the highest-value improvements until the budget runs out or the user says stop. It keeps a trial record (`evolution.jsonl`) so context survives relaunches.
+- "make deploy work" -> `goalx run "the project deploys cleanly to the target host in one step"`
+- "audit this repo" -> `goalx run "full audit of this project with an actionable improvement plan"`
+- "keep improving this" -> `goalx run "this project keeps getting better until the budget runs out" --intent evolve --budget 8h`
 
-## Budget
+## Default Operator Loop
 
-Budget is a user-level time constraint set at run creation. The master sees it as a fact and respects it. The framework does not enforce it — agents manage their own time.
+The normal loop is:
 
 ```bash
-goalx run "goal" --budget 4h                # 4-hour time budget
-goalx run "goal" --intent evolve            # evolve defaults to 8h if no --budget
-goalx run "goal" --intent evolve --budget 0s  # explicit no limit
+goalx run "goal"
+goalx status
+goalx observe
+goalx tell "redirect"
+goalx verify
+goalx result
+goalx save
 ```
 
-Non-evolve intents default to no budget (master stops when the goal is met). Evolve defaults to 8h because open-ended runs need a safety boundary.
+Use this by default unless the user explicitly asks for config-first control.
 
-## How to Think About GoalX
+- `goalx status` = durable control/state view
+- `goalx observe` = live transport view plus control summary
+- `goalx tell` = durable redirect to master or session
+- `goalx verify` = record acceptance facts, not completion verdict
+- `goalx result` = read the current result surfaces
+- `goalx save` = export a durable saved run for later continuation
 
-**The master is the decision-maker, not you.** When a user says "audit the auth system", your job is to write a clean goal and launch `goalx run`. The master reads the codebase, decomposes, dispatches, and verifies. You don't plan the approach — the master will.
+## Intent Routing
 
-**Route corrections through the durable control plane.** Use `goalx tell` instead of typing into tmux. Use `goalx dimension` to change how agents think. Use `goalx replace` to hand work to a different engine. These are durable — they survive restarts.
-
-**Don't micromanage config or runtime files.** GoalX auto-detects engines and picks presets. Config overrides exist for users who want explicit control, not as a default path.
-
-**Do not hand-edit machine-consumed run surfaces.** If the user needs to update `goal.json`, `acceptance.json`, `coordination.json`, `status.json`, `goal-log.jsonl`, or `evolution.jsonl`, use `goalx durable replace|append` so GoalX validates canonical shape first.
-
-**Long-term memory is automatic.** GoalX maintains a user-scoped memory store under `~/.goalx/memory/`, compiles run-local `memory-query.json` and `memory-context.json`, and lets the master read the compiled context. Do not ask users to manage memory files unless they explicitly want to inspect or edit them.
-
-**Memory remains facts-first.** The framework may extract bounded proposals from grounded closeout artifacts, but proposals do not become canonical truth until promotion rules pass. Never describe secret values as persisted memory; only secret references are allowed.
-
-## Observing and Redirecting
+Use intent to express the kind of outcome the user wants.
 
 ```bash
-goalx status --run NAME                # progress, lease health, goal coverage
-goalx observe --run NAME               # live transport + control summary
-goalx attach --run NAME                # enter the master's tmux pane
+goalx run "goal" --intent research
+goalx run "goal" --intent develop
+goalx run "goal" --intent evolve --budget 8h
+goalx run --from RUN --intent debate
+goalx run --from RUN --intent implement
+goalx run --from RUN --intent explore
 ```
 
-Report what matters: run status, goal-boundary progress, explicit required-coverage facts when present, session health, unread inbox. Don't dump raw transport noise.
+Intent mapping:
+
+- **default / deliver**: the user wants the goal achieved
+- **research**: the user wants findings, evidence, or a fix plan
+- **develop**: the user explicitly wants code-first execution
+- **evolve**: the user wants open-ended iterative improvement
+- **debate**: challenge and refine prior findings
+- **implement**: build from prior research or debate output
+- **explore**: extend prior findings and search for better paths
+
+## Evolve
+
+`evolve` is not just "run again." It is GoalX's continuous improvement mode.
+
+Use it when the user wants the system to keep finding and executing the next best improvement until a boundary is reached.
 
 ```bash
-goalx tell --run NAME "focus on payments first"
-goalx tell --urgent --run NAME "stop: production is down"
+goalx run "this project keeps getting better until the budget runs out" --intent evolve --budget 8h
 ```
 
-Urgent tells interrupt the master immediately via sidecar escalation.
+Important facts:
 
-## Effort and Dimensions
+- the master chooses each next iteration
+- the run records an iteration trail in `evolution.jsonl`
+- budget is a fact the master sees and manages against
+- the framework does not force-stop on meaning; the agents decide when to consolidate, continue, or stop
 
-Effort controls reasoning depth. Dimensions shape the approach.
+## Saved Runs And Phase Continuation
+
+Saved runs are first-class inputs to later work. Do not improvise this flow.
+
+```bash
+goalx save
+goalx run --from RUN --intent debate
+goalx run --from RUN --intent implement
+goalx run --from RUN --intent explore
+```
+
+Rules:
+
+- phase continuation requires a saved run
+- the saved run must contain report or summary context
+- use `goalx save` before telling the user to continue from a prior run
+
+## Worktree And Merge Boundaries
+
+GoalX uses explicit worktree boundaries so parallel work stays mergeable.
+
+```bash
+goalx add --run NAME --mode develop --worktree "task"
+goalx keep --run NAME session-1
+goalx keep --run NAME
+```
+
+Meaning:
+
+- run root worktree = the integration boundary for the run
+- session worktree = an isolated worker boundary
+- `goalx keep --run NAME session-N` = merge session branch into the run root
+- `goalx keep --run NAME` = merge run root back into the source root
+
+Do not describe `keep` as a generic "save my work" command. It is a merge boundary command.
+
+## Effort, Dimensions, And Control
+
+Use these when the user wants to shape the run, not as the default first move.
 
 ```bash
 goalx run "goal" --effort high --dimension adversarial,evidence
@@ -129,51 +160,38 @@ goalx dimension --run NAME session-2 --set depth,creative
 goalx replace --run NAME session-2 --route-profile research_deep
 ```
 
-| Effort | When |
-|--------|------|
-| `minimal` | Triage, validation |
-| `low` | Fast iteration |
-| `medium` | Default for most work |
-| `high` | Hard problems, deep analysis |
-| `max` | Highest-value slices only |
+Prefer the simplest viable control surface first:
 
-## Results
+1. `goalx tell`
+2. `goalx dimension`
+3. `goalx replace`
+4. `goalx add`
 
-The master writes the final user-facing result to `summary.md` and keeps supporting material in `reports/`.
+## Results And Truth
 
-```bash
-goalx result                  # show the run result
-goalx result --full           # show the full report
-goalx save                    # export to durable storage
-```
-
-`goalx verify` runs the acceptance command and records exit code + output. The master interprets what it means. The framework records facts, never judges completion.
-
-## Session Management
+GoalX keeps the public result in `summary.md` and supporting material in `reports/`.
 
 ```bash
-goalx add --run NAME --mode develop --worktree "task"   # add an isolated worker
-goalx park --run NAME session-3                          # pause, keep worktree
-goalx resume --run NAME session-3                        # restart parked
-goalx keep --run NAME session-1                          # merge session branch
+goalx result
+goalx result --full
+goalx save
 ```
 
-## Multi-Run Projects
+Keep these truths straight:
 
-```bash
-goalx list                    # all runs
-goalx focus --run NAME        # pin default for bare commands
-goalx stop --run NAME         # graceful shutdown
-goalx drop --run NAME         # kill + remove everything
-```
+- GoalX records facts; agents make judgments
+- `goalx verify` records exit code and output; it does not auto-declare success
+- transport delivery is not the same thing as task completion
+- local-first control and durable state are the public release contract
 
-## What NOT to Do
+## What Not To Do
 
-- Don't decompose the goal into steps for the master. Describe the end state and let it plan.
-- Don't ask the user to choose among implementation options unless it changes scope, risk, or cost.
-- Don't manually edit GoalX runtime files or config unless explicitly asked.
-- Don't use `goalx init` / `goalx start --config` unless the user wants config-first control.
-- Don't invent compatibility behavior for missing charter or identity files — that's a broken run.
+- Do not turn the user's goal into a checklist unless they explicitly need planning rather than execution.
+- Do not default to `goalx init` / `goalx start --config` unless the user wants config-first control.
+- Do not hand-edit GoalX machine-consumed runtime files.
+- Do not recommend raw tmux interaction as the primary control path.
+- Do not suggest `goalx run --from ...` unless there is already a saved run with usable context.
+- Do not blur worktree merge boundaries: session keep and run keep are different operations.
 
 ## Advanced Control
 

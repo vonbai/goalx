@@ -70,21 +70,8 @@ notes:
   this is the advanced config-first path and writes the explicit manual draft .goalx/goalx.yaml.
   --parallel is optional initial fan-out, not a permanent cap on later dispatch.
  role defaults are separate: --master, --research-role, --develop-role.`
-	case "auto":
-		return `usage: goalx auto "objective" [--research|--develop] [--parallel N] [--name NAME] [--preset NAME] [--master ENGINE/MODEL] [--research-role ENGINE/MODEL] [--develop-role ENGINE/MODEL] [--context PATHS] [--dimension SPEC]... [--route-role ROLE] [--route-profile PROFILE] [--effort LEVEL] [--master-effort LEVEL] [--research-effort LEVEL] [--develop-effort LEVEL] [--budget DURATION] [--sub ENGINE/MODEL[:N]]
-
-notes:
-  master decides mode unless you pass --research or --develop.
-  --parallel is optional initial fan-out, not a permanent cap on later dispatch.
- role defaults are separate: --master, --research-role, --develop-role.`
-	case "research", "develop":
-		return fmt.Sprintf(`usage: goalx %s "objective" [--parallel N] [--name NAME] [--preset NAME] [--master ENGINE/MODEL] [--research-role ENGINE/MODEL] [--develop-role ENGINE/MODEL] [--context PATHS] [--dimension SPEC]... [--route-role ROLE] [--route-profile PROFILE] [--effort LEVEL] [--master-effort LEVEL] [--research-effort LEVEL] [--develop-effort LEVEL] [--budget DURATION] [--sub ENGINE/MODEL[:N]]
-
-notes:
-  --parallel is optional initial fan-out, not a permanent cap on later dispatch.
-  role defaults are separate: --master, --research-role, --develop-role.`, command)
 	default:
-		return `usage: goalx <start|auto|research|develop> "objective" [flags]`
+		return `usage: goalx <start|init> "objective" [flags]`
 	}
 }
 

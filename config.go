@@ -1,6 +1,8 @@
 package goalx
 
 import (
+	"bytes"
+	"io"
 	"fmt"
 	"os"
 	"os/exec"
@@ -40,7 +42,6 @@ type Config struct {
 	Budget          BudgetConfig          `yaml:"budget,omitempty"`
 	Master          MasterConfig          `yaml:"master,omitempty"`
 	Memory          MemoryConfig          `yaml:"memory,omitempty"`
-	Serve           ServeConfig           `yaml:"serve,omitempty"`
 
 	presetCatalog    map[string]PresetConfig
 	dimensionCatalog map[string]string
@@ -80,13 +81,6 @@ type MasterConfig struct {
 
 type MemoryConfig struct {
 	LLMExtract string `yaml:"llm_extract,omitempty"`
-}
-
-type ServeConfig struct {
-	Bind            string            `yaml:"bind,omitempty"`
-	Token           string            `yaml:"token,omitempty"`
-	Workspaces      map[string]string `yaml:"workspaces,omitempty"`
-	NotificationURL string            `yaml:"notification_url,omitempty"`
 }
 
 type SessionConfig struct {
@@ -258,7 +252,7 @@ var BuiltinEngines = map[string]EngineConfig{
 
 // BuiltinDefaults are the hardcoded default values.
 var BuiltinDefaults = Config{
-	Preset:   "", // empty: auto-detected from installed engines at runtime
+	Preset:   "", // empty: selected from installed engines at resolve time
 	Mode:     ModeDevelop,
 	Parallel: 1,
 	Preferences: PreferencesConfig{
@@ -376,7 +370,12 @@ func LoadYAML[T any](path string) (T, error) {
 		}
 		return cfg, err
 	}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
+		if err == io.EOF {
+			return cfg, nil
+		}
 		return cfg, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return cfg, nil
@@ -406,19 +405,19 @@ func applyConfigEnvelope(cfg *Config, engines *map[string]EngineConfig, presets 
 
 // DetectPresetFromEnvironment checks which engines are available and picks
 // the best preset. If both claude and codex are installed, use "hybrid"
-// (master=opus, sessions=codex). If only one is available, use its preset.
-func DetectPresetFromEnvironment() string {
+// (master=opus, sessions=codex). If only one is available, use its matching preset.
+func DetectPresetFromEnvironment() (string, error) {
 	hasClaude := commandExists("claude")
 	hasCodex := commandExists("codex")
 	switch {
 	case hasClaude && hasCodex:
-		return "hybrid"
+		return "hybrid", nil
 	case hasClaude:
-		return "claude"
+		return "claude-h", nil
 	case hasCodex:
-		return "codex"
+		return "codex", nil
 	default:
-		return "codex" // fallback
+		return "", fmt.Errorf("no supported engines found in PATH; install claude or codex")
 	}
 }
 
@@ -510,25 +509,18 @@ func ValidateConfig(cfg *Config, engines map[string]EngineConfig) error {
 	}, "master"); err != nil {
 		return err
 	}
-	for _, role := range []struct {
-		name string
-		cfg  SessionConfig
-	}{
-		{name: "roles.research", cfg: cfg.Roles.Research},
-		{name: "roles.develop", cfg: cfg.Roles.Develop},
-	} {
+	for _, role := range selectedLaunchRoles(cfg) {
 		if err := validateEffortLevel(role.cfg.Effort, role.name+".effort"); err != nil {
 			return err
 		}
-		if strings.TrimSpace(role.cfg.Engine) == "" && strings.TrimSpace(role.cfg.Model) == "" {
-			continue
-		}
-		if err := validateLaunchRequest(engines, LaunchRequest{
-			Engine: role.cfg.Engine,
-			Model:  role.cfg.Model,
-			Effort: role.cfg.Effort,
-		}, role.name); err != nil {
-			return err
+		if strings.TrimSpace(role.cfg.Engine) != "" || strings.TrimSpace(role.cfg.Model) != "" {
+			if err := validateLaunchRequest(engines, LaunchRequest{
+				Engine: role.cfg.Engine,
+				Model:  role.cfg.Model,
+				Effort: role.cfg.Effort,
+			}, role.name); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -571,28 +563,6 @@ func ValidateConfig(cfg *Config, engines map[string]EngineConfig) error {
 		}
 		for j, effort := range rule.Efforts {
 			if err := validateEffortLevel(effort, fmt.Sprintf("%s.efforts[%d]", field, j)); err != nil {
-				return err
-			}
-		}
-	}
-
-	roleDefaults := []struct {
-		name string
-		cfg  SessionConfig
-	}{
-		{name: "roles.research", cfg: cfg.Roles.Research},
-		{name: "roles.develop", cfg: cfg.Roles.Develop},
-	}
-	for _, roleDefault := range roleDefaults {
-		if err := validateEffortLevel(roleDefault.cfg.Effort, roleDefault.name+".effort"); err != nil {
-			return err
-		}
-		if strings.TrimSpace(roleDefault.cfg.Engine) != "" || strings.TrimSpace(roleDefault.cfg.Model) != "" {
-			if err := validateLaunchRequest(engines, LaunchRequest{
-				Engine: roleDefault.cfg.Engine,
-				Model:  roleDefault.cfg.Model,
-				Effort: roleDefault.cfg.Effort,
-			}, roleDefault.name); err != nil {
 				return err
 			}
 		}
@@ -702,6 +672,90 @@ func validateLaunchRequest(engines map[string]EngineConfig, req LaunchRequest, r
 	}
 	_ = spec
 	return nil
+}
+
+func validateLaunchAvailability(cfg *Config, engines map[string]EngineConfig) error {
+	if cfg == nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	check := func(role string, req LaunchRequest) error {
+		if strings.TrimSpace(req.Engine) == "" {
+			return nil
+		}
+		if seen[req.Engine] {
+			return nil
+		}
+		seen[req.Engine] = true
+
+		spec, err := ResolveLaunchSpec(engines, req)
+		if err != nil {
+			return fmt.Errorf("%s engine: %w", role, err)
+		}
+		binary := launchBinaryName(spec.Command)
+		if binary == "" {
+			return fmt.Errorf("%s engine: launch command is empty", role)
+		}
+		if !commandExists(binary) {
+			return fmt.Errorf("%s engine: required command %q is not available on PATH", role, binary)
+		}
+		return nil
+	}
+
+	if err := check("master", LaunchRequest{Engine: cfg.Master.Engine, Model: cfg.Master.Model, Effort: cfg.Master.Effort}); err != nil {
+		return err
+	}
+	for _, role := range selectedLaunchRoles(cfg) {
+		if err := check(role.name, LaunchRequest{Engine: role.cfg.Engine, Model: role.cfg.Model, Effort: role.cfg.Effort}); err != nil {
+			return err
+		}
+	}
+
+	for i := range ExpandSessions(cfg) {
+		effective := EffectiveSessionConfig(cfg, i)
+		if err := check(fmt.Sprintf("session-%d", i+1), LaunchRequest{Engine: effective.Engine, Model: effective.Model, Effort: effective.Effort}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type selectedLaunchRole struct {
+	name string
+	cfg  SessionConfig
+}
+
+func selectedLaunchRoles(cfg *Config) []selectedLaunchRole {
+	if cfg == nil {
+		return nil
+	}
+	switch cfg.Mode {
+	case ModeResearch:
+		return []selectedLaunchRole{{name: "roles.research", cfg: cfg.Roles.Research}}
+	case ModeDevelop:
+		return []selectedLaunchRole{{name: "roles.develop", cfg: cfg.Roles.Develop}}
+	case ModeAuto:
+		return []selectedLaunchRole{
+			{name: "roles.research", cfg: cfg.Roles.Research},
+			{name: "roles.develop", cfg: cfg.Roles.Develop},
+		}
+	default:
+		return nil
+	}
+}
+
+func launchBinaryName(command string) string {
+	for _, field := range strings.Fields(command) {
+		if field == "env" {
+			continue
+		}
+		if strings.Contains(field, "=") && !strings.HasPrefix(field, "-") {
+			continue
+		}
+		return field
+	}
+	return ""
 }
 
 func isBlockedCodexModel(modelID, rawModel string) bool {
@@ -991,42 +1045,12 @@ func mergeConfig(base, overlay *Config) {
 	if overlay.Memory.LLMExtract != "" {
 		base.Memory.LLMExtract = overlay.Memory.LLMExtract
 	}
-	if overlay.Serve.Bind != "" {
-		base.Serve.Bind = overlay.Serve.Bind
-	}
-	if overlay.Serve.Token != "" {
-		base.Serve.Token = overlay.Serve.Token
-	}
-	if len(overlay.Serve.Workspaces) > 0 {
-		base.Serve.Workspaces = overlay.Serve.Workspaces
-	}
-	if overlay.Serve.NotificationURL != "" {
-		base.Serve.NotificationURL = overlay.Serve.NotificationURL
-	}
 }
 
 func mergePreferencesConfig(base, overlay *PreferencesConfig) {
 	mergePreferencePolicy(&base.Research, overlay.Research)
 	mergePreferencePolicy(&base.Develop, overlay.Develop)
 	mergePreferencePolicy(&base.Simple, overlay.Simple)
-}
-
-func mergeServeConfig(base, overlay *ServeConfig) {
-	if base == nil || overlay == nil {
-		return
-	}
-	if overlay.Bind != "" {
-		base.Bind = overlay.Bind
-	}
-	if overlay.Token != "" {
-		base.Token = overlay.Token
-	}
-	if len(overlay.Workspaces) > 0 {
-		base.Workspaces = overlay.Workspaces
-	}
-	if overlay.NotificationURL != "" {
-		base.NotificationURL = overlay.NotificationURL
-	}
 }
 
 func mergePreferencePolicy(base *PreferencePolicy, overlay PreferencePolicy) {

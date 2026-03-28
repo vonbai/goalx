@@ -485,7 +485,6 @@ func TestDirectCommandHelpPrintUsage(t *testing.T) {
 		{name: "drop", run: func() error { return Drop(t.TempDir(), []string{"--help"}) }, want: "usage: goalx drop [--run NAME]"},
 		{name: "report", run: func() error { return Report(t.TempDir(), []string{"--help"}) }, want: "usage: goalx report [--run NAME]"},
 		{name: "archive", run: func() error { return Archive(t.TempDir(), []string{"--help"}) }, want: "usage: goalx archive [--run NAME] <session-name>"},
-		{name: "serve", run: func() error { return Serve(t.TempDir(), []string{"--help"}) }, want: "usage: goalx serve"},
 	} {
 		out := captureStdout(t, func() {
 			if err := tc.run(); err != nil {

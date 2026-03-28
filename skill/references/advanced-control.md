@@ -44,9 +44,14 @@ routing:
   profiles:
     research_deep: { engine: claude-code, model: opus, effort: high }
     build_fast: { engine: codex, model: gpt-5.4-mini, effort: minimal }
-  table:
-    research: { depth: research_deep }
-    develop:  { feasibility: build_fast }
+  rules:
+    - role: research
+      any_dimensions: [depth]
+      efforts: [high, max]
+      profile: research_deep
+    - role: develop
+      efforts: [minimal, low]
+      profile: build_fast
 preferences:
   research:
     guidance: "Use high-effort Codex by default; escalate depth work to opus."

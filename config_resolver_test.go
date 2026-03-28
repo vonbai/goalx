@@ -1,6 +1,10 @@
 package goalx
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 type resolverTestLayers struct {
 	Base           Config
@@ -38,8 +42,8 @@ func resolveConfigFixture(layers resolverTestLayers, req resolverTestRequest) (r
 			Engine: req.MasterEngine,
 			Model:  req.MasterModel,
 		},
-	}, func() string {
-		return layers.DetectedPreset
+	}, func() (string, error) {
+		return layers.DetectedPreset, nil
 	})
 	if err != nil {
 		return resolverTestResult{}, err
@@ -119,15 +123,15 @@ func TestResolveConfigSemantics(t *testing.T) {
 					Target:          TargetConfig{Files: []string{"README.md"}},
 					LocalValidation: LocalValidationConfig{Command: "go test ./..."},
 				},
-				DetectedPreset: "claude",
+				DetectedPreset: "claude-h",
 			},
 			req: resolverTestRequest{
 				Mode: ModeDevelop,
 			},
 			want: resolverTestResult{
-				Preset: "claude",
+				Preset: "claude-h",
 				Config: Config{
-					Preset: "claude",
+					Preset: "claude-h",
 					Mode:   ModeDevelop,
 					Master: MasterConfig{Engine: "claude-code", Model: "opus"},
 				},
@@ -204,10 +208,35 @@ func TestResolveConfigSemantics(t *testing.T) {
 			if got.Config.Preset != tt.want.Config.Preset {
 				t.Fatalf("config.preset = %q, want %q", got.Config.Preset, tt.want.Config.Preset)
 			}
-			if got.Config.Master.Engine != tt.want.Config.Master.Engine || got.Config.Master.Model != tt.want.Config.Master.Model {
-				t.Fatalf("master = %#v, want %#v", got.Config.Master, tt.want.Config.Master)
-			}
-		})
+				if got.Config.Master.Engine != tt.want.Config.Master.Engine || got.Config.Master.Model != tt.want.Config.Master.Model {
+					t.Fatalf("master = %#v, want %#v", got.Config.Master, tt.want.Config.Master)
+				}
+			})
+		}
+	}
+
+func TestResolveConfigReturnsErrorWhenNoEngineCanBeSelected(t *testing.T) {
+	t.Parallel()
+
+	base := Config{
+		Name:            "demo",
+		Mode:            ModeDevelop,
+		Objective:       "ship it",
+		Target:          TargetConfig{Files: []string{"README.md"}},
+		LocalValidation: LocalValidationConfig{Command: "go test ./..."},
+	}
+	attachCatalogs(&base, copyPresetCatalog(Presets), copyStringCatalog(BuiltinDimensions))
+
+	_, err := resolveConfigWithDetector(&ConfigLayers{
+		Config:     base,
+		Engines:    copyEngines(BuiltinEngines),
+		Presets:    copyPresetCatalog(Presets),
+		Dimensions: copyStringCatalog(BuiltinDimensions),
+	}, ResolveRequest{}, func() (string, error) {
+		return "", errors.New("no supported engines found in PATH")
+	})
+	if err == nil || !strings.Contains(err.Error(), "no supported engines found in PATH") {
+		t.Fatalf("resolveConfigWithDetector error = %v, want no supported engines", err)
 	}
 }
 
@@ -227,8 +256,8 @@ func TestResolveConfigPreservesBuiltinRoutingDefaults(t *testing.T) {
 		Engines:    copyEngines(BuiltinEngines),
 		Presets:    copyPresetCatalog(Presets),
 		Dimensions: copyStringCatalog(BuiltinDimensions),
-	}, ResolveRequest{}, func() string {
-		return "hybrid"
+	}, ResolveRequest{}, func() (string, error) {
+		return "hybrid", nil
 	})
 	if err != nil {
 		t.Fatalf("resolveConfigWithDetector: %v", err)
@@ -263,8 +292,8 @@ func TestResolveConfigRejectsUnknownPreset(t *testing.T) {
 		Engines:    copyEngines(BuiltinEngines),
 		Presets:    copyPresetCatalog(Presets),
 		Dimensions: copyStringCatalog(BuiltinDimensions),
-	}, ResolveRequest{}, func() string {
-		return "hybrid"
+	}, ResolveRequest{}, func() (string, error) {
+		return "hybrid", nil
 	})
 	if err == nil || err.Error() != `unknown preset "missing-preset"` {
 		t.Fatalf("resolveConfigWithDetector error = %v, want unknown preset", err)

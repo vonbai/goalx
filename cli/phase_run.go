@@ -202,6 +202,7 @@ func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.M
 		MasterOverride:   masterOverride,
 		ResearchOverride: researchOverride,
 		DevelopOverride:  developOverride,
+		RequireEngineAvailability: true,
 	}
 	return req, nil
 }

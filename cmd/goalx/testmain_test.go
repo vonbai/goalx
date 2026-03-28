@@ -1,0 +1,30 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestMain(m *testing.M) {
+	home, err := os.MkdirTemp("", "goalx-cmd-home-")
+	if err != nil {
+		panic(err)
+	}
+	pathDir, err := os.MkdirTemp("", "goalx-cmd-path-")
+	if err != nil {
+		panic(err)
+	}
+	for _, name := range []string{"claude", "codex"} {
+		path := filepath.Join(pathDir, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			panic(err)
+		}
+	}
+	_ = os.Setenv("HOME", home)
+	_ = os.Setenv("PATH", pathDir+":"+os.Getenv("PATH"))
+	code := m.Run()
+	_ = os.RemoveAll(home)
+	_ = os.RemoveAll(pathDir)
+	os.Exit(code)
+}

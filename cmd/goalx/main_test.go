@@ -297,6 +297,12 @@ func TestRunCommandRejectsLegacyTopLevelAliases(t *testing.T) {
 	}
 }
 
+func TestRunCommandRejectsServe(t *testing.T) {
+	if err := runCommand(t.TempDir(), "serve", nil); !errors.Is(err, errUnknownCommand) {
+		t.Fatalf("runCommand serve error = %v, want errUnknownCommand", err)
+	}
+}
+
 func TestRunCommandDispatchesSidecar(t *testing.T) {
 	oldSidecar := mainSidecar
 	defer func() { mainSidecar = oldSidecar }()
@@ -452,22 +458,5 @@ func TestUsageDocumentsRunCommand(t *testing.T) {
 	}
 	if !strings.Contains(usage, "Primary goal entrypoint") {
 		t.Fatalf("usage missing run contract:\n%s", usage)
-	}
-}
-
-func TestUsageOmitsLegacyLaunchAliases(t *testing.T) {
-	for _, unwanted := range []string{
-		"goalx auto",
-		"goalx research",
-		"goalx develop",
-		"goalx debate",
-		"goalx implement",
-		"goalx explore",
-		"Temporary alias",
-		"legacy launch/phase commands remain temporary aliases",
-	} {
-		if strings.Contains(usage, unwanted) {
-			t.Fatalf("usage should omit legacy launch alias %q:\n%s", unwanted, usage)
-		}
 	}
 }

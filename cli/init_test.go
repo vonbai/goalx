@@ -63,6 +63,28 @@ func TestInitDevelopLeavesLocalValidationAndTargetUnsetWithoutProjectConfig(t *t
 	}
 }
 
+func TestInitAllowsDraftGenerationWithoutSupportedEngines(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", t.TempDir())
+
+	projectRoot := t.TempDir()
+	if err := Init(projectRoot, []string{"ship it", "--develop", "--name", "demo"}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	cfg, err := goalx.LoadYAML[goalx.Config](filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load goalx.yaml: %v", err)
+	}
+	if cfg.Name != "demo" {
+		t.Fatalf("name = %q, want demo", cfg.Name)
+	}
+	if cfg.Preset != "" {
+		t.Fatalf("preset = %q, want empty when no engine is detected during init preview", cfg.Preset)
+	}
+}
+
 func TestInitResearchUsesResearchPresetDefaults(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

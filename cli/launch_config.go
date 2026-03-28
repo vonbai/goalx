@@ -46,6 +46,7 @@ func resolveLaunchConfig(projectRoot string, opts launchOptions) (*goalx.Resolve
 	if err != nil {
 		return nil, err
 	}
+	req.RequireEngineAvailability = true
 	resolved, err := goalx.ResolveConfig(layers, req)
 	if err != nil {
 		return nil, err

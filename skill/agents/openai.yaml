@@ -1,4 +1,4 @@
 interface:
   display_name: "GoalX"
-  short_description: "GoalX runs with autonomous control, explicit phases, durable run state, and proof-based closeout"
-  default_prompt: "Use $goalx to start, observe, redirect, verify, or phase a GoalX goal in this project. Prefer $goalx auto by default; use $goalx research, $goalx develop, or $goalx debate --from / $goalx implement --from / $goalx explore --from for explicit phase progression. Treat $goalx observe and $goalx status as control-plane views that expose run_id, epoch, and charter health, require $goalx verify before calling a develop run done, and expect $goalx save to export charter and session-identity provenance."
+  short_description: "GoalX drives autonomous research, development, and continuous software evolution with durable local control"
+  default_prompt: "Use $goalx by default when the user wants autonomous progress in this project. Start with $goalx run, use $goalx run --intent evolve for continuous improvement, use $goalx observe and $goalx status to inspect progress, use $goalx tell to redirect, require $goalx save before suggesting $goalx run --from ... phase continuation, and keep the worktree boundary straight: $goalx keep --run NAME session-N merges into the run root, while $goalx keep --run NAME merges the run root into the source root."

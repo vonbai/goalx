@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -161,56 +160,6 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 	}
 }
 
-func TestResearchRoutesThroughRunEntrypoint(t *testing.T) {
-	oldRun := runEntrypoint
-	defer func() { runEntrypoint = oldRun }()
-
-	runEntrypoint = func(_ string, args []string, nc *nextConfigJSON) error {
-		if nc != nil {
-			t.Fatalf("next config = %#v, want nil", nc)
-		}
-		want := []string{"--intent", runIntentResearch, "audit auth"}
-		if len(args) != len(want) {
-			t.Fatalf("args = %v, want %v", args, want)
-		}
-		for i := range want {
-			if args[i] != want[i] {
-				t.Fatalf("args = %v, want %v", args, want)
-			}
-		}
-		return nil
-	}
-
-	if err := Research(t.TempDir(), []string{"audit auth"}); err != nil {
-		t.Fatalf("Research: %v", err)
-	}
-}
-
-func TestDevelopRoutesThroughRunEntrypoint(t *testing.T) {
-	oldRun := runEntrypoint
-	defer func() { runEntrypoint = oldRun }()
-
-	runEntrypoint = func(_ string, args []string, nc *nextConfigJSON) error {
-		if nc != nil {
-			t.Fatalf("next config = %#v, want nil", nc)
-		}
-		want := []string{"--intent", runIntentDevelop, "ship auth"}
-		if len(args) != len(want) {
-			t.Fatalf("args = %v, want %v", args, want)
-		}
-		for i := range want {
-			if args[i] != want[i] {
-				t.Fatalf("args = %v, want %v", args, want)
-			}
-		}
-		return nil
-	}
-
-	if err := Develop(t.TempDir(), []string{"ship auth"}); err != nil {
-		t.Fatalf("Develop: %v", err)
-	}
-}
-
 func TestDebateRoutesThroughRunEntrypoint(t *testing.T) {
 	oldRun := runEntrypoint
 	defer func() { runEntrypoint = oldRun }()
@@ -234,17 +183,5 @@ func TestDebateRoutesThroughRunEntrypoint(t *testing.T) {
 
 	if err := Debate(t.TempDir(), []string{"--from", "research-a"}, expectedNC); err != nil {
 		t.Fatalf("Debate: %v", err)
-	}
-}
-
-func TestAutoAliasPropagatesRunError(t *testing.T) {
-	oldRun := runEntrypoint
-	defer func() { runEntrypoint = oldRun }()
-
-	runEntrypoint = func(string, []string, *nextConfigJSON) error { return errors.New("boom") }
-
-	err := Auto(t.TempDir(), []string{"ship it"})
-	if err == nil || !strings.Contains(err.Error(), "boom") {
-		t.Fatalf("Auto error = %v, want propagated run error", err)
 	}
 }

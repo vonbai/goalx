@@ -141,6 +141,52 @@ func TestPresetMixed(t *testing.T) {
 	}
 }
 
+func TestDetectPresetFromEnvironment(t *testing.T) {
+	t.Run("none", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		preset, err := DetectPresetFromEnvironment()
+		if err == nil {
+			t.Fatal("DetectPresetFromEnvironment unexpectedly succeeded")
+		}
+		if preset != "" {
+			t.Fatalf("preset = %q, want empty", preset)
+		}
+		if !strings.Contains(err.Error(), "no supported engines found in PATH") {
+			t.Fatalf("error = %v, want no supported engines", err)
+		}
+	})
+
+	t.Run("claude only", func(t *testing.T) {
+		pathDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(pathDir, "claude"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatalf("write claude shim: %v", err)
+		}
+		t.Setenv("PATH", pathDir)
+		preset, err := DetectPresetFromEnvironment()
+		if err != nil {
+			t.Fatalf("DetectPresetFromEnvironment: %v", err)
+		}
+		if preset != "claude-h" {
+			t.Fatalf("preset = %q, want claude-h", preset)
+		}
+	})
+
+	t.Run("codex only", func(t *testing.T) {
+		pathDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(pathDir, "codex"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatalf("write codex shim: %v", err)
+		}
+		t.Setenv("PATH", pathDir)
+		preset, err := DetectPresetFromEnvironment()
+		if err != nil {
+			t.Fatalf("DetectPresetFromEnvironment: %v", err)
+		}
+		if preset != "codex" {
+			t.Fatalf("preset = %q, want codex", preset)
+		}
+	})
+}
+
 func TestBuiltinDefaultsIncludeRoutingRulesAndPreferences(t *testing.T) {
 	profile := BuiltinDefaults.Routing.Profiles["research_deep"]
 	if profile.Engine != "claude-code" || profile.Model != "opus" || profile.Effort != EffortHigh {
@@ -573,41 +619,15 @@ func TestValidateConfigRejectsAcceptancePlaceholder(t *testing.T) {
 	}
 }
 
-func TestLoadConfigMergesServeConfig(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	userGoalxDir := filepath.Join(home, ".goalx")
-	if err := os.MkdirAll(userGoalxDir, 0o755); err != nil {
-		t.Fatalf("mkdir user config dir: %v", err)
-	}
-	userCfg := []byte(strings.TrimSpace(`
-serve:
-  bind: 100.110.196.103:18790
-  token: user-token
-  workspaces:
-    user: /srv/user
-  notification_url: http://user.example/hook
-`) + "\n")
-	if err := os.WriteFile(filepath.Join(userGoalxDir, "config.yaml"), userCfg, 0o644); err != nil {
-		t.Fatalf("write user config: %v", err)
-	}
-
-	projectRoot := t.TempDir()
-	projectGoalxDir := filepath.Join(projectRoot, ".goalx")
-	if err := os.MkdirAll(projectGoalxDir, 0o755); err != nil {
-		t.Fatalf("mkdir project config dir: %v", err)
-	}
-	projectCfg := []byte(strings.TrimSpace(`
-serve:
-  token: project-token
-  workspaces:
-    project: /srv/project
-`) + "\n")
-	if err := os.WriteFile(filepath.Join(projectGoalxDir, "config.yaml"), projectCfg, 0o644); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
-	runCfg := []byte(strings.TrimSpace(`
+func TestLoadYAMLRejectsRemovedAndUnknownFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name: "serve block",
+			content: strings.TrimSpace(`
 name: demo
 objective: ship it
 target:
@@ -615,27 +635,54 @@ target:
 local_validation:
   command: go test ./...
 serve:
-  notification_url: http://run.example/hook
-`) + "\n")
-	if err := os.WriteFile(filepath.Join(projectGoalxDir, "goalx.yaml"), runCfg, 0o644); err != nil {
-		t.Fatalf("write run config: %v", err)
+  bind: 127.0.0.1:9800
+`) + "\n",
+			want: "field serve",
+		},
+		{
+			name: "notification_url field",
+			content: strings.TrimSpace(`
+name: demo
+objective: ship it
+target:
+  files: [README.md]
+local_validation:
+  command: go test ./...
+notification_url: https://example.invalid/hook
+`) + "\n",
+			want: "field notification_url",
+		},
+		{
+			name: "unknown top level field",
+			content: strings.TrimSpace(`
+name: demo
+objective: ship it
+target:
+  files: [README.md]
+local_validation:
+  command: go test ./...
+unexpected: value
+`) + "\n",
+			want: "field unexpected",
+		},
 	}
 
-	cfg, _, err := loadResolvedConfigForTest(projectRoot, filepath.Join(projectGoalxDir, "goalx.yaml"))
-	if err != nil {
-		t.Fatalf("LoadConfig: %v", err)
-	}
-	if cfg.Serve.Bind != "100.110.196.103:18790" {
-		t.Fatalf("serve.bind = %q, want 100.110.196.103:18790", cfg.Serve.Bind)
-	}
-	if cfg.Serve.Token != "project-token" {
-		t.Fatalf("serve.token = %q, want project-token", cfg.Serve.Token)
-	}
-	if len(cfg.Serve.Workspaces) != 1 || cfg.Serve.Workspaces["project"] != "/srv/project" {
-		t.Fatalf("serve.workspaces = %#v, want {project:/srv/project}", cfg.Serve.Workspaces)
-	}
-	if cfg.Serve.NotificationURL != "http://run.example/hook" {
-		t.Fatalf("serve.notification_url = %q, want http://run.example/hook", cfg.Serve.NotificationURL)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.yaml")
+			if err := os.WriteFile(path, []byte(tt.content), 0o644); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+
+			_, err := LoadYAML[Config](path)
+			if err == nil {
+				t.Fatalf("LoadYAML unexpectedly succeeded for %s", tt.name)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("LoadYAML error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
 
@@ -721,9 +768,13 @@ routing:
   profiles:
     research_deep: { engine: claude-code, model: opus, effort: high }
     build_fast: { engine: codex, model: gpt-5.4-mini, effort: minimal }
-  table:
-    research: { medium: research_deep }
-    develop: { low: build_fast }
+  rules:
+    - role: research
+      efforts: [medium]
+      profile: research_deep
+    - role: develop
+      efforts: [low]
+      profile: build_fast
 preferences:
   research:
     guidance: default to gpt-5.4 high
@@ -1274,38 +1325,6 @@ func TestMergeConfigTargetFieldLevel(t *testing.T) {
 	}
 	if len(base2.Target.Readonly) != 1 || base2.Target.Readonly[0] != "vendor/" {
 		t.Errorf("Target.Readonly should be set from overlay, got %v", base2.Target.Readonly)
-	}
-}
-
-func TestMergeConfigServeFieldLevel(t *testing.T) {
-	base := Config{
-		Serve: ServeConfig{
-			Bind:            "100.110.196.103:18800",
-			Token:           "base-token",
-			Workspaces:      map[string]string{"goalx": "/srv/goalx"},
-			NotificationURL: "https://hub.example/hooks/wake",
-		},
-	}
-	overlay := Config{
-		Serve: ServeConfig{
-			Bind:       "100.110.196.103:18801",
-			Workspaces: map[string]string{"quantos": "/srv/quantos"},
-		},
-	}
-
-	mergeConfig(&base, &overlay)
-
-	if base.Serve.Bind != "100.110.196.103:18801" {
-		t.Fatalf("Serve.Bind = %q, want %q", base.Serve.Bind, "100.110.196.103:18801")
-	}
-	if base.Serve.Token != "base-token" {
-		t.Fatalf("Serve.Token = %q, want preserved base token", base.Serve.Token)
-	}
-	if base.Serve.NotificationURL != "https://hub.example/hooks/wake" {
-		t.Fatalf("Serve.NotificationURL = %q, want preserved base notification URL", base.Serve.NotificationURL)
-	}
-	if len(base.Serve.Workspaces) != 1 || base.Serve.Workspaces["quantos"] != "/srv/quantos" {
-		t.Fatalf("Serve.Workspaces = %#v, want overlay workspaces", base.Serve.Workspaces)
 	}
 }
 

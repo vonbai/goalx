@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,18 @@ func makeDetectedPresetPath(t *testing.T) string {
 	t.Helper()
 	binDir := t.TempDir()
 	for _, name := range []string{"claude", "codex"} {
+		path := filepath.Join(binDir, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatalf("write %s shim: %v", name, err)
+		}
+	}
+	return binDir
+}
+
+func makeLaunchPathWithCommands(t *testing.T, names ...string) string {
+	t.Helper()
+	binDir := t.TempDir()
+	for _, name := range names {
 		path := filepath.Join(binDir, name)
 		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatalf("write %s shim: %v", name, err)
@@ -273,6 +286,81 @@ local_validation:
 	}
 	if err := goalx.ValidateConfig(&resolved.Config, resolved.Engines); err != nil {
 		t.Fatalf("ValidateConfig: %v", err)
+	}
+}
+
+func TestResolveLaunchConfigResearchWithClaudePresetAndClaudeOnlyPath(t *testing.T) {
+	projectRoot := t.TempDir()
+	writeLaunchConfigProjectFile(t, projectRoot, `
+preset: claude
+target:
+  files: ["."]
+local_validation:
+  command: go test ./...
+`)
+
+	pathDir := makeLaunchPathWithCommands(t, "claude")
+	t.Setenv("PATH", pathDir)
+
+	resolvedCfg, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "audit auth",
+		Mode:      goalx.ModeResearch,
+	})
+	if err != nil {
+		t.Fatalf("resolveLaunchConfig: %v", err)
+	}
+	if resolvedCfg.Config.Mode != goalx.ModeResearch {
+		t.Fatalf("mode = %q, want %q", resolvedCfg.Config.Mode, goalx.ModeResearch)
+	}
+}
+
+func TestResolveLaunchConfigDevelopWithClaudePresetAndClaudeOnlyPathFailsOnMissingCodex(t *testing.T) {
+	projectRoot := t.TempDir()
+	writeLaunchConfigProjectFile(t, projectRoot, `
+preset: claude
+target:
+  files: ["."]
+local_validation:
+  command: go test ./...
+`)
+
+	pathDir := makeLaunchPathWithCommands(t, "claude")
+	t.Setenv("PATH", pathDir)
+
+	_, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "audit auth",
+		Mode:      goalx.ModeDevelop,
+	})
+	if err == nil {
+		t.Fatal("resolveLaunchConfig unexpectedly succeeded")
+	}
+	if !strings.Contains(err.Error(), "roles.develop") || !strings.Contains(err.Error(), "codex") || !strings.Contains(err.Error(), "required command") {
+		t.Fatalf("resolveLaunchConfig error = %v, want missing codex command for develop path", err)
+	}
+}
+
+func TestResolveLaunchConfigAutoWithHybridPresetAndClaudeOnlyPathFailsOnMissingCodex(t *testing.T) {
+	projectRoot := t.TempDir()
+	writeLaunchConfigProjectFile(t, projectRoot, `
+preset: hybrid
+target:
+  files: ["."]
+local_validation:
+  command: go test ./...
+`)
+
+	pathDir := makeLaunchPathWithCommands(t, "claude")
+	t.Setenv("PATH", pathDir)
+
+	_, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "audit auth",
+		Mode:      goalx.ModeAuto,
+	})
+	if err == nil {
+		t.Fatal("resolveLaunchConfig unexpectedly succeeded")
+	}
+	if !strings.Contains(err.Error(), "roles.develop") || !strings.Contains(err.Error(), "codex") || !strings.Contains(err.Error(), "required command") {
+		t.Fatalf("resolveLaunchConfig error = %v, want missing codex command for auto path", err)
 	}
 }
 
@@ -606,5 +694,71 @@ local_validation:
 	}
 	if resolvedCfg.Config.Parallel != 1 {
 		t.Fatalf("parallel = %d, want 1", resolvedCfg.Config.Parallel)
+	}
+}
+
+func TestResolveLaunchConfigFailsWhenSelectedEngineUnavailable(t *testing.T) {
+	projectRoot := t.TempDir()
+	t.Setenv("PATH", t.TempDir())
+	writeLaunchConfigProjectFile(t, projectRoot, `
+preset: codex
+target:
+  files: ["."]
+local_validation:
+  command: go test ./...
+`)
+
+	_, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeDevelop,
+	})
+	if err == nil {
+		t.Fatal("resolveLaunchConfig unexpectedly succeeded")
+	}
+	if !strings.Contains(err.Error(), "required command") || !strings.Contains(err.Error(), "codex") {
+		t.Fatalf("resolveLaunchConfig error = %v, want missing codex command", err)
+	}
+}
+
+func TestBuildLaunchConfigMatchesResolveLaunchConfig(t *testing.T) {
+	projectRoot := t.TempDir()
+	writeLaunchConfigProjectFile(t, projectRoot, `
+preset: hybrid
+parallel: 2
+target:
+  files: ["."]
+local_validation:
+  command: go test ./...
+`)
+
+	pathDir := makeDetectedPresetPath(t)
+	t.Setenv("PATH", pathDir+":"+os.Getenv("PATH"))
+
+	buildCfg, err := buildLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeAuto,
+	})
+	if err != nil {
+		t.Fatalf("buildLaunchConfig: %v", err)
+	}
+	resolvedCfg, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeAuto,
+	})
+	if err != nil {
+		t.Fatalf("resolveLaunchConfig: %v", err)
+	}
+
+	if buildCfg.Preset != resolvedCfg.Config.Preset {
+		t.Fatalf("preset = %q, want %q", buildCfg.Preset, resolvedCfg.Config.Preset)
+	}
+	if buildCfg.Master.Engine != resolvedCfg.Config.Master.Engine || buildCfg.Master.Model != resolvedCfg.Config.Master.Model {
+		t.Fatalf("master = %s/%s, want %s/%s", buildCfg.Master.Engine, buildCfg.Master.Model, resolvedCfg.Config.Master.Engine, resolvedCfg.Config.Master.Model)
+	}
+	if buildCfg.Roles.Research.Engine != resolvedCfg.Config.Roles.Research.Engine || buildCfg.Roles.Research.Model != resolvedCfg.Config.Roles.Research.Model {
+		t.Fatalf("research = %s/%s, want %s/%s", buildCfg.Roles.Research.Engine, buildCfg.Roles.Research.Model, resolvedCfg.Config.Roles.Research.Engine, resolvedCfg.Config.Roles.Research.Model)
+	}
+	if buildCfg.Roles.Develop.Engine != resolvedCfg.Config.Roles.Develop.Engine || buildCfg.Roles.Develop.Model != resolvedCfg.Config.Roles.Develop.Model {
+		t.Fatalf("develop = %s/%s, want %s/%s", buildCfg.Roles.Develop.Engine, buildCfg.Roles.Develop.Model, resolvedCfg.Config.Roles.Develop.Engine, resolvedCfg.Config.Roles.Develop.Model)
 	}
 }

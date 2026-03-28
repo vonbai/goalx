@@ -14,7 +14,21 @@ Requirements:
 - `tmux`
 - Claude Code or Codex CLI
 
-## 2. Start With A Goal
+## 2. Choose The Entry Path
+
+Recommended for assistant-driven operation:
+
+- sync the skill with `make skill-sync`
+- in Claude Code, ask Claude to use GoalX or the GoalX skill
+- in Codex, tell the assistant to use `$goalx`
+
+Recommended for direct terminal use:
+
+```bash
+goalx run "goal"
+```
+
+## 3. Start With A Goal
 
 Describe the destination, not the implementation checklist.
 
@@ -33,7 +47,7 @@ Bad:
 goalx run "1. profile the API 2. add caching 3. fix tests"
 ```
 
-## 3. Watch The Run
+## 4. Watch The Run
 
 ```bash
 goalx status
@@ -43,7 +57,7 @@ goalx observe
 - `status` is the durable/control view.
 - `observe` is the live transport view plus control summary.
 
-## 4. Redirect When Needed
+## 5. Redirect When Needed
 
 ```bash
 goalx tell "focus on the payment module first"
@@ -52,7 +66,7 @@ goalx tell --urgent "stop: production is down"
 
 Use durable GoalX commands. Do not type instructions directly into tmux as the normal control path.
 
-## 5. Get Results
+## 6. Get Results
 
 ```bash
 goalx verify
@@ -61,7 +75,7 @@ goalx keep
 goalx save
 ```
 
-## 6. Choose Intent Only When It Helps
+## 7. Choose Intent Only When It Helps
 
 ```bash
 goalx run "goal" --intent research
@@ -73,7 +87,14 @@ goalx run "goal" --intent evolve --budget 8h
 - `develop`: code and verification
 - `evolve`: open-ended iterative improvement
 
-## 7. Keep The Mental Model Straight
+## 8. Understand The Worktree Boundary
+
+- run root worktree = the integration boundary for the run
+- session worktree = an isolated worker boundary
+- `goalx keep --run NAME session-N` merges session work into the run root
+- `goalx keep --run NAME` merges the run root back into your source root
+
+## 9. Keep The Mental Model Straight
 
 - GoalX framework = storage, execution, connectivity
 - master = judgment, orchestration, closeout

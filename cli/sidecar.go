@@ -226,88 +226,12 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 	if err != nil {
 		return err
 	}
-	if watcher != nil && watcher.Alive() {
-		controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
-		if err != nil {
-			return err
-		}
-		if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState); err != nil {
-			appendAuditLog(runDir, "transport watcher pre-queue snapshot warning: %v", err)
-		}
-		if err := processUrgentTransportTargets(runDir, runName, tmuxSession, cfg, presence); err != nil {
-			return err
-		}
-		if err := queueUnreadSessionWakeReminders(runDir, tmuxSession, runName, interval); err != nil {
-			return err
-		}
-		if err := queueMasterWakeReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
-			return err
-		}
-		if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudgeDetailed); err != nil {
-			return err
-		}
-		if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState); err != nil {
-			appendAuditLog(runDir, "transport watcher snapshot warning: %v", err)
-		}
-		if err := refreshActivityFacts(runDir, projectRoot, runName); err != nil {
-			return err
-		}
-		if _, err := processTargetAttentionAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
-			return err
-		}
-		if err := RefreshRunMemorySeeds(runDir); err != nil {
-			return err
-		}
-		if err := AppendExtractedMemoryProposals(runDir, time.Now().UTC()); err != nil {
-			return err
-		}
-		if err := PromoteMemoryProposals(); err != nil {
-			return err
-		}
-		if err := RefreshRunGuidance(projectRoot, runName, runDir); err != nil {
-			appendAuditLog(runDir, "guidance refresh warning: %v", err)
-		}
-		return nil
-	}
 	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
 	if err != nil {
 		return err
 	}
-	if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, nil, controlState); err != nil {
+	if err := runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession, cfg, interval, presence, watcher, controlState); err != nil {
 		return err
-	}
-	if err := processUrgentTransportTargets(runDir, runName, tmuxSession, cfg, presence); err != nil {
-		return err
-	}
-	if err := queueUnreadSessionWakeReminders(runDir, tmuxSession, runName, interval); err != nil {
-		return err
-	}
-	if err := queueMasterWakeReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
-		return err
-	}
-	if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudgeDetailed); err != nil {
-		return err
-	}
-	if err := refreshTransportFactsForSidecar(runDir, tmuxSession, cfg.Master.Engine, nil, controlState); err != nil {
-		return err
-	}
-	if err := refreshActivityFacts(runDir, projectRoot, runName); err != nil {
-		return err
-	}
-	if _, err := processTargetAttentionAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
-		return err
-	}
-	if err := RefreshRunMemorySeeds(runDir); err != nil {
-		return err
-	}
-	if err := AppendExtractedMemoryProposals(runDir, time.Now().UTC()); err != nil {
-		return err
-	}
-	if err := PromoteMemoryProposals(); err != nil {
-		return err
-	}
-	if err := RefreshRunGuidance(projectRoot, runName, runDir); err != nil {
-		appendAuditLog(runDir, "guidance refresh warning: %v", err)
 	}
 	return nil
 }
@@ -344,6 +268,56 @@ func refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine string, w
 		return err
 	}
 	return reconcileProviderDialogAlerts(runDir, controlState, facts)
+}
+
+func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string, cfg *goalx.Config, interval time.Duration, presence map[string]TargetPresenceFacts, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
+	if err := refreshSidecarTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "pre-queue"); err != nil {
+		return err
+	}
+	if err := processUrgentTransportTargets(runDir, runName, tmuxSession, cfg, presence); err != nil {
+		return err
+	}
+	if err := queueUnreadSessionWakeReminders(runDir, tmuxSession, runName, interval); err != nil {
+		return err
+	}
+	if err := queueMasterWakeReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
+		return err
+	}
+	if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudgeDetailed); err != nil {
+		return err
+	}
+	if err := refreshSidecarTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "snapshot"); err != nil {
+		return err
+	}
+	if err := refreshActivityFacts(runDir, projectRoot, runName); err != nil {
+		return err
+	}
+	if _, err := processTargetAttentionAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
+		return err
+	}
+	if err := RefreshRunMemorySeeds(runDir); err != nil {
+		return err
+	}
+	if err := AppendExtractedMemoryProposals(runDir, time.Now().UTC()); err != nil {
+		return err
+	}
+	if err := PromoteMemoryProposals(); err != nil {
+		return err
+	}
+	if err := RefreshRunGuidance(projectRoot, runName, runDir); err != nil {
+		appendAuditLog(runDir, "guidance refresh warning: %v", err)
+	}
+	return nil
+}
+
+func refreshSidecarTransportFacts(runDir, tmuxSession, masterEngine string, watcher *TmuxControlWatcher, controlState *ControlRunState, warningPhase string) error {
+	if watcher != nil && watcher.Alive() {
+		if err := refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine, watcher, controlState); err != nil {
+			appendAuditLog(runDir, "transport watcher %s warning: %v", warningPhase, err)
+		}
+		return nil
+	}
+	return refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine, nil, controlState)
 }
 
 func reconcileProviderDialogAlerts(runDir string, controlState *ControlRunState, facts *TransportFacts) error {

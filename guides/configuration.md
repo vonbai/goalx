@@ -53,7 +53,6 @@ local_validation:
 - pinning master or role defaults
 - routing certain slices to different engines
 - setting local validation
-- controlling serve/deploy settings
 
 ## What Config Is Not For
 

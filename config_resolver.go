@@ -21,11 +21,11 @@ func ResolveConfigPreview(layers *ConfigLayers, req ResolveRequest) (*ResolvedCo
 	return resolveConfigWithOptions(layers, req, DetectPresetFromEnvironment, false)
 }
 
-func resolveConfigWithDetector(layers *ConfigLayers, req ResolveRequest, detect func() string) (*ResolvedConfig, error) {
+func resolveConfigWithDetector(layers *ConfigLayers, req ResolveRequest, detect func() (string, error)) (*ResolvedConfig, error) {
 	return resolveConfigWithOptions(layers, req, detect, true)
 }
 
-func resolveConfigWithOptions(layers *ConfigLayers, req ResolveRequest, detect func() string, validate bool) (*ResolvedConfig, error) {
+func resolveConfigWithOptions(layers *ConfigLayers, req ResolveRequest, detect func() (string, error), validate bool) (*ResolvedConfig, error) {
 	if layers == nil {
 		return nil, fmt.Errorf("config layers are required")
 	}
@@ -60,7 +60,14 @@ func resolveConfigWithOptions(layers *ConfigLayers, req ResolveRequest, detect f
 	applyResolveLocalValidationOverride(&cfg, req.LocalValidationOverride)
 
 	if cfg.Preset == "" {
-		cfg.Preset = detect()
+		preset, err := detect()
+		if err != nil {
+			if validate || req.RequireEngineAvailability {
+				return nil, err
+			}
+		} else {
+			cfg.Preset = preset
+		}
 	}
 	if cfg.Preset != "" && !hasPresetSelection(&cfg, cfg.Preset) {
 		return nil, fmt.Errorf("unknown preset %q", cfg.Preset)
@@ -75,6 +82,11 @@ func resolveConfigWithOptions(layers *ConfigLayers, req ResolveRequest, detect f
 
 	if validate {
 		if err := ValidateConfig(&cfg, layers.Engines); err != nil {
+			return nil, err
+		}
+	}
+	if req.RequireEngineAvailability {
+		if err := validateLaunchAvailability(&cfg, layers.Engines); err != nil {
 			return nil, err
 		}
 	}

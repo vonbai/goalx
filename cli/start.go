@@ -59,53 +59,72 @@ func startResolvedLaunch(projectRoot string, opts launchOptions) error {
 	return startWithConfig(projectRoot, &resolved.Config, resolved.Engines, launchRunMetadataPatch(opts), opts.NoSnapshot)
 }
 
+type startRunState struct {
+	projectRoot        string
+	runDir             string
+	tmuxSession        string
+	absProjectRoot     string
+	runWorktree        string
+	runBranch          string
+	tmuxCreated        bool
+	runWorktreeCreated bool
+}
+
+func newStartRunState(projectRoot, runName string) *startRunState {
+	runDir := goalx.RunDir(projectRoot, runName)
+	return &startRunState{
+		projectRoot:    projectRoot,
+		runDir:         runDir,
+		tmuxSession:    goalx.TmuxSessionName(projectRoot, runName),
+		absProjectRoot: mustAbsPath(projectRoot),
+		runWorktree:    RunWorktreePath(runDir),
+		runBranch:      fmt.Sprintf("goalx/%s/root", runName),
+	}
+}
+
+func mustAbsPath(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return abs
+}
+
+func (s *startRunState) cleanup(errp *error) {
+	if errp == nil || *errp == nil {
+		return
+	}
+	if s.tmuxCreated {
+		if killErr := KillSessionIfExists(s.tmuxSession); killErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: cleanup tmux session %s: %v\n", s.tmuxSession, killErr)
+		}
+	}
+	if s.runWorktreeCreated {
+		if rmErr := RemoveWorktree(s.absProjectRoot, s.runWorktree); rmErr != nil && !os.IsNotExist(rmErr) {
+			fmt.Fprintf(os.Stderr, "warning: cleanup run worktree %s: %v\n", s.runWorktree, rmErr)
+		}
+	}
+	if exists, branchErr := branchExists(s.absProjectRoot, s.runBranch); branchErr == nil && exists {
+		if delErr := DeleteBranch(s.absProjectRoot, s.runBranch); delErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: cleanup run branch %s: %v\n", s.runBranch, delErr)
+		}
+	}
+	if rmErr := os.RemoveAll(s.runDir); rmErr != nil && !os.IsNotExist(rmErr) {
+		fmt.Fprintf(os.Stderr, "warning: cleanup run dir %s: %v\n", s.runDir, rmErr)
+	}
+}
+
 func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]goalx.EngineConfig, metaPatch *RunMetadata, noSnapshot bool) (err error) {
-	// 2. Validate before any side effects
 	if err := goalx.ValidateConfig(cfg, engines); err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}
 
-	// 3. Compute paths
-	runDir := goalx.RunDir(projectRoot, cfg.Name)
-	tmuxSess := goalx.TmuxSessionName(projectRoot, cfg.Name)
-	absProjectRoot, _ := filepath.Abs(projectRoot)
-	runWT := RunWorktreePath(runDir)
-	runBranch := fmt.Sprintf("goalx/%s/root", cfg.Name)
-	tmuxCreated := false
-	runWorktreeCreated := false
-	defer func() {
-		if err == nil {
-			return
-		}
-		if tmuxCreated {
-			if killErr := KillSessionIfExists(tmuxSess); killErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: cleanup tmux session %s: %v\n", tmuxSess, killErr)
-			}
-		}
-		if runWorktreeCreated {
-			if rmErr := RemoveWorktree(absProjectRoot, runWT); rmErr != nil && !os.IsNotExist(rmErr) {
-				fmt.Fprintf(os.Stderr, "warning: cleanup run worktree %s: %v\n", runWT, rmErr)
-			}
-		}
-		if exists, branchErr := branchExists(absProjectRoot, runBranch); branchErr == nil && exists {
-			if delErr := DeleteBranch(absProjectRoot, runBranch); delErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: cleanup run branch %s: %v\n", runBranch, delErr)
-			}
-		}
-		if rmErr := os.RemoveAll(runDir); rmErr != nil && !os.IsNotExist(rmErr) {
-			fmt.Fprintf(os.Stderr, "warning: cleanup run dir %s: %v\n", runDir, rmErr)
-		}
-	}()
+	state := newStartRunState(projectRoot, cfg.Name)
+	defer state.cleanup(&err)
 
-	// 4. Check conflicts
-	if _, err := os.Stat(runDir); err == nil {
-		return fmt.Errorf("run directory already exists: %s (use a different name or goalx drop first)", runDir)
+	if err := ensureStartAvailable(state); err != nil {
+		return err
 	}
-	if SessionExists(tmuxSess) {
-		return fmt.Errorf("tmux session already exists: %s (goalx stop first)", tmuxSess)
-	}
-
-	// 4b. Snapshot tracked changes so the run worktree starts from the current source-root state.
 	snapshotCommit := ""
 	if dirty, err := hasDirtyWorktree(projectRoot); err == nil && dirty {
 		if noSnapshot {
@@ -118,191 +137,205 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		}
 	}
 
-	// 5. Create run directory structure
+	if err := bootstrapStartWorkspace(state, cfg, metaPatch); err != nil {
+		return err
+	}
+
+	masterCmd, masterPrompt, meta, checkSec, warning, err := bootstrapStartDurables(projectRoot, state, cfg, engines, metaPatch, snapshotCommit)
+	if err != nil {
+		return err
+	}
+	if warning != "" {
+		fmt.Fprint(os.Stderr, warning)
+	}
+
+	return launchStartRuntime(state, cfg, meta, masterCmd, masterPrompt, checkSec)
+}
+
+func ensureStartAvailable(state *startRunState) error {
+	if _, err := os.Stat(state.runDir); err == nil {
+		return fmt.Errorf("run directory already exists: %s (use a different name or goalx drop first)", state.runDir)
+	}
+	if SessionExists(state.tmuxSession) {
+		return fmt.Errorf("tmux session already exists: %s (goalx stop first)", state.tmuxSession)
+	}
+	return nil
+}
+
+func bootstrapStartWorkspace(state *startRunState, cfg *goalx.Config, metaPatch *RunMetadata) error {
 	dirs := []string{
-		runDir,
-		filepath.Join(runDir, "journals"),
-		ReportsDir(runDir),
-		filepath.Join(runDir, "worktrees"),
-		filepath.Join(projectRoot, ".goalx"),
+		state.runDir,
+		filepath.Join(state.runDir, "journals"),
+		ReportsDir(state.runDir),
+		filepath.Join(state.runDir, "worktrees"),
+		filepath.Join(state.projectRoot, ".goalx"),
 	}
 	for _, d := range dirs {
-		if err := os.MkdirAll(d, 0755); err != nil {
+		if err := os.MkdirAll(d, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", d, err)
 		}
 	}
-	if err := EnsureProjectGoalxIgnored(projectRoot); err != nil {
+	if err := EnsureProjectGoalxIgnored(state.projectRoot); err != nil {
 		return fmt.Errorf("bootstrap .goalx ignore: %w", err)
 	}
-
-	// 8. Persist immutable run spec
-	if err := SaveRunSpec(runDir, cfg); err != nil {
+	if err := SaveRunSpec(state.runDir, cfg); err != nil {
 		return fmt.Errorf("write run spec: %w", err)
 	}
-	// If this run continues from a previous run (--from), fork from its worktree branch
-	// instead of HEAD. This inherits the source run's code changes.
-	var sourceBaseBranch string
+
+	sourceBaseBranch := ""
 	if metaPatch != nil && metaPatch.SourceRun != "" {
 		candidate := fmt.Sprintf("goalx/%s/root", goalx.Slugify(metaPatch.SourceRun))
-		if ok, _ := branchExists(absProjectRoot, candidate); ok {
+		if ok, _ := branchExists(state.absProjectRoot, candidate); ok {
 			sourceBaseBranch = candidate
 			fmt.Fprintf(os.Stderr, "✓ Forking from source run worktree: %s\n", candidate)
 		}
 	}
-	if err := CreateWorktree(absProjectRoot, runWT, runBranch, sourceBaseBranch); err != nil {
+	if err := CreateWorktree(state.absProjectRoot, state.runWorktree, state.runBranch, sourceBaseBranch); err != nil {
 		return fmt.Errorf("create run worktree: %w", err)
 	}
-	runWorktreeCreated = true
-	// Copy gitignored files from source run worktree if forking, otherwise from sourceRoot
-	copySource := absProjectRoot
-	if sourceBaseBranch != "" {
-		// Source run's worktree might still exist — use it for gitignored files
-		if metaPatch != nil && metaPatch.SourceRun != "" {
-			srcRunDir := goalx.RunDir(projectRoot, goalx.Slugify(metaPatch.SourceRun))
-			srcWT := RunWorktreePath(srcRunDir)
-			if info, statErr := os.Stat(srcWT); statErr == nil && info.IsDir() {
-				copySource = srcWT
-			}
+	state.runWorktreeCreated = true
+
+	copySource := state.absProjectRoot
+	if sourceBaseBranch != "" && metaPatch != nil && metaPatch.SourceRun != "" {
+		srcRunDir := goalx.RunDir(state.projectRoot, goalx.Slugify(metaPatch.SourceRun))
+		srcWT := RunWorktreePath(srcRunDir)
+		if info, statErr := os.Stat(srcWT); statErr == nil && info.IsDir() {
+			copySource = srcWT
 		}
 	}
-	if err := CopyGitignoredFiles(copySource, runWT); err != nil {
+	if err := CopyGitignoredFiles(copySource, state.runWorktree); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: copy gitignored files: %v\n", err)
 	}
+	return nil
+}
 
-	// 9. Resolve master engine command
+func bootstrapStartDurables(projectRoot string, state *startRunState, cfg *goalx.Config, engines map[string]goalx.EngineConfig, metaPatch *RunMetadata, snapshotCommit string) (string, string, *RunMetadata, int, string, error) {
 	masterSpec, err := goalx.ResolveLaunchSpec(engines, goalx.LaunchRequest{
 		Engine: cfg.Master.Engine,
 		Model:  cfg.Master.Model,
 		Effort: cfg.Master.Effort,
 	})
 	if err != nil {
-		return fmt.Errorf("master engine: %w", err)
+		return "", "", nil, 0, "", fmt.Errorf("master engine: %w", err)
 	}
 	masterCmd := masterSpec.Command
-	masterProtocolPath := filepath.Join(runDir, "master.md")
+	masterProtocolPath := filepath.Join(state.runDir, "master.md")
 	masterPrompt := goalx.ResolvePrompt(engines, cfg.Master.Engine, masterProtocolPath)
 
-	if err := EnsureEngineTrusted(cfg.Master.Engine, runWT); err != nil {
-		return fmt.Errorf("trust bootstrap master: %w", err)
+	if err := EnsureEngineTrusted(cfg.Master.Engine, state.runWorktree); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("trust bootstrap master: %w", err)
 	}
 
-	// Initialize durable goal boundary and immutable run identity before rendering protocols.
-	goalState, err := EnsureGoalState(runDir)
+	goalState, err := EnsureGoalState(state.runDir)
 	if err != nil {
-		return fmt.Errorf("init goal state: %w", err)
+		return "", "", nil, 0, "", fmt.Errorf("init goal state: %w", err)
 	}
-	if err := EnsureGoalLog(runDir); err != nil {
-		return fmt.Errorf("init goal log: %w", err)
+	if err := EnsureGoalLog(state.runDir); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("init goal log: %w", err)
 	}
-	if _, err := EnsureAcceptanceState(runDir, cfg, goalState.Version); err != nil {
-		return fmt.Errorf("init acceptance state: %w", err)
+	if _, err := EnsureAcceptanceState(state.runDir, cfg, goalState.Version); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("init acceptance state: %w", err)
 	}
-	meta, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective)
+	meta, err := EnsureRunMetadata(state.runDir, projectRoot, cfg.Objective)
 	if err != nil {
-		return fmt.Errorf("init run metadata: %w", err)
+		return "", "", nil, 0, "", fmt.Errorf("init run metadata: %w", err)
 	}
 	applyRunMetadataPatch(meta, metaPatch)
 	if snapshotCommit != "" {
 		meta.SnapshotCommit = snapshotCommit
 	}
-	charter, err := NewRunCharter(runDir, cfg.Name, cfg.Objective, meta)
+	charter, err := NewRunCharter(state.runDir, cfg.Name, cfg.Objective, meta)
 	if err != nil {
-		return fmt.Errorf("init run charter: %w", err)
+		return "", "", nil, 0, "", fmt.Errorf("init run charter: %w", err)
 	}
-	if err := SaveRunCharter(RunCharterPath(runDir), charter); err != nil {
-		return fmt.Errorf("write run charter: %w", err)
+	if err := SaveRunCharter(RunCharterPath(state.runDir), charter); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("write run charter: %w", err)
 	}
 	digest, err := hashRunCharter(charter)
 	if err != nil {
-		return fmt.Errorf("hash run charter: %w", err)
+		return "", "", nil, 0, "", fmt.Errorf("hash run charter: %w", err)
 	}
 	meta.CharterID = charter.CharterID
 	meta.CharterHash = digest
-	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
-		return fmt.Errorf("write run metadata: %w", err)
+	if err := SaveRunMetadata(RunMetadataPath(state.runDir), meta); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("write run metadata: %w", err)
 	}
-	if err := ensureEvolutionSurface(runDir, meta); err != nil {
-		return fmt.Errorf("init evolution surface: %w", err)
+	if err := ensureEvolutionSurface(state.runDir, meta); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("init evolution surface: %w", err)
 	}
-	if _, err := EnsureArtifactsManifest(runDir); err != nil {
-		return fmt.Errorf("init artifacts manifest: %w", err)
+	if _, err := EnsureArtifactsManifest(state.runDir); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("init artifacts manifest: %w", err)
 	}
-	if _, err := EnsureCoordinationState(runDir, cfg.Objective); err != nil {
-		return fmt.Errorf("init coordination state: %w", err)
+	if _, err := EnsureCoordinationState(state.runDir, cfg.Objective); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("init coordination state: %w", err)
 	}
-	if err := EnsureMasterControl(runDir); err != nil {
-		return fmt.Errorf("init master control: %w", err)
+	if err := EnsureMasterControl(state.runDir); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("init master control: %w", err)
 	}
-	if err := GenerateAdapter(cfg.Master.Engine, runWT, MasterInboxPath(runDir), MasterCursorPath(runDir)); err != nil {
-		return fmt.Errorf("generate master adapter: %w", err)
+	if err := GenerateAdapter(cfg.Master.Engine, state.runWorktree, MasterInboxPath(state.runDir), MasterCursorPath(state.runDir)); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("generate master adapter: %w", err)
 	}
-	fence, err := NewIdentityFence(runDir, meta)
+	fence, err := NewIdentityFence(state.runDir, meta)
 	if err != nil {
-		return fmt.Errorf("init identity fence: %w", err)
+		return "", "", nil, 0, "", fmt.Errorf("init identity fence: %w", err)
 	}
-	if err := SaveIdentityFence(IdentityFencePath(runDir), fence); err != nil {
-		return fmt.Errorf("write identity fence: %w", err)
+	if err := SaveIdentityFence(IdentityFencePath(state.runDir), fence); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("write identity fence: %w", err)
 	}
 
-	// 11. Render protocols
-	masterData, err := buildMasterProtocolData(projectRoot, runDir, tmuxSess, cfg, engines, masterCmd, meta)
+	masterData, err := buildMasterProtocolData(projectRoot, state.runDir, state.tmuxSession, cfg, engines, masterCmd, meta)
 	if err != nil {
-		return fmt.Errorf("build master protocol data: %w", err)
+		return "", "", nil, 0, "", fmt.Errorf("build master protocol data: %w", err)
 	}
-	if err := RenderMasterProtocol(masterData, runDir); err != nil {
-		return fmt.Errorf("render master protocol: %w", err)
+	if err := RenderMasterProtocol(masterData, state.runDir); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("render master protocol: %w", err)
 	}
-
-	// 12. Initialize master journal
-	if err := os.WriteFile(filepath.Join(runDir, "master.jsonl"), nil, 0644); err != nil {
-		return fmt.Errorf("init master journal: %w", err)
+	if err := os.WriteFile(filepath.Join(state.runDir, "master.jsonl"), nil, 0o644); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("init master journal: %w", err)
 	}
-	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
-		return fmt.Errorf("init runtime state: %w", err)
+	if _, err := EnsureRuntimeState(state.runDir, cfg); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("init runtime state: %w", err)
 	}
-	if _, err := EnsureSessionsRuntimeState(runDir); err != nil {
-		return fmt.Errorf("init session runtime state: %w", err)
+	if _, err := EnsureSessionsRuntimeState(state.runDir); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("init session runtime state: %w", err)
 	}
 	if err := RegisterActiveRun(projectRoot, cfg); err != nil {
-		return fmt.Errorf("register active run: %w", err)
+		return "", "", nil, 0, "", fmt.Errorf("register active run: %w", err)
 	}
 	if err := setFocusedRun(projectRoot, cfg.Name); err != nil {
-		return fmt.Errorf("focus active run: %w", err)
+		return "", "", nil, 0, "", fmt.Errorf("focus active run: %w", err)
 	}
 
 	checkSec, warning := normalizeSidecarInterval(cfg.Master.CheckInterval)
-	if warning != "" {
-		fmt.Fprint(os.Stderr, warning)
-	}
+	return masterCmd, masterPrompt, meta, checkSec, warning, nil
+}
 
-	// Launch master
+func launchStartRuntime(state *startRunState, cfg *goalx.Config, meta *RunMetadata, masterCmd, masterPrompt string, checkSec int) error {
 	goalxBin, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
 	}
 	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
-	masterLaunch := buildMasterLaunchCommand(goalxBin, cfg.Name, runDir, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
-	if err := NewSessionWithCommand(tmuxSess, "master", runWT, masterLaunch); err != nil {
+	masterLaunch := buildMasterLaunchCommand(goalxBin, cfg.Name, state.runDir, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
+	if err := NewSessionWithCommand(state.tmuxSession, "master", state.runWorktree, masterLaunch); err != nil {
 		return fmt.Errorf("tmux new-session: %w", err)
 	}
-	tmuxCreated = true
-	if err := PersistPanePIDsFromTmux(runDir, "master", tmuxSess+":master"); err != nil {
+	state.tmuxCreated = true
+	if err := PersistPanePIDsFromTmux(state.runDir, "master", state.tmuxSession+":master"); err != nil {
 		return fmt.Errorf("persist master pane pid: %w", err)
 	}
 
-	// Launch the run-scoped sidecar for lease renewal and supervision.
-	if err := launchRunSidecar(projectRoot, cfg.Name, time.Duration(checkSec)*time.Second); err != nil {
+	if err := launchRunSidecar(state.projectRoot, cfg.Name, time.Duration(checkSec)*time.Second); err != nil {
 		return fmt.Errorf("launch sidecar: %w", err)
 	}
-	if err := RefreshRunGuidance(projectRoot, cfg.Name, runDir); err != nil {
+	if err := RefreshRunGuidance(state.projectRoot, cfg.Name, state.runDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 
-	// 14. Print status
 	fmt.Printf("✓ Run '%s' started\n", cfg.Name)
-	fmt.Printf("  tmux session: %s\n", tmuxSess)
+	fmt.Printf("  tmux session: %s\n", state.tmuxSession)
 	fmt.Printf("  master: %s/%s\n", cfg.Master.Engine, cfg.Master.Model)
-	fmt.Printf("  run dir: %s\n", runDir)
+	fmt.Printf("  run dir: %s\n", state.runDir)
 	fmt.Printf("  attach: goalx attach [--run %s] [master|session-N]\n", cfg.Name)
 	return nil
 }

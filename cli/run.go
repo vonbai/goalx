@@ -19,7 +19,7 @@ const (
 
 var (
 	runEntrypoint           = Run
-	runAutoWithOptions      = autoWithOptions
+	runAutoWithOptions      = startResolvedLaunch
 	runLaunchWithOptions    = startResolvedLaunch
 	runDebateWithNextConfig = runDebate
 	runImplementWithNextCfg = runImplement
@@ -134,4 +134,9 @@ func prependRunIntent(args []string, intent string) []string {
 	next = append(next, "--intent", intent)
 	next = append(next, args...)
 	return next
+}
+
+func printAutoStarted() {
+	fmt.Println("Run started.")
+	fmt.Println("Use `goalx status`, `goalx observe`, or `goalx attach` to monitor progress.")
 }

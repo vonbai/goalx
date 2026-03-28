@@ -422,7 +422,7 @@ func Replace(projectRoot string, args []string) error {
 		}
 	}
 
-	if err := Park(projectRoot, append(buildServeRunArgs(rc.Name), oldSessionName)); err != nil {
+	if err := Park(projectRoot, []string{"--run", rc.Name, oldSessionName}); err != nil {
 		return err
 	}
 

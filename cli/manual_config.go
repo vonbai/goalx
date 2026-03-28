@@ -34,7 +34,7 @@ func LoadManualDraftConfig(projectRoot, draftPath string) (*goalx.Config, map[st
 	if err != nil {
 		return nil, nil, fmt.Errorf("manual draft config: %w", err)
 	}
-	resolved, err := goalx.ResolveConfig(layers, goalx.ResolveRequest{ManualDraft: &draft})
+	resolved, err := goalx.ResolveConfig(layers, goalx.ResolveRequest{ManualDraft: &draft, RequireEngineAvailability: true})
 	if err != nil {
 		return nil, nil, err
 	}

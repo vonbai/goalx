@@ -45,7 +45,6 @@ Usage:
   goalx ack-session [--run RUN] <session>      Acknowledge latest processed session inbox entry
   goalx wait    [--run RUN] [target] [--timeout DURATION] Block on unread inbox entries or timeout
   goalx observe [RUN]                  Capture live output from all tmux windows
-  goalx serve                         Start the GoalX HTTP control server
   goalx next                           Show next pipeline step
 
 Notes:
@@ -175,8 +174,6 @@ func runCommand(cwd, cmd string, args []string) error {
 		return mainWait(cwd, args)
 	case "observe":
 		return cli.Observe(cwd, args)
-	case "serve":
-		return cli.Serve(cwd, args)
 	case "next":
 		return cli.Next(cwd, args)
 	case "claude-hook":
