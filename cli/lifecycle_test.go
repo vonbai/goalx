@@ -771,7 +771,7 @@ esac
 	if err != nil {
 		t.Fatalf("LoadRunSpec: %v", err)
 	}
-	cfg.Routing = goalx.BuiltinDefaults.Routing
+	cfg.Roles.Research = goalx.SessionConfig{Engine: "claude-code", Model: "opus", Effort: goalx.EffortHigh}
 	if err := SaveRunSpec(runDir, cfg); err != nil {
 		t.Fatalf("SaveRunSpec: %v", err)
 	}
@@ -783,7 +783,7 @@ esac
 		t.Fatalf("SaveCoordinationState: %v", err)
 	}
 
-	err = Replace(repo, []string{"--run", runName, "session-1", "--route-profile", "research_deep"})
+	err = Replace(repo, []string{"--run", runName, "session-1", "--mode", "research", "--effort", "high"})
 	if err == nil || !strings.Contains(err.Error(), "create tmux window") {
 		t.Fatalf("Replace error = %v, want replacement launch failure", err)
 	}

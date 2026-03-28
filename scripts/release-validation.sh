@@ -195,6 +195,7 @@ cat > "${PROJECT_DIR}/.goalx/config.yaml" <<'EOF'
 master:
   engine: codex
   model: gpt-5.4
+  check_interval: 2s
 roles:
   research:
     engine: codex
@@ -208,8 +209,6 @@ local_validation:
   command: "__GO_BIN__ test ./..."
 acceptance:
   command: "__GO_BIN__ test ./..."
-master:
-  check_interval: 2s
 memory:
   llm_extract: off
 EOF
