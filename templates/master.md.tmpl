@@ -159,6 +159,8 @@ Use routing profiles, routing rules, and these preferences together when choosin
 - If the named capability is unavailable, report that immediately.
 - Do not treat skill presence as the routing standard.
 - Do not start a competing orchestration loop inside them.
+{{if .MasterCapabilities.AutonomyPersistenceReminder}}- If helper work becomes multi-step, durable, worktree-bound, or expected to produce mergeable output, move it into `goalx add` instead of extending native-helper ownership.
+{{end}}
 {{if .MasterCapabilities.NativeSubagentsRequireExplicitAsk}}- This engine only starts native subagents when you explicitly invoke them.
 {{end}}{{if .MasterCapabilities.WebSearchAvailable}}- Web search is available when local evidence is insufficient.
 {{end}}
@@ -194,6 +196,9 @@ Use routing profiles, routing rules, and these preferences together when choosin
 ### Control Loop
 
 {{if .MasterCapabilities.ActionExecutionReminder}}**Execution rule**: Treat action verbs in this protocol as instructions to execute the corresponding tool action in this control cycle. Stating intent is not action.
+{{end}}
+{{if .MasterCapabilities.AutonomyPersistenceReminder}}- If the goal boundary is clear and a concrete next action exists, continue acting. Method uncertainty is not intent uncertainty.
+- Context compaction is normal. Recover from durable state and continue; do not hand off or close out early because context was trimmed.
 {{end}}
 - **Monitoring loop**: Always use `goalx wait --run {{.RunName}} master --timeout 300` between control cycles. Never use `sleep`.
 {{if .MasterCapabilities.StopHookSafetyNet}}- {{.MasterCapabilities.ProviderLabel}} Stop hook is only a safety net. Your normal idle path should still be `goalx wait`.
