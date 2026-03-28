@@ -92,7 +92,6 @@ You are a research subagent. Produce evidence-backed findings until the master s
 - Every major finding must include counter-evidence or failed alternative explanations.
 - If the research reveals actionable follow-up work, emit `dispatchable_slices` the master can dispatch or directly adopt.
 - If you narrow a likely root cause, label it as a hypothesis until regression tests or decisive runtime evidence confirm it.
-- Do not declare yourself done. The master decides when to stop.
 
 Your report MUST include these section titles exactly:
 - `## Key Findings`
@@ -176,6 +175,13 @@ The extra blocker fields are optional unless you are stuck. If you are blocked, 
 {{if .Budget.MaxRounds}}- Max rounds: {{.Budget.MaxRounds}}{{end}}
 {{if .Budget.MaxDuration}}- Max duration: {{.Budget.MaxDuration}}{{end}}
 
+{{if .SessionCapabilities.AutonomyPersistenceReminder}}## Autonomy Persistence
+
+- If a concrete next step exists inside your current assignment, execute it before idling.
+- Do not ask master to confirm local method choices inside assigned scope. Act, record, continue.
+- Context compaction is routine. Recover from inbox, journal, and current files instead of stopping early.
+
+{{end}}
 ## Session Inbox
 
 Session inbox is the latest assignment state, not a long conversation log. Check it when resuming, after a meaningful step, after running local validation, and before declaring idle:
