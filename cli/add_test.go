@@ -998,19 +998,10 @@ roles:
   research:
     engine: claude-code
     model: opus
+    effort: high
   develop:
     engine: codex
     model: gpt-5.4
-routing:
-  profiles:
-    research_deep:
-      engine: claude-code
-      model: opus
-      effort: high
-  rules:
-    - role: research
-      efforts: [high, max]
-      profile: research_deep
 parallel: 1
 sessions:
   - hint: first
@@ -1039,12 +1030,6 @@ local_validation:
 	if identity.Mode != string(goalx.ModeResearch) {
 		t.Fatalf("mode = %q, want %q", identity.Mode, goalx.ModeResearch)
 	}
-	if identity.RouteRole != "research" {
-		t.Fatalf("route_role = %q, want research", identity.RouteRole)
-	}
-	if identity.RouteProfile != "research_deep" {
-		t.Fatalf("route_profile = %q, want research_deep", identity.RouteProfile)
-	}
 	if identity.Engine != "claude-code" || identity.Model != "opus" {
 		t.Fatalf("engine/model = %q/%q, want claude-code/opus", identity.Engine, identity.Model)
 	}
@@ -1056,7 +1041,7 @@ local_validation:
 	}
 }
 
-func TestAddExplicitEngineModelBypassesRouting(t *testing.T) {
+func TestAddExplicitEngineModelBypassesRoleDefaults(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1077,16 +1062,6 @@ roles:
   research:
     engine: claude-code
     model: opus
-routing:
-  profiles:
-    research_deep:
-      engine: claude-code
-      model: opus
-      effort: high
-  rules:
-    - role: research
-      efforts: [high, max]
-      profile: research_deep
 parallel: 0
 target:
   files: ["src/"]
@@ -1111,12 +1086,6 @@ local_validation:
 	}
 	if identity.Engine != "codex" || identity.Model != "gpt-5.4" {
 		t.Fatalf("engine/model = %q/%q, want codex/gpt-5.4", identity.Engine, identity.Model)
-	}
-	if identity.RouteProfile != "" {
-		t.Fatalf("route_profile = %q, want empty for explicit override", identity.RouteProfile)
-	}
-	if identity.RouteRole != "" {
-		t.Fatalf("route_role = %q, want empty for explicit override", identity.RouteRole)
 	}
 	if identity.RequestedEffort != goalx.EffortHigh {
 		t.Fatalf("requested_effort = %q, want high", identity.RequestedEffort)
@@ -1164,47 +1133,17 @@ local_validation:
 	}
 }
 
-func TestAddRejectsUnknownRouteProfile(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+func TestAddRejectsRemovedRouteFlags(t *testing.T) {
+	t.Parallel()
 
-	repo := initGitRepo(t)
-	writeAndCommit(t, repo, "base.txt", "base", "base commit")
-
-	fakeBin := t.TempDir()
-	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
+	tests := [][]string{
+		{"second direction", "--mode", "develop", "--route-role", "develop"},
+		{"second direction", "--mode", "develop", "--route-profile", "missing-profile"},
 	}
-	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	snapshot := []byte(`name: add-run
-mode: develop
-objective: implement audit fixes
-roles:
-  develop:
-    engine: codex
-    model: gpt-5.4
-routing:
-  profiles:
-    build_fast:
-      engine: codex
-      model: gpt-5.4-mini
-      effort: minimal
-parallel: 0
-target:
-  files: ["src/"]
-local_validation:
-  command: "go test ./..."
-`)
-	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
-
-	err := Add(repo, []string{"second direction", "--mode", "develop", "--route-profile", "missing-profile", "--run", runName})
-	if err == nil || !strings.Contains(err.Error(), `unknown route profile "missing-profile"`) {
-		t.Fatalf("Add error = %v, want unknown route profile", err)
-	}
-	if _, statErr := os.Stat(SessionIdentityPath(runDir, "session-1")); !os.IsNotExist(statErr) {
-		t.Fatalf("unexpected session identity created, stat err = %v", statErr)
+	for _, args := range tests {
+		if err := Add(t.TempDir(), args); err == nil {
+			t.Fatalf("Add(%#v) unexpectedly succeeded", args)
+		}
 	}
 }
 
@@ -1418,7 +1357,6 @@ local_validation:
 		effective.Effort,
 		"",
 		"",
-		"",
 		*effective.Target,
 	)
 	if err != nil {
@@ -1623,7 +1561,6 @@ func writeAddRunFixture(t *testing.T, repo, snapshot string) (string, string) {
 			effective.Engine,
 			effective.Model,
 			effective.Effort,
-			"",
 			"",
 			"",
 			*effective.Target,

@@ -240,7 +240,7 @@ func TestRunSidecarTickWritesTargetScopedRecoveryForUrgentSession(t *testing.T) 
 	if err := EnsureSessionControl(runDir, "session-1"); err != nil {
 		t.Fatalf("EnsureSessionControl: %v", err)
 	}
-	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "high", "", "", goalx.TargetConfig{})
+	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "high", "", goalx.TargetConfig{})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}

@@ -368,7 +368,7 @@ func writeReadOnlyRunFixture(t *testing.T, repo string) (string, string, []byte,
 	if err := EnsureControlState(runDir); err != nil {
 		t.Fatalf("EnsureControlState: %v", err)
 	}
-	identity, err := NewSessionIdentity(runDir, "session-1", sessionRoleKind(goalx.ModeDevelop), goalx.ModeDevelop, "codex", "", "", "", "", "", cfg.Target)
+	identity, err := NewSessionIdentity(runDir, "session-1", sessionRoleKind(goalx.ModeDevelop), goalx.ModeDevelop, "codex", "", "", "", "", cfg.Target)
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}

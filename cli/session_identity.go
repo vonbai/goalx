@@ -25,8 +25,6 @@ type SessionIdentity struct {
 	LocalValidationCommand string                    `json:"local_validation_command,omitempty"`
 	RequestedEffort        goalx.EffortLevel         `json:"requested_effort,omitempty"`
 	EffectiveEffort        string                    `json:"effective_effort,omitempty"`
-	RouteRole              string                    `json:"route_role,omitempty"`
-	RouteProfile           string                    `json:"route_profile,omitempty"`
 	Dimensions             []goalx.ResolvedDimension `json:"dimensions,omitempty"`
 	ReplacesSession        string                    `json:"replaces_session,omitempty"`
 	QuotaState             string                    `json:"quota_state,omitempty"`
@@ -57,7 +55,7 @@ func RequireSessionIdentity(runDir, sessionName string) (*SessionIdentity, error
 	return identity, nil
 }
 
-func NewSessionIdentity(runDir, sessionName, roleKind string, mode goalx.Mode, engine, model string, requestedEffort goalx.EffortLevel, effectiveEffort, routeProfile, quotaState string, target goalx.TargetConfig) (*SessionIdentity, error) {
+func NewSessionIdentity(runDir, sessionName, roleKind string, mode goalx.Mode, engine, model string, requestedEffort goalx.EffortLevel, effectiveEffort, quotaState string, target goalx.TargetConfig) (*SessionIdentity, error) {
 	charter, err := RequireRunCharter(runDir)
 	if err != nil {
 		return nil, err
@@ -80,7 +78,6 @@ func NewSessionIdentity(runDir, sessionName, roleKind string, mode goalx.Mode, e
 		ExperimentID:    newExperimentID(),
 		RequestedEffort: requestedEffort,
 		EffectiveEffort: effectiveEffort,
-		RouteProfile:    routeProfile,
 		QuotaState:      quotaState,
 		Target:          target,
 		OriginCharterID: charter.CharterID,

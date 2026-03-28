@@ -69,7 +69,7 @@ func TestRenderSubagentProtocolIncludesResumeInstructions(t *testing.T) {
 		"Provider-native skills, plugins, and MCP tools are allowed when they materially help.",
 		"If the user or master explicitly names a provider-native capability and it is visible, use it before the default flow.",
 		"If the named capability is unavailable, report that immediately.",
-		"Do not treat skill presence as the routing standard.",
+		"Do not treat skill presence as the selection standard.",
 		"Do NOT invoke orchestration/meta slash commands or skills",
 	} {
 		if !strings.Contains(text, want) {
@@ -283,7 +283,7 @@ func TestRenderSubagentProtocolIncludesEngineSpecificGuidance(t *testing.T) {
 		"Provider-native skills, plugins, and MCP tools are allowed when they materially help.",
 		"If the user or master explicitly names a provider-native capability and it is visible, use it before the default flow.",
 		"If the named capability is unavailable, report that immediately.",
-		"Do not treat skill presence as the routing standard.",
+		"Do not treat skill presence as the selection standard.",
 		"Web search is available when local evidence is insufficient.",
 	} {
 		if !strings.Contains(text, want) {
@@ -331,7 +331,7 @@ func TestRenderSubagentProtocolIncludesCodexGuidance(t *testing.T) {
 		"Provider-native skills, plugins, and MCP tools are allowed when they materially help.",
 		"If the user or master explicitly names a provider-native capability and it is visible, use it before the default flow.",
 		"If the named capability is unavailable, report that immediately.",
-		"Do not treat skill presence as the routing standard.",
+		"Do not treat skill presence as the selection standard.",
 		"re-check `/tmp/control/inbox/session-1.jsonl` before idling",
 	} {
 		if !strings.Contains(text, want) {
@@ -1174,7 +1174,6 @@ func TestRenderMasterProtocolOmitsLegacyPlannedSessionsAndPresetDisplays(t *test
 		"Objective": "ship it",
 		"RunName":   "demo",
 		"Mode":      goalx.ModeDevelop,
-		"Preset":    "claude",
 		"Engines":   goalx.BuiltinEngines,
 		"Master":    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		"PlannedSessions": []map[string]string{
@@ -1198,7 +1197,6 @@ func TestRenderMasterProtocolOmitsLegacyPlannedSessionsAndPresetDisplays(t *test
 	text := string(out)
 	for _, unwanted := range []string{
 		"## Session Plan",
-		"- Preset: claude",
 		"session-1: codex/codex (P0 fixes)",
 	} {
 		if strings.Contains(text, unwanted) {
@@ -1381,7 +1379,7 @@ func TestRenderMasterProtocolBindsBlockedOwnersToImmediateIntervention(t *testin
 	}
 }
 
-func TestRenderMasterProtocolIncludesReportsRoutingAndResearchCompletionGuidance(t *testing.T) {
+func TestRenderMasterProtocolIncludesReportsAndResearchCompletionGuidance(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
 		Objective:      "audit auth",
@@ -1394,14 +1392,6 @@ func TestRenderMasterProtocolIncludesReportsRoutingAndResearchCompletionGuidance
 		GoalPath:       "/tmp/goal.json",
 		ReportsDir:     "/tmp/run/reports",
 		DimensionsPath: "/tmp/control/dimensions.json",
-		Routing: goalx.RoutingTableConfig{
-			Profiles: map[string]goalx.ExecutionProfile{
-				"deep-research": {Engine: "codex", Model: "gpt-5.4", Effort: goalx.EffortHigh},
-			},
-			Rules: []goalx.RoutingRule{
-				{Role: "research", AnyDimensions: []string{"depth"}, Profile: "deep-research"},
-			},
-		},
 		DimensionsCatalog: map[string]string{
 			"depth":    "Depth focus",
 			"evidence": "Evidence focus",
@@ -1467,14 +1457,6 @@ func TestRenderMasterProtocolOmitsDuplicatedColdTablesButKeepsDispatchGuidance(t
 			Research: goalx.PreferencePolicy{Guidance: "multi-perspective"},
 			Develop:  goalx.PreferencePolicy{Guidance: "speed"},
 		},
-		Routing: goalx.RoutingTableConfig{
-			Profiles: map[string]goalx.ExecutionProfile{
-				"deep-research": {Engine: "codex", Model: "gpt-5.4", Effort: goalx.EffortHigh},
-			},
-			Rules: []goalx.RoutingRule{
-				{Role: "research", AnyDimensions: []string{"depth"}, Profile: "deep-research"},
-			},
-		},
 		DimensionsPath: "/tmp/control/dimensions.json",
 		DimensionsCatalog: map[string]string{
 			"depth":    "Depth focus",
@@ -1496,8 +1478,8 @@ func TestRenderMasterProtocolOmitsDuplicatedColdTablesButKeepsDispatchGuidance(t
 		"### Preferences",
 		"| Research | multi-perspective |",
 		"| Develop | speed |",
-		"Prefer route-first session launches.",
-		"Explicit `--engine/--model` bypasses routing.",
+		"Prefer policy-based session launches.",
+		"Explicit `--engine/--model` is an override.",
 		"goalx dimension [--run NAME] <session-N|all> --set depth,adversarial",
 		"goalx dimension [--run NAME] <session-N> --add creative",
 		"goalx dimension [--run NAME] <session-N> --remove depth",
@@ -1624,14 +1606,14 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		"Provider-native skills, plugins, and MCP tools are allowed when they materially help.",
 		"If the user or master explicitly names a provider-native capability and it is visible, use it before the default flow.",
 		"If the named capability is unavailable, report that immediately.",
-		"Do not treat skill presence as the routing standard.",
+		"Do not treat skill presence as the selection standard.",
 		"Treat narrowed causes as hypotheses until a failing regression test or decisive evidence confirms them.",
 		"If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated control cycles.",
 		"Keep detailed hypotheses, traces, and path comparisons in journals, not the coordination digest.",
 		"Avoid sync-only liveness narration.",
 		"Sessions without dedicated worktrees share the run worktree.",
 		"Use `goalx add --worktree` for parallel isolation.",
-		"Explicit `--engine/--model` bypasses routing.",
+		"Explicit `--engine/--model` bypasses the current selection policy.",
 		"Run `git status --short` before you say \"ready for commit\" or \"ready for closeout\".",
 		"closeout is not complete until `/tmp/summary.md` and `/tmp/proof/completion.json` exist",
 	} {
@@ -1984,7 +1966,7 @@ func TestRenderMasterProtocolTightensClaudeNativeSubagentUsage(t *testing.T) {
 		"Provider-native skills, plugins, and MCP tools are allowed when they materially help.",
 		"If the user or master explicitly names a provider-native capability and it is visible, use it before the default flow.",
 		"If the named capability is unavailable, report that immediately.",
-		"Do not treat skill presence as the routing standard.",
+		"Do not treat skill presence as the selection standard.",
 		"Claude Code native subagents are available in this session.",
 		"Native subagents are transient helpers inside the current master session.",
 		"Do not give them durable ownership.",
@@ -2062,7 +2044,7 @@ func TestRenderMasterProtocolMakesCodexNativeSubagentExplicitAskBoundaryVisible(
 		"Provider-native skills, plugins, and MCP tools are allowed when they materially help.",
 		"If the user or master explicitly names a provider-native capability and it is visible, use it before the default flow.",
 		"If the named capability is unavailable, report that immediately.",
-		"Do not treat skill presence as the routing standard.",
+		"Do not treat skill presence as the selection standard.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
@@ -2163,6 +2145,42 @@ func TestRenderMasterProtocolReferencesGoalxContextAndAfford(t *testing.T) {
 		"`/tmp/control/context-index.json`",
 		"`/tmp/control/activity.json`",
 		"`/tmp/control/affordances.md`",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestRenderMasterProtocolIncludesSelectionFacts(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:             "ship it",
+		RunName:               "demo",
+		Mode:                  goalx.ModeDevelop,
+		Master:                goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		Roles:                 goalx.RoleDefaultsConfig{Research: goalx.SessionConfig{Engine: "claude-code", Model: "opus"}, Develop: goalx.SessionConfig{Engine: "codex", Model: "gpt-5.4-mini"}},
+		SelectionSnapshotPath: "/tmp/run/selection-policy.json",
+		SelectionPolicy:       goalx.EffectiveSelectionPolicy{MasterCandidates: []string{"codex/gpt-5.4", "claude-code/opus"}, ResearchCandidates: []string{"claude-code/opus"}, DevelopCandidates: []string{"codex/gpt-5.4-mini"}, DisabledTargets: []string{"claude-code/sonnet"}},
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"Selection snapshot: `/tmp/run/selection-policy.json`",
+		"Bootstrap master target: `codex/gpt-5.4`",
+		"Research default target: `claude-code/opus`",
+		"Develop default target: `codex/gpt-5.4-mini`",
+		"Master candidates: `codex/gpt-5.4, claude-code/opus`",
+		"Disabled targets: `claude-code/sonnet`",
+		"Treat these as factual candidate pools and bans, not hidden framework judgment.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)

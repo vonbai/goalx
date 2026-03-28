@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -71,5 +72,66 @@ func TestParsePhaseOptions(t *testing.T) {
 func TestParsePhaseOptionsRequiresFrom(t *testing.T) {
 	if _, err := parsePhaseOptions("debate", nil); err == nil {
 		t.Fatal("expected missing --from error")
+	}
+}
+
+func TestParsePhaseOptionsRejectsRemovedLegacySelectionFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := [][]string{
+		{"--from", "research-a", "--preset", "codex"},
+		{"--from", "research-a", "--route-role", "research"},
+		{"--from", "research-a", "--route-profile", "research_deep"},
+	}
+	for _, args := range tests {
+		if _, err := parsePhaseOptions("debate", args); err == nil {
+			t.Fatalf("parsePhaseOptions(%#v) unexpectedly succeeded", args)
+		}
+	}
+}
+
+func TestMergeNextConfigIntoPhaseOptionsIgnoresLegacySelectionFields(t *testing.T) {
+	var nc nextConfigJSON
+	if err := json.Unmarshal([]byte(`{
+		"parallel": 3,
+		"objective": "continue",
+		"context": ["README.md"],
+		"dimensions": ["depth", "adversarial"],
+		"preset": "claude",
+		"engine": "codex",
+		"model": "fast",
+		"mode": "develop",
+		"master_engine": "claude-code",
+		"master_model": "opus",
+		"route_role": "research",
+		"route_profile": "research_deep",
+		"effort": "high",
+		"master_effort": "high"
+	}`), &nc); err != nil {
+		t.Fatalf("unmarshal next_config: %v", err)
+	}
+
+	opts := mergeNextConfigIntoPhaseOptions(phaseOptions{}, &nc, goalx.ModeResearch)
+
+	if opts.Parallel != 3 {
+		t.Fatalf("parallel = %d, want 3", opts.Parallel)
+	}
+	if opts.Objective != "continue" {
+		t.Fatalf("objective = %q, want continue", opts.Objective)
+	}
+	if len(opts.ContextPaths) != 1 || opts.ContextPaths[0] != "README.md" {
+		t.Fatalf("context = %#v, want [README.md]", opts.ContextPaths)
+	}
+	if len(opts.Dimensions) != 2 || opts.Dimensions[0] != "depth" || opts.Dimensions[1] != "adversarial" {
+		t.Fatalf("dimensions = %#v, want [depth adversarial]", opts.Dimensions)
+	}
+	if opts.Master != "" || opts.MasterEffort != "" {
+		t.Fatalf("master override = %q/%q, want empty", opts.Master, opts.MasterEffort)
+	}
+	if opts.ResearchRole != "" || opts.DevelopRole != "" {
+		t.Fatalf("role overrides = %q/%q, want empty", opts.ResearchRole, opts.DevelopRole)
+	}
+	if opts.Effort != "" {
+		t.Fatalf("effort = %q, want empty", opts.Effort)
 	}
 }

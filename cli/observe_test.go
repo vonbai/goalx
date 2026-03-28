@@ -121,11 +121,10 @@ func TestObserveShowsSessionLaunchFacts(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4-mini", goalx.EffortHigh, "xhigh", "build_fast", "", goalx.TargetConfig{})
+	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4-mini", goalx.EffortHigh, "xhigh", "", goalx.TargetConfig{})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}
-	identity.RouteRole = "develop"
 	if err := SaveSessionIdentity(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
 		t.Fatalf("SaveSessionIdentity: %v", err)
 	}
@@ -144,7 +143,7 @@ func TestObserveShowsSessionLaunchFacts(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"Launch: mode=develop engine=codex/gpt-5.4-mini effort=high/xhigh route=develop/build_fast",
+		"Launch: mode=develop engine=codex/gpt-5.4-mini effort=high/xhigh",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("observe output missing %q:\n%s", want, out)
@@ -167,7 +166,7 @@ func TestObserveShowsSessionTransportFacts(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	identity, err := NewSessionIdentity(runDir, "session-1", "research", goalx.ModeResearch, "claude-code", "opus", goalx.EffortHigh, "high", "", "", goalx.TargetConfig{})
+	identity, err := NewSessionIdentity(runDir, "session-1", "research", goalx.ModeResearch, "claude-code", "opus", goalx.EffortHigh, "high", "", goalx.TargetConfig{})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}
@@ -249,7 +248,7 @@ func TestObserveShowsProviderDialogFactsForMasterAndSession(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4-mini", goalx.EffortHigh, "xhigh", "", "", goalx.TargetConfig{})
+	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4-mini", goalx.EffortHigh, "xhigh", "", goalx.TargetConfig{})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}
@@ -631,7 +630,7 @@ func TestObserveShowsSharedRunRootWorktreeSummary(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	identity, err := NewSessionIdentity(runDir, "session-1", "shared slice", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortMedium, "medium", "develop", "", goalx.TargetConfig{})
+	identity, err := NewSessionIdentity(runDir, "session-1", "shared slice", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortMedium, "medium", "", goalx.TargetConfig{})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}

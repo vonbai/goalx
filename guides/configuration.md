@@ -9,33 +9,41 @@ GoalX works with zero config. Use configuration only when you need explicit cont
 
 ## Typical Example
 
+User-level selection policy in `~/.goalx/config.yaml`:
+
+```yaml
+selection:
+  disabled_targets:
+    - claude-code/sonnet
+
+  master_candidates:
+    - codex/gpt-5.4
+    - claude-code/opus
+
+  research_candidates:
+    - claude-code/opus
+    - codex/gpt-5.4
+
+  develop_candidates:
+    - codex/gpt-5.4
+    - codex/gpt-5.4-mini
+
+  master_effort: high
+  research_effort: high
+  develop_effort: medium
+```
+
+Project-level shared config in `.goalx/config.yaml`:
+
 ```yaml
 master:
-  engine: claude-code
-  model: opus
-
-roles:
-  research: { engine: codex, model: gpt-5.4, effort: high }
-  develop:  { engine: codex, model: gpt-5.4, effort: medium }
-
-routing:
-  profiles:
-    research_deep: { engine: claude-code, model: opus, effort: high }
-    build_fast:    { engine: codex, model: gpt-5.4-mini, effort: minimal }
-  rules:
-    - role: research
-      any_dimensions: [depth]
-      efforts: [high, max]
-      profile: research_deep
-    - role: develop
-      efforts: [minimal, low]
-      profile: build_fast
+  check_interval: 2m
 
 preferences:
   research:
-    guidance: "Default gpt-5.4 high. Use opus for deep analysis."
+    guidance: "Prefer broad evidence before proposing a fix plan."
   develop:
-    guidance: "Default gpt-5.4 medium. Use fast for simple fixes."
+    guidance: "Bias toward small, mergeable implementation slices."
 
 local_validation:
   command: "go build ./... && go test ./... && go vet ./..."
@@ -47,11 +55,12 @@ local_validation:
 - Use overrides only when they clearly improve execution.
 - Explicit `--engine/--model` is an override, not the default path.
 - Unknown config should fail loudly, not degrade silently.
+- `selection` is only supported in `~/.goalx/config.yaml`.
 
 ## What Config Is For
 
-- pinning master or role defaults
-- routing certain slices to different engines
+- defining long-term candidate pools and disabled engines/targets
+- pinning shared validation, context, and check intervals
 - setting local validation
 
 ## What Config Is Not For
@@ -59,3 +68,13 @@ local_validation:
 - encoding orchestration judgment in the framework
 - replacing the normal `goalx run "goal"` path
 - hand-editing live run state
+
+## Legacy Compatibility
+
+Older config keys such as `preset`, `master`, `roles`, `routing`, and `preferences` still load for backward compatibility.
+They are not the recommended public control surface, and the normal CLI no longer exposes `--preset` or `--route-*` flags.
+
+The recommended default path is:
+
+- user-level `selection.*` for engine/model candidate pools
+- project-level `.goalx/config.yaml` for shared repo facts such as validation, context, and check interval

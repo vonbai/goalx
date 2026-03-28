@@ -64,7 +64,7 @@ func seedForkedWorktreeLineageFixture(t *testing.T, repo, runDir string, cfg *go
 		}); err != nil {
 			t.Fatalf("UpsertSessionRuntimeState %s: %v", sess.name, err)
 		}
-		identity, err := NewSessionIdentity(runDir, sess.name, sessionRoleKind(goalx.ModeDevelop), goalx.ModeDevelop, "codex", "gpt-5.4", "", "", "", "", goalx.TargetConfig{})
+		identity, err := NewSessionIdentity(runDir, sess.name, sessionRoleKind(goalx.ModeDevelop), goalx.ModeDevelop, "codex", "gpt-5.4", "", "", "", goalx.TargetConfig{})
 		if err != nil {
 			t.Fatalf("NewSessionIdentity %s: %v", sess.name, err)
 		}

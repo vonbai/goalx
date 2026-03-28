@@ -16,8 +16,6 @@ type launchOptions struct {
 	Name           string
 	ContextPaths   []string
 	Dimensions     []string
-	RouteRole      string
-	RouteProfile   string
 	Effort         goalx.EffortLevel
 	Master         string
 	ResearchRole   string
@@ -26,7 +24,6 @@ type launchOptions struct {
 	ResearchEffort goalx.EffortLevel
 	DevelopEffort  goalx.EffortLevel
 	Subs           []string
-	Preset         string
 	Intent         string
 	BudgetSet      bool
 	Budget         time.Duration
@@ -54,22 +51,24 @@ func wantsHelp(args []string) bool {
 func launchUsage(command string) string {
 	switch command {
 	case "start":
-		return `usage: goalx start "objective" [--research|--develop] [--parallel N] [--name NAME] [--preset NAME] [--master ENGINE/MODEL] [--research-role ENGINE/MODEL] [--develop-role ENGINE/MODEL] [--context PATHS] [--dimension SPEC]... [--route-role ROLE] [--route-profile PROFILE] [--effort LEVEL] [--master-effort LEVEL] [--research-effort LEVEL] [--develop-effort LEVEL] [--budget DURATION] [--sub ENGINE/MODEL[:N]]
+		return `usage: goalx start "objective" [--research|--develop] [--parallel N] [--name NAME] [--master ENGINE/MODEL] [--research-role ENGINE/MODEL] [--develop-role ENGINE/MODEL] [--context PATHS] [--dimension SPEC]... [--effort LEVEL] [--master-effort LEVEL] [--research-effort LEVEL] [--develop-effort LEVEL] [--budget DURATION] [--sub ENGINE/MODEL[:N]]
        goalx start --config PATH
 
 advanced/manual path:
   goalx start --config .goalx/goalx.yaml
 
 notes:
+  selection uses detected candidate pools by default.
   --parallel is optional initial fan-out, not a permanent cap on later dispatch.
- role defaults are separate: --master, --research-role, --develop-role.`
+  role defaults are separate: --master, --research-role, --develop-role.`
 	case "init":
-		return `usage: goalx init "objective" [--research|--develop] [--parallel N] [--name NAME] [--preset NAME] [--master ENGINE/MODEL] [--research-role ENGINE/MODEL] [--develop-role ENGINE/MODEL] [--context PATHS] [--dimension SPEC]... [--route-role ROLE] [--route-profile PROFILE] [--effort LEVEL] [--master-effort LEVEL] [--research-effort LEVEL] [--develop-effort LEVEL] [--budget DURATION] [--sub ENGINE/MODEL[:N]]
+		return `usage: goalx init "objective" [--research|--develop] [--parallel N] [--name NAME] [--master ENGINE/MODEL] [--research-role ENGINE/MODEL] [--develop-role ENGINE/MODEL] [--context PATHS] [--dimension SPEC]... [--effort LEVEL] [--master-effort LEVEL] [--research-effort LEVEL] [--develop-effort LEVEL] [--budget DURATION] [--sub ENGINE/MODEL[:N]]
 
 notes:
   this is the advanced config-first path and writes the explicit manual draft .goalx/goalx.yaml.
+  selection uses detected candidate pools by default.
   --parallel is optional initial fan-out, not a permanent cap on later dispatch.
- role defaults are separate: --master, --research-role, --develop-role.`
+  role defaults are separate: --master, --research-role, --develop-role.`
 	default:
 		return `usage: goalx <start|init> "objective" [flags]`
 	}
@@ -124,18 +123,6 @@ func parseLaunchOptions(args []string, defaultMode goalx.Mode, allowModeSwitch b
 			}
 			i++
 			opts.Dimensions = append(opts.Dimensions, splitListFlag(args[i])...)
-		case "--route-role":
-			if i+1 >= len(args) {
-				return opts, fmt.Errorf("missing value for --route-role")
-			}
-			i++
-			opts.RouteRole = strings.TrimSpace(args[i])
-		case "--route-profile":
-			if i+1 >= len(args) {
-				return opts, fmt.Errorf("missing value for --route-profile")
-			}
-			i++
-			opts.RouteProfile = strings.TrimSpace(args[i])
 		case "--master":
 			if i+1 >= len(args) {
 				return opts, fmt.Errorf("missing value for --master")
@@ -200,12 +187,6 @@ func parseLaunchOptions(args []string, defaultMode goalx.Mode, allowModeSwitch b
 			}
 			i++
 			opts.Subs = append(opts.Subs, args[i])
-		case "--preset":
-			if i+1 >= len(args) {
-				return opts, fmt.Errorf("missing value for --preset")
-			}
-			i++
-			opts.Preset = args[i]
 		case "--budget":
 			if i+1 >= len(args) {
 				return opts, fmt.Errorf("missing value for --budget")

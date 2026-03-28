@@ -118,7 +118,7 @@ func TestBuildTransportFactsMarksCodexBufferedWake(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "xhigh", "", "", goalx.TargetConfig{})
+	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "xhigh", "", goalx.TargetConfig{})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestBuildTransportFactsMarksClaudeQueuedWakeAsSent(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	identity, err := NewSessionIdentity(runDir, "session-1", "research", goalx.ModeResearch, "claude-code", "opus", goalx.EffortHigh, "high", "", "", goalx.TargetConfig{})
+	identity, err := NewSessionIdentity(runDir, "session-1", "research", goalx.ModeResearch, "claude-code", "opus", goalx.EffortHigh, "high", "", goalx.TargetConfig{})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestBuildTransportFactsDetectsCodexSkillChooserDialog(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "xhigh", "", "", goalx.TargetConfig{})
+	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "xhigh", "", goalx.TargetConfig{})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestBuildTransportFactsDoesNotTreatPassiveSkillsHintAsDialog(t *testing.T) 
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "xhigh", "", "", goalx.TargetConfig{})
+	identity, err := NewSessionIdentity(runDir, "session-1", "develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "xhigh", "", goalx.TargetConfig{})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestBuildTransportFactsDetectsCapacityPickerDialog(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	identity, err := NewSessionIdentity(runDir, "session-1", "research", goalx.ModeResearch, "claude-code", "opus", goalx.EffortHigh, "high", "", "", goalx.TargetConfig{})
+	identity, err := NewSessionIdentity(runDir, "session-1", "research", goalx.ModeResearch, "claude-code", "opus", goalx.EffortHigh, "high", "", goalx.TargetConfig{})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}

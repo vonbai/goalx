@@ -140,7 +140,7 @@ You are running in {{.SessionCapabilities.ProviderLabel}}.
 - Provider-native skills, plugins, and MCP tools are allowed when they materially help.
 - If the user or master explicitly names a provider-native capability and it is visible, use it before the default flow.
 - If the named capability is unavailable, report that immediately.
-- Do not treat skill presence as the routing standard.
+- Do not treat skill presence as the selection standard.
 - Do not invoke orchestration/meta slash commands or skills that start competing autonomous runs, hide durable ownership, or mutate GoalX control state.
 {{if .SessionCapabilities.NativeSubagentsRequireExplicitAsk}}- This engine only starts native subagents when you explicitly invoke them.
 {{end}}{{if .SessionCapabilities.WebSearchAvailable}}- Web search is available when local evidence is insufficient.

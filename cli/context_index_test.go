@@ -84,6 +84,56 @@ func TestBuildContextIndexIncludesImmutableRunIdentity(t *testing.T) {
 	}
 }
 
+func TestBuildContextIndexIncludesSelectionSnapshotFacts(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	writeSelectionSnapshotFixture(t, runDir, testSelectionSnapshot{
+		Version:           1,
+		ExplicitSelection: true,
+		Policy: goalx.EffectiveSelectionPolicy{
+			DisabledEngines:    []string{"aider"},
+			DisabledTargets:    []string{"claude-code/sonnet"},
+			MasterCandidates:   []string{"codex/gpt-5.4", "claude-code/opus"},
+			ResearchCandidates: []string{"claude-code/opus"},
+			DevelopCandidates:  []string{"codex/gpt-5.4-mini", "codex/gpt-5.4"},
+			MasterEffort:       goalx.EffortHigh,
+			ResearchEffort:     goalx.EffortHigh,
+			DevelopEffort:      goalx.EffortMedium,
+		},
+		Master:   goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4", Effort: goalx.EffortHigh},
+		Research: goalx.SessionConfig{Engine: "claude-code", Model: "opus", Effort: goalx.EffortHigh},
+		Develop:  goalx.SessionConfig{Engine: "codex", Model: "gpt-5.4-mini", Effort: goalx.EffortMedium},
+	})
+
+	index, err := BuildContextIndex(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildContextIndex: %v", err)
+	}
+	if index.SelectionSnapshotPath != SelectionSnapshotPath(runDir) {
+		t.Fatalf("selection_snapshot_path = %q, want %q", index.SelectionSnapshotPath, SelectionSnapshotPath(runDir))
+	}
+	if index.Selection == nil {
+		t.Fatal("selection facts missing")
+	}
+	if len(index.Selection.MasterCandidates) != 2 || index.Selection.MasterCandidates[0] != "codex/gpt-5.4" {
+		t.Fatalf("master_candidates = %#v, want codex first", index.Selection.MasterCandidates)
+	}
+	if len(index.Selection.DisabledTargets) != 1 || index.Selection.DisabledTargets[0] != "claude-code/sonnet" {
+		t.Fatalf("disabled_targets = %#v, want claude-code/sonnet", index.Selection.DisabledTargets)
+	}
+	rendered := renderContextIndex(index)
+	for _, want := range []string{
+		"Selection snapshot",
+		"Master candidates: `codex/gpt-5.4, claude-code/opus`",
+		"Research candidates: `claude-code/opus`",
+		"Develop candidates: `codex/gpt-5.4-mini, codex/gpt-5.4`",
+		"Disabled targets: `claude-code/sonnet`",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered context missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
 func TestContextIndexIncludesSessionRoster(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)

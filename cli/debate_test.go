@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,16 @@ func TestDebateUsesSharedMasterConfigInsteadOfSavedRun(t *testing.T) {
 
 	projectRoot := t.TempDir()
 	writeProjectConfigFixture(t, projectRoot, `
-preset: codex
+master:
+  engine: codex
+  model: gpt-5.4
+roles:
+  research:
+    engine: codex
+    model: gpt-5.4
+  develop:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -30,7 +40,16 @@ local_validation:
 		"session-1-report.md": "# report\n",
 	})
 	writeProjectConfigFixture(t, projectRoot, `
-preset: claude
+master:
+  engine: claude-code
+  model: opus
+roles:
+  research:
+    engine: claude-code
+    model: sonnet
+  develop:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -53,13 +72,138 @@ local_validation:
 	}
 }
 
-func TestDebateAppliesNextConfigPresetToResolvedSavedRun(t *testing.T) {
+func TestDebateUsesSavedSelectionSnapshotWhenPresent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	projectRoot := t.TempDir()
 	writeProjectConfigFixture(t, projectRoot, `
-preset: codex
+master:
+  engine: codex
+  model: gpt-5.4
+roles:
+  research:
+    engine: codex
+    model: gpt-5.4
+target:
+  files: ["."]
+local_validation:
+  command: go test ./...
+`)
+	writeResolvedSavedRunFixture(t, projectRoot, "research-a", launchOptions{
+		Objective: "audit auth flow",
+		Mode:      goalx.ModeResearch,
+	}, map[string]string{
+		"summary.md":          "# summary\n",
+		"session-1-report.md": "# report\n",
+	})
+	writeSelectionSnapshotFixture(t, SavedRunDir(projectRoot, "research-a"), testSelectionSnapshot{
+		Version: 1,
+		Policy: goalx.EffectiveSelectionPolicy{
+			MasterCandidates:   []string{"claude-code/opus"},
+			ResearchCandidates: []string{"claude-code/opus"},
+			DevelopCandidates:  []string{"codex/gpt-5.4"},
+		},
+		Master:   goalx.MasterConfig{Engine: "claude-code", Model: "opus", Effort: goalx.EffortHigh},
+		Research: goalx.SessionConfig{Engine: "claude-code", Model: "opus", Effort: goalx.EffortHigh},
+		Develop:  goalx.SessionConfig{Engine: "codex", Model: "gpt-5.4", Effort: goalx.EffortMedium},
+	})
+	writeProjectConfigFixture(t, projectRoot, `
+master:
+  engine: codex
+  model: gpt-5.4
+target:
+  files: ["cli/"]
+local_validation:
+  command: go test ./cli/...
+`)
+
+	if err := Debate(projectRoot, []string{"--from", "research-a", "--write-config"}, nil); err != nil {
+		t.Fatalf("Debate: %v", err)
+	}
+
+	cfg, err := goalx.LoadYAML[goalx.Config](filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load goalx.yaml: %v", err)
+	}
+	if cfg.Master.Engine != "claude-code" || cfg.Master.Model != "opus" {
+		t.Fatalf("master = %s/%s, want saved snapshot claude-code/opus", cfg.Master.Engine, cfg.Master.Model)
+	}
+	if cfg.Roles.Research.Engine != "claude-code" || cfg.Roles.Research.Model != "opus" {
+		t.Fatalf("research role = %s/%s, want saved snapshot claude-code/opus", cfg.Roles.Research.Engine, cfg.Roles.Research.Model)
+	}
+	if cfg.Target.Files[0] != "cli/" {
+		t.Fatalf("target.files = %#v, want current shared config target", cfg.Target.Files)
+	}
+	if cfg.LocalValidation.Command != "go test ./cli/..." {
+		t.Fatalf("local_validation.command = %q, want current shared config command", cfg.LocalValidation.Command)
+	}
+}
+
+func TestDebateExplicitPresetOverridesSavedSelectionSnapshot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	writeProjectConfigFixture(t, projectRoot, `
+master:
+  engine: codex
+  model: gpt-5.4
+roles:
+  research:
+    engine: codex
+    model: gpt-5.4
+target:
+  files: ["."]
+local_validation:
+  command: go test ./...
+`)
+	writeResolvedSavedRunFixture(t, projectRoot, "research-a", launchOptions{
+		Objective: "audit auth flow",
+		Mode:      goalx.ModeResearch,
+	}, map[string]string{
+		"summary.md":          "# summary\n",
+		"session-1-report.md": "# report\n",
+	})
+	writeSelectionSnapshotFixture(t, SavedRunDir(projectRoot, "research-a"), testSelectionSnapshot{
+		Version: 1,
+		Policy: goalx.EffectiveSelectionPolicy{
+			MasterCandidates:   []string{"claude-code/opus"},
+			ResearchCandidates: []string{"claude-code/opus"},
+		},
+		Master:   goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		Research: goalx.SessionConfig{Engine: "claude-code", Model: "opus"},
+	})
+
+	if err := Debate(projectRoot, []string{"--from", "research-a", "--master", "codex/gpt-5.4", "--research-role", "codex/gpt-5.4", "--write-config"}, nil); err != nil {
+		t.Fatalf("Debate: %v", err)
+	}
+
+	cfg, err := goalx.LoadYAML[goalx.Config](filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load goalx.yaml: %v", err)
+	}
+	if cfg.Master.Engine != "codex" || cfg.Master.Model != "gpt-5.4" {
+		t.Fatalf("master = %s/%s, want explicit preset codex/gpt-5.4", cfg.Master.Engine, cfg.Master.Model)
+	}
+	if cfg.Roles.Research.Engine != "codex" || cfg.Roles.Research.Model != "gpt-5.4" {
+		t.Fatalf("research role = %s/%s, want explicit CLI codex/gpt-5.4", cfg.Roles.Research.Engine, cfg.Roles.Research.Model)
+	}
+}
+
+func TestDebateIgnoresLegacyNextConfigPresetForResolvedSavedRun(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	writeProjectConfigFixture(t, projectRoot, `
+master:
+  engine: codex
+  model: gpt-5.4
+roles:
+  research:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -73,7 +217,12 @@ local_validation:
 		"session-1-report.md": "# report\n",
 	})
 
-	if err := Debate(projectRoot, []string{"--from", "research-a", "--write-config"}, &nextConfigJSON{Preset: "claude"}); err != nil {
+	var nc nextConfigJSON
+	if err := json.Unmarshal([]byte(`{"preset":"claude"}`), &nc); err != nil {
+		t.Fatalf("unmarshal next_config: %v", err)
+	}
+
+	if err := Debate(projectRoot, []string{"--from", "research-a", "--write-config"}, &nc); err != nil {
 		t.Fatalf("Debate: %v", err)
 	}
 
@@ -81,41 +230,61 @@ local_validation:
 	if err != nil {
 		t.Fatalf("load goalx.yaml: %v", err)
 	}
-	if cfg.Preset != "claude" {
-		t.Fatalf("preset = %q, want claude", cfg.Preset)
+	if cfg.Master.Engine != "codex" || cfg.Master.Model != "gpt-5.4" {
+		t.Fatalf("master = %s/%s, want codex/gpt-5.4", cfg.Master.Engine, cfg.Master.Model)
 	}
-	if cfg.Master.Engine != "claude-code" || cfg.Master.Model != "opus" {
-		t.Fatalf("master = %s/%s, want claude-code/opus", cfg.Master.Engine, cfg.Master.Model)
-	}
-	if cfg.Roles.Research.Engine != "claude-code" || cfg.Roles.Research.Model != "sonnet" {
-		t.Fatalf("research role = %s/%s, want claude-code/sonnet", cfg.Roles.Research.Engine, cfg.Roles.Research.Model)
+	if cfg.Roles.Research.Engine != "codex" || cfg.Roles.Research.Model != "gpt-5.4" {
+		t.Fatalf("research role = %s/%s, want codex/gpt-5.4", cfg.Roles.Research.Engine, cfg.Roles.Research.Model)
 	}
 }
 
-func TestDebateAppliesNextConfigOverrides(t *testing.T) {
+func TestDebateIgnoresLegacyNextConfigSelectionOverrides(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	projectRoot := t.TempDir()
+	writeProjectConfigFixture(t, projectRoot, `
+master:
+  engine: claude-code
+  model: opus
+roles:
+  research:
+    engine: claude-code
+    model: sonnet
+target:
+  files: ["."]
+local_validation:
+  command: go test ./...
+`)
 	writeSavedRunFixture(t, projectRoot, "research-a", goalx.Config{
 		Name:      "research-a",
 		Mode:      goalx.ModeResearch,
 		Objective: "audit auth flow",
-		Preset:    "claude",
 		Parallel:  2,
+		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		Roles: goalx.RoleDefaultsConfig{
+			Research: goalx.SessionConfig{Engine: "claude-code", Model: "sonnet"},
+		},
 	}, map[string]string{
 		"summary.md":          "# summary\n",
 		"session-1-report.md": "# report\n",
 	})
 
-	nc := &nextConfigJSON{
-		Parallel:      3,
-		Engine:        "codex",
-		Model:         "fast",
-		Dimensions:    []string{"depth", "adversarial", "evidence"},
-		Objective:     "custom debate objective",
+	var nc nextConfigJSON
+	if err := json.Unmarshal([]byte(`{
+		"parallel": 3,
+		"objective": "custom debate objective",
+		"dimensions": ["depth", "adversarial", "evidence"],
+		"engine": "codex",
+		"model": "fast",
+		"preset": "codex",
+		"route_role": "research",
+		"route_profile": "research_deep",
+		"effort": "high"
+	}`), &nc); err != nil {
+		t.Fatalf("unmarshal next_config: %v", err)
 	}
-	if err := Debate(projectRoot, []string{"--from", "research-a", "--budget", "15m", "--write-config"}, nc); err != nil {
+	if err := Debate(projectRoot, []string{"--from", "research-a", "--budget", "15m", "--write-config"}, &nc); err != nil {
 		t.Fatalf("Debate: %v", err)
 	}
 
@@ -126,8 +295,8 @@ func TestDebateAppliesNextConfigOverrides(t *testing.T) {
 	if cfg.Parallel != 3 {
 		t.Fatalf("parallel = %d, want 3", cfg.Parallel)
 	}
-	if cfg.Roles.Research.Engine != "codex" || cfg.Roles.Research.Model != "fast" {
-		t.Fatalf("research role = %s/%s, want codex/fast", cfg.Roles.Research.Engine, cfg.Roles.Research.Model)
+	if cfg.Roles.Research.Engine != "claude-code" || cfg.Roles.Research.Model != "sonnet" {
+		t.Fatalf("research role = %s/%s, want claude-code/sonnet", cfg.Roles.Research.Engine, cfg.Roles.Research.Model)
 	}
 	if cfg.Objective != "custom debate objective" {
 		t.Fatalf("objective = %q, want custom debate objective", cfg.Objective)
@@ -154,8 +323,11 @@ func TestDebateInheritsSavedParallelWithoutOverride(t *testing.T) {
 		Name:      "research-a",
 		Mode:      goalx.ModeResearch,
 		Objective: "audit auth flow",
-		Preset:    "codex",
 		Parallel:  5,
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		Roles: goalx.RoleDefaultsConfig{
+			Research: goalx.SessionConfig{Engine: "codex", Model: "gpt-5.4"},
+		},
 	}, map[string]string{
 		"summary.md":          "# summary\n",
 		"session-1-report.md": "# report\n",
@@ -183,8 +355,11 @@ func TestDebateInheritsSavedSessionFanoutWithoutParallel(t *testing.T) {
 		Name:      "research-a",
 		Mode:      goalx.ModeResearch,
 		Objective: "audit auth flow",
-		Preset:    "codex",
 		Sessions:  make([]goalx.SessionConfig, 4),
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		Roles: goalx.RoleDefaultsConfig{
+			Research: goalx.SessionConfig{Engine: "codex", Model: "gpt-5.4"},
+		},
 	}, map[string]string{
 		"summary.md":          "# summary\n",
 		"session-1-report.md": "# report\n",
@@ -215,8 +390,11 @@ func TestDebateUsesSavedManifestReportArtifacts(t *testing.T) {
 		Name:      "research-a",
 		Mode:      goalx.ModeResearch,
 		Objective: "audit auth flow",
-		Preset:    "claude",
 		Parallel:  1,
+		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		Roles: goalx.RoleDefaultsConfig{
+			Research: goalx.SessionConfig{Engine: "claude-code", Model: "sonnet"},
+		},
 	}, nil)
 	runDir := SavedRunDir(projectRoot, "research-a")
 	reportPath := filepath.Join(runDir, "custom-findings.txt")
@@ -272,7 +450,10 @@ func TestDebateReadsLegacyProjectScopedSavedRun(t *testing.T) {
 		Name:      "research-a",
 		Mode:      goalx.ModeResearch,
 		Objective: "audit auth flow",
-		Preset:    "claude",
+		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		Roles: goalx.RoleDefaultsConfig{
+			Research: goalx.SessionConfig{Engine: "claude-code", Model: "sonnet"},
+		},
 	}
 	data, err := yaml.Marshal(&cfg)
 	if err != nil {
@@ -306,6 +487,9 @@ func TestDebateHelpPrintsUsage(t *testing.T) {
 	if !strings.Contains(out, "--write-config") {
 		t.Fatalf("debate help missing write-config note:\n%s", out)
 	}
+	if !strings.Contains(out, "saved run selection snapshot stays in effect unless you request an explicit CLI selection override") {
+		t.Fatalf("debate help missing selection snapshot note:\n%s", out)
+	}
 }
 
 func TestDebateStartCreatesFreshCharterWithPreservedRootLineage(t *testing.T) {
@@ -334,7 +518,10 @@ func TestPhaseWriteConfigUsesManualDraft(t *testing.T) {
 		Name:      "research-a",
 		Mode:      goalx.ModeResearch,
 		Objective: "audit auth flow",
-		Preset:    "claude",
+		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		Roles: goalx.RoleDefaultsConfig{
+			Research: goalx.SessionConfig{Engine: "claude-code", Model: "sonnet"},
+		},
 	}, map[string]string{
 		"summary.md":          "# summary\n",
 		"session-1-report.md": "# report\n",

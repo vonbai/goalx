@@ -3,8 +3,8 @@
 # This file configures goalx for all projects on this machine.
 # Copy to ~/.goalx/config.yaml and edit.
 
-# Engine presets
-# Uncomment to override built-in defaults.
+# Engine catalog overrides
+# Uncomment to override built-in engine commands or model aliases.
 # engines:
 #   claude-code:
 #     command: "claude --model {model_id} --permission-mode bypassPermissions"
@@ -12,31 +12,35 @@
 #       opus: claude-opus-4-6
 #       sonnet: claude-sonnet-4-6
 
-# Custom presets (extend built-in: claude, claude-h, codex, mixed)
-# presets:
-#   my-research:
-#     master: {engine: codex, model: gpt-5.4}
-#     research: {engine: claude-code, model: opus}
-#   my-dev:
-#     master: {engine: codex, model: gpt-5.4}
-#     develop: {engine: codex, model: gpt-5.4}
+# User-scoped selection policy. GoalX detects installed engines at launch,
+# intersects them with these candidates, then bootstraps master from the first
+# usable master candidate.
+# selection:
+#   disabled_engines: [aider]
+#   disabled_targets: [claude-code/sonnet]
+#   master_candidates: [codex/gpt-5.4, claude-code/opus]
+#   research_candidates: [claude-code/opus, codex/gpt-5.4]
+#   develop_candidates: [codex/gpt-5.4, codex/gpt-5.4-mini]
+#   master_effort: high
+#   research_effort: high
+#   develop_effort: medium
 
 # Custom goal dimensions (extend built-in: depth, breadth, creative, feasibility, adversarial, evidence, comparative, user)
 # dimensions:
 #   architecture: "Architecture focus: evaluate system boundaries, coupling, cohesion, and extensibility"
 #   cost: "Cost analysis: estimate compute, API, infrastructure, and maintenance costs for each approach"
 
-# Local execution defaults
+# Shared run defaults
 # master:
 #   engine: codex
 #   model: gpt-5.4
-# routing:
-#   profiles:
-#     build_fast: {engine: codex, model: gpt-5.4-mini, effort: minimal}
-#   rules:
-#     - role: develop
-#       efforts: [minimal, low]
-#       profile: build_fast
+# roles:
+#   research:
+#     engine: claude-code
+#     model: opus
+#   develop:
+#     engine: codex
+#     model: gpt-5.4
 # preferences:
 #   develop:
 #     guidance: "Use fast for simple fixes."

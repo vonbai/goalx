@@ -96,6 +96,7 @@ func renderContextIndex(index *ContextIndex) string {
 	writeContextLine("Result", index.SummaryPath)
 	writeContextLine("Activity", index.ActivityPath)
 	writeContextLine("Worktree snapshot", index.WorktreeSnapshotPath)
+	writeContextLine("Selection snapshot", index.SelectionSnapshotPath)
 	writeContextLine("Memory query", index.MemoryQueryPath)
 	writeContextLine("Memory context", index.MemoryContextPath)
 	writeContextLine("Context index", index.ContextIndexPath)
@@ -138,6 +139,24 @@ func renderContextIndex(index *ContextIndex) string {
 	writeContextLine("Engine", index.Master.Engine)
 	writeContextLine("Model", index.Master.Model)
 	writeContextLine("Mode", index.Master.Mode)
+	if index.Selection != nil {
+		b.WriteString("\n## Selection\n\n")
+		if len(index.Selection.MasterCandidates) > 0 {
+			writeContextLine("Master candidates", strings.Join(index.Selection.MasterCandidates, ", "))
+		}
+		if len(index.Selection.ResearchCandidates) > 0 {
+			writeContextLine("Research candidates", strings.Join(index.Selection.ResearchCandidates, ", "))
+		}
+		if len(index.Selection.DevelopCandidates) > 0 {
+			writeContextLine("Develop candidates", strings.Join(index.Selection.DevelopCandidates, ", "))
+		}
+		if len(index.Selection.DisabledEngines) > 0 {
+			writeContextLine("Disabled engines", strings.Join(index.Selection.DisabledEngines, ", "))
+		}
+		if len(index.Selection.DisabledTargets) > 0 {
+			writeContextLine("Disabled targets", strings.Join(index.Selection.DisabledTargets, ", "))
+		}
+	}
 	if index.ClaudeCodeAvailable || index.CodexAvailable || index.GitAvailable || index.TmuxAvailable {
 		b.WriteString("## Capabilities\n\n")
 		if index.ClaudeCodeAvailable {

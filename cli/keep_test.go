@@ -403,7 +403,7 @@ func writeKeepRunFixture(t *testing.T, repo, runName string) string {
 func makeKeepSessionIdentity(t *testing.T, runDir, sessionName, runName, baseSelector, baseBranch string) *SessionIdentity {
 	t.Helper()
 
-	identity, err := NewSessionIdentity(runDir, sessionName, sessionRoleKind(goalx.ModeDevelop), goalx.ModeDevelop, "codex", "gpt-5.4", "", "", "", "", goalx.TargetConfig{Files: []string{"."}})
+	identity, err := NewSessionIdentity(runDir, sessionName, sessionRoleKind(goalx.ModeDevelop), goalx.ModeDevelop, "codex", "gpt-5.4", "", "", "", goalx.TargetConfig{Files: []string{"."}})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}

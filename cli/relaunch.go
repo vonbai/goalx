@@ -14,22 +14,26 @@ func relaunchMaster(projectRoot, runDir, tmuxSession string, cfg *goalx.Config) 
 	if cfg == nil {
 		return fmt.Errorf("run config is nil")
 	}
+	effectiveCfg, err := configWithSelectionSnapshot(runDir, cfg)
+	if err != nil {
+		return err
+	}
 
 	engines, err := loadEngineCatalog(projectRoot)
 	if err != nil {
 		return fmt.Errorf("load config for engine resolution: %w", err)
 	}
 	spec, err := goalx.ResolveLaunchSpec(engines, goalx.LaunchRequest{
-		Engine: cfg.Master.Engine,
-		Model:  cfg.Master.Model,
-		Effort: cfg.Master.Effort,
+		Engine: effectiveCfg.Master.Engine,
+		Model:  effectiveCfg.Master.Model,
+		Effort: effectiveCfg.Master.Effort,
 	})
 	if err != nil {
 		return fmt.Errorf("resolve engine: %w", err)
 	}
 	engineCmd := spec.Command
 	protocolPath := filepath.Join(runDir, "master.md")
-	prompt := goalx.ResolvePrompt(engines, cfg.Master.Engine, protocolPath)
+	prompt := goalx.ResolvePrompt(engines, effectiveCfg.Master.Engine, protocolPath)
 
 	meta, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective)
 	if err != nil {
@@ -38,7 +42,7 @@ func relaunchMaster(projectRoot, runDir, tmuxSession string, cfg *goalx.Config) 
 	if err := ensureExperimentsSurface(runDir); err != nil {
 		return fmt.Errorf("init experiments surface: %w", err)
 	}
-	masterData, err := buildMasterProtocolData(projectRoot, runDir, tmuxSession, cfg, engines, engineCmd, meta)
+	masterData, err := buildMasterProtocolData(projectRoot, runDir, tmuxSession, effectiveCfg, engines, engineCmd, meta)
 	if err != nil {
 		return fmt.Errorf("build master protocol data: %w", err)
 	}
@@ -71,6 +75,10 @@ func relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession string, cfg *g
 	if cfg == nil {
 		return fmt.Errorf("run config is nil")
 	}
+	effectiveCfg, err := configWithSelectionSnapshot(runDir, cfg)
+	if err != nil {
+		return err
+	}
 	masterPresence, err := LoadTargetPresenceFact(runDir, tmuxSession, "master")
 	if err != nil {
 		return fmt.Errorf("load master target presence: %w", err)
@@ -87,16 +95,16 @@ func relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession string, cfg *g
 		return fmt.Errorf("load config for engine resolution: %w", err)
 	}
 	spec, err := goalx.ResolveLaunchSpec(engines, goalx.LaunchRequest{
-		Engine: cfg.Master.Engine,
-		Model:  cfg.Master.Model,
-		Effort: cfg.Master.Effort,
+		Engine: effectiveCfg.Master.Engine,
+		Model:  effectiveCfg.Master.Model,
+		Effort: effectiveCfg.Master.Effort,
 	})
 	if err != nil {
 		return fmt.Errorf("resolve engine: %w", err)
 	}
 	engineCmd := spec.Command
 	protocolPath := filepath.Join(runDir, "master.md")
-	prompt := goalx.ResolvePrompt(engines, cfg.Master.Engine, protocolPath)
+	prompt := goalx.ResolvePrompt(engines, effectiveCfg.Master.Engine, protocolPath)
 
 	meta, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective)
 	if err != nil {
@@ -105,7 +113,7 @@ func relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession string, cfg *g
 	if err := ensureExperimentsSurface(runDir); err != nil {
 		return fmt.Errorf("init experiments surface: %w", err)
 	}
-	masterData, err := buildMasterProtocolData(projectRoot, runDir, tmuxSession, cfg, engines, engineCmd, meta)
+	masterData, err := buildMasterProtocolData(projectRoot, runDir, tmuxSession, effectiveCfg, engines, engineCmd, meta)
 	if err != nil {
 		return fmt.Errorf("build master protocol data: %w", err)
 	}
@@ -127,4 +135,19 @@ func relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession string, cfg *g
 	}
 	appendAuditLog(runDir, "target_relaunch_result target=master result=success cause=%s", blankAsUnknown(masterPresence.State))
 	return nil
+}
+
+func configWithSelectionSnapshot(runDir string, cfg *goalx.Config) (*goalx.Config, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("run config is nil")
+	}
+	copyCfg := *cfg
+	snapshot, err := LoadSelectionSnapshot(SelectionSnapshotPath(runDir))
+	if err != nil {
+		return nil, fmt.Errorf("load selection snapshot: %w", err)
+	}
+	if snapshot != nil {
+		applySelectionSnapshotConfig(&copyCfg, snapshot)
+	}
+	return &copyCfg, nil
 }

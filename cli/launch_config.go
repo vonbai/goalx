@@ -83,7 +83,6 @@ func buildLaunchResolveRequest(projectRoot string, baseCfg goalx.Config, opts la
 		Name:          launchConfigName(opts),
 		Mode:          opts.Mode,
 		Objective:     opts.Objective,
-		Preset:        opts.Preset,
 		Parallel:      opts.Parallel,
 		ClearSessions: true,
 	}
@@ -120,7 +119,7 @@ func applyLaunchSessionOverrides(cfg *goalx.Config, opts launchOptions, dimensio
 		}
 	}
 
-	if len(opts.Subs) == 0 && (len(opts.Dimensions) > 0 || opts.RouteRole != "" || opts.RouteProfile != "" || opts.Effort != "") {
+	if len(opts.Subs) == 0 && (len(opts.Dimensions) > 0 || opts.Effort != "") {
 		size := cfg.Parallel
 		if size < 1 {
 			size = 1
@@ -128,10 +127,8 @@ func applyLaunchSessionOverrides(cfg *goalx.Config, opts launchOptions, dimensio
 		cfg.Sessions = make([]goalx.SessionConfig, size)
 		for i := range cfg.Sessions {
 			cfg.Sessions[i] = goalx.SessionConfig{
-				Effort:       opts.Effort,
-				RouteRole:    opts.RouteRole,
-				RouteProfile: opts.RouteProfile,
-				Dimensions:   append([]string(nil), opts.Dimensions...),
+				Effort:     opts.Effort,
+				Dimensions: append([]string(nil), opts.Dimensions...),
 			}
 		}
 	}
@@ -154,12 +151,10 @@ func applyLaunchSessionOverrides(cfg *goalx.Config, opts launchOptions, dimensio
 			}
 			for j := 0; j < n; j++ {
 				cfg.Sessions = append(cfg.Sessions, goalx.SessionConfig{
-					Engine:       engine,
-					Model:        model,
-					Effort:       opts.Effort,
-					RouteRole:    opts.RouteRole,
-					RouteProfile: opts.RouteProfile,
-					Dimensions:   append([]string(nil), opts.Dimensions...),
+					Engine:     engine,
+					Model:      model,
+					Effort:     opts.Effort,
+					Dimensions: append([]string(nil), opts.Dimensions...),
 				})
 			}
 		}

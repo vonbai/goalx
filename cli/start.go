@@ -31,14 +31,16 @@ func Start(projectRoot string, args []string) (err error) {
 func startWithOptions(projectRoot string, opts startOptions) error {
 	var cfg *goalx.Config
 	var engines map[string]goalx.EngineConfig
+	var selectionSnapshot *SelectionSnapshot
 
 	if opts.ConfigPath != "" {
-		loadedCfg, loadedEngines, err := LoadManualDraftConfig(projectRoot, opts.ConfigPath)
+		resolved, err := ResolveManualDraftConfig(projectRoot, opts.ConfigPath)
 		if err != nil {
 			return fmt.Errorf("load manual draft config: %w", err)
 		}
-		cfg = loadedCfg
-		engines = loadedEngines
+		cfg = &resolved.Config
+		engines = resolved.Engines
+		selectionSnapshot = BuildSelectionSnapshot(cfg, resolved.SelectionPolicy, resolved.ExplicitSelection)
 	} else {
 		resolved, err := resolveLaunchConfig(projectRoot, opts.launchOptions)
 		if err != nil {
@@ -46,9 +48,10 @@ func startWithOptions(projectRoot string, opts startOptions) error {
 		}
 		cfg = &resolved.Config
 		engines = resolved.Engines
+		selectionSnapshot = BuildSelectionSnapshot(cfg, resolved.SelectionPolicy, resolved.ExplicitSelection)
 	}
 
-	return startWithConfig(projectRoot, cfg, engines, launchRunMetadataPatch(opts.launchOptions), opts.NoSnapshot)
+	return startWithConfig(projectRoot, cfg, engines, selectionSnapshot, launchRunMetadataPatch(opts.launchOptions), opts.NoSnapshot)
 }
 
 func startResolvedLaunch(projectRoot string, opts launchOptions) error {
@@ -56,7 +59,8 @@ func startResolvedLaunch(projectRoot string, opts launchOptions) error {
 	if err != nil {
 		return err
 	}
-	return startWithConfig(projectRoot, &resolved.Config, resolved.Engines, launchRunMetadataPatch(opts), opts.NoSnapshot)
+	selectionSnapshot := BuildSelectionSnapshot(&resolved.Config, resolved.SelectionPolicy, resolved.ExplicitSelection)
+	return startWithConfig(projectRoot, &resolved.Config, resolved.Engines, selectionSnapshot, launchRunMetadataPatch(opts), opts.NoSnapshot)
 }
 
 type startRunState struct {
@@ -114,7 +118,7 @@ func (s *startRunState) cleanup(errp *error) {
 	}
 }
 
-func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]goalx.EngineConfig, metaPatch *RunMetadata, noSnapshot bool) (err error) {
+func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]goalx.EngineConfig, selectionSnapshot *SelectionSnapshot, metaPatch *RunMetadata, noSnapshot bool) (err error) {
 	if err := goalx.ValidateConfig(cfg, engines); err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}
@@ -137,7 +141,7 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		}
 	}
 
-	if err := bootstrapStartWorkspace(state, cfg, metaPatch); err != nil {
+	if err := bootstrapStartWorkspace(state, cfg, selectionSnapshot, metaPatch); err != nil {
 		return err
 	}
 
@@ -162,7 +166,7 @@ func ensureStartAvailable(state *startRunState) error {
 	return nil
 }
 
-func bootstrapStartWorkspace(state *startRunState, cfg *goalx.Config, metaPatch *RunMetadata) error {
+func bootstrapStartWorkspace(state *startRunState, cfg *goalx.Config, selectionSnapshot *SelectionSnapshot, metaPatch *RunMetadata) error {
 	dirs := []string{
 		state.runDir,
 		filepath.Join(state.runDir, "journals"),
@@ -180,6 +184,11 @@ func bootstrapStartWorkspace(state *startRunState, cfg *goalx.Config, metaPatch 
 	}
 	if err := SaveRunSpec(state.runDir, cfg); err != nil {
 		return fmt.Errorf("write run spec: %w", err)
+	}
+	if selectionSnapshot != nil {
+		if err := SaveSelectionSnapshot(state.runDir, selectionSnapshot); err != nil {
+			return fmt.Errorf("write selection snapshot: %w", err)
+		}
 	}
 
 	sourceBaseBranch := ""
@@ -423,6 +432,16 @@ func buildMasterProtocolData(projectRoot, runDir, tmuxSession string, cfg *goalx
 	if cfg == nil {
 		return ProtocolData{}, fmt.Errorf("run config is nil")
 	}
+	selectionSnapshotPath := ""
+	selectionPolicy := goalx.DeriveSelectionPolicy(cfg)
+	if selectionSnapshot, err := LoadSelectionSnapshot(SelectionSnapshotPath(runDir)); err != nil {
+		return ProtocolData{}, fmt.Errorf("load selection snapshot: %w", err)
+	} else if selectionSnapshot != nil {
+		selectionSnapshotPath = SelectionSnapshotPath(runDir)
+		if !selectionPolicyEmpty(selectionSnapshot.Policy) {
+			selectionPolicy = copySelectionPolicy(selectionSnapshot.Policy)
+		}
+	}
 	dimensionsCatalog := cfg.DimensionCatalog()
 	sessionDataList, err := buildSessionDataList(runDir, cfg, engines, dimensionsCatalog)
 	if err != nil {
@@ -446,11 +465,11 @@ func buildMasterProtocolData(projectRoot, runDir, tmuxSession string, cfg *goalx
 		Engines:                engines,
 		Sessions:               sessionDataList,
 		Master:                 cfg.Master,
+		Roles:                  cfg.Roles,
 		Budget:                 cfg.Budget,
 		Target:                 cfg.Target,
 		Context:                cfg.Context,
 		Preferences:            cfg.Preferences,
-		Routing:                cfg.Routing,
 		DimensionsCatalog:      dimensionsCatalog,
 		TmuxSession:            tmuxSession,
 		ProjectRoot:            RunWorktreePath(runDir),
@@ -478,6 +497,8 @@ func buildMasterProtocolData(projectRoot, runDir, tmuxSession string, cfg *goalx
 		WorktreeSnapshotPath:   WorktreeSnapshotPath(runDir),
 		ControlRemindersPath:   ControlRemindersPath(runDir),
 		ControlDeliveriesPath:  ControlDeliveriesPath(runDir),
+		SelectionSnapshotPath:  selectionSnapshotPath,
+		SelectionPolicy:        selectionPolicy,
 		MasterJournalPath:      filepath.Join(runDir, "master.jsonl"),
 		StatusPath:             RunStatusPath(runDir),
 		EngineCommand:          masterCmd,

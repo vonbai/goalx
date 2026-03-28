@@ -198,35 +198,35 @@ func Resume(projectRoot string, args []string) error {
 		return fmt.Errorf("build session roster: %w", err)
 	}
 	subData := ProtocolData{
-		RunName:                rc.Config.Name,
-		Objective:              rc.Config.Objective,
-		Mode:                   goalx.Mode(sessionIdentity.Mode),
-		Engine:                 sessionIdentity.Engine,
-		Sessions:               sessionDataList,
-		Target:                 sessionIdentity.Target,
-		LocalValidationCommand: sessionIdentity.LocalValidationCommand,
-		Context:                rc.Config.Context,
-		Budget:                 rc.Config.Budget,
-		SessionName:            sessionName,
-		SessionIndex:           idx - 1,
-		CurrentDimensions:      CurrentSessionDimensions(rc.RunDir, sessionName, sessionIdentity.Dimensions),
-		JournalPath:            JournalPath(rc.RunDir, sessionName),
-		CharterPath:            RunCharterPath(rc.RunDir),
-		SessionIdentityPath:    SessionIdentityPath(rc.RunDir, sessionName),
-		SessionInboxPath:       ControlInboxPath(rc.RunDir, sessionName),
-		SessionCursorPath:      SessionCursorPath(rc.RunDir, sessionName),
-		WorktreePath:           wtPath,
-		GoalPath:               GoalPath(rc.RunDir),
-		GoalLogPath:            GoalLogPath(rc.RunDir),
-		IdentityFencePath:      IdentityFencePath(rc.RunDir),
-		AcceptanceNotesPath:    existingProtocolPath(AcceptanceNotesPath(rc.RunDir)),
-		AcceptanceStatePath:    AcceptanceStatePath(rc.RunDir),
-		CompletionProofPath:    CompletionStatePath(rc.RunDir),
-		RunStatePath:           RunRuntimeStatePath(rc.RunDir),
-		SessionsStatePath:      SessionsRuntimeStatePath(rc.RunDir),
-		ProjectRegistryPath:    ProjectRegistryPath(rc.ProjectRoot),
-		ProjectRoot:            absProjectRoot,
-		RunWorktreePath:        RunWorktreePath(rc.RunDir),
+		RunName:                   rc.Config.Name,
+		Objective:                 rc.Config.Objective,
+		Mode:                      goalx.Mode(sessionIdentity.Mode),
+		Engine:                    sessionIdentity.Engine,
+		Sessions:                  sessionDataList,
+		Target:                    sessionIdentity.Target,
+		LocalValidationCommand:    sessionIdentity.LocalValidationCommand,
+		Context:                   rc.Config.Context,
+		Budget:                    rc.Config.Budget,
+		SessionName:               sessionName,
+		SessionIndex:              idx - 1,
+		CurrentDimensions:         CurrentSessionDimensions(rc.RunDir, sessionName, sessionIdentity.Dimensions),
+		JournalPath:               JournalPath(rc.RunDir, sessionName),
+		CharterPath:               RunCharterPath(rc.RunDir),
+		SessionIdentityPath:       SessionIdentityPath(rc.RunDir, sessionName),
+		SessionInboxPath:          ControlInboxPath(rc.RunDir, sessionName),
+		SessionCursorPath:         SessionCursorPath(rc.RunDir, sessionName),
+		WorktreePath:              wtPath,
+		GoalPath:                  GoalPath(rc.RunDir),
+		GoalLogPath:               GoalLogPath(rc.RunDir),
+		IdentityFencePath:         IdentityFencePath(rc.RunDir),
+		AcceptanceNotesPath:       existingProtocolPath(AcceptanceNotesPath(rc.RunDir)),
+		AcceptanceStatePath:       AcceptanceStatePath(rc.RunDir),
+		CompletionProofPath:       CompletionStatePath(rc.RunDir),
+		RunStatePath:              RunRuntimeStatePath(rc.RunDir),
+		SessionsStatePath:         SessionsRuntimeStatePath(rc.RunDir),
+		ProjectRegistryPath:       ProjectRegistryPath(rc.ProjectRoot),
+		ProjectRoot:               absProjectRoot,
+		RunWorktreePath:           RunWorktreePath(rc.RunDir),
 		SessionBaseBranchSelector: sessionIdentity.BaseBranchSelector,
 		SessionBaseBranch:         sessionIdentity.BaseBranch,
 	}
@@ -286,7 +286,7 @@ func Resume(projectRoot string, args []string) error {
 }
 
 func Replace(projectRoot string, args []string) error {
-	const usage = "usage: goalx replace [--run NAME] <session-name> [--mode MODE] [--engine ENGINE] [--model MODEL] [--effort LEVEL] [--route-role ROLE] [--route-profile PROFILE] [--dimension SPEC]..."
+	const usage = "usage: goalx replace [--run NAME] <session-name> [--mode MODE] [--engine ENGINE] [--model MODEL] [--effort LEVEL] [--dimension SPEC]..."
 	if printUsageIfHelp(args, usage) {
 		return nil
 	}
@@ -341,18 +341,6 @@ func Replace(projectRoot string, args []string) error {
 				return err
 			}
 			opts.Effort = level
-		case "--route-role":
-			if i+1 >= len(rest) {
-				return fmt.Errorf("missing value for --route-role")
-			}
-			i++
-			opts.RouteRole = strings.TrimSpace(rest[i])
-		case "--route-profile":
-			if i+1 >= len(rest) {
-				return fmt.Errorf("missing value for --route-profile")
-			}
-			i++
-			opts.RouteProfile = strings.TrimSpace(rest[i])
 		case "--dimension":
 			if i+1 >= len(rest) {
 				return fmt.Errorf("missing value for --dimension")
@@ -449,15 +437,13 @@ func Replace(projectRoot string, args []string) error {
 
 	oldDimensions := goalx.ResolveDimensionNames(oldIdentity.Dimensions)
 	newSession := goalx.SessionConfig{
-		Hint:         scope,
-		Mode:         goalx.Mode(oldIdentity.Mode),
-		Effort:       oldIdentity.RequestedEffort,
-		RouteRole:    oldIdentity.RouteRole,
-		RouteProfile: oldIdentity.RouteProfile,
-		Dimensions:   append([]string(nil), oldDimensions...),
-		Target:       &oldIdentity.Target,
+		Hint:       scope,
+		Mode:       goalx.Mode(oldIdentity.Mode),
+		Effort:     oldIdentity.RequestedEffort,
+		Dimensions: append([]string(nil), oldDimensions...),
+		Target:     &oldIdentity.Target,
 	}
-	routeChanged := opts.Mode != "" || opts.Effort != "" || opts.RouteRole != "" || opts.RouteProfile != "" || len(opts.Dimensions) > 0
+	routeChanged := opts.Mode != "" || opts.Effort != "" || len(opts.Dimensions) > 0
 	if !routeChanged && !(explicitEngine || explicitModel) {
 		newSession.Engine = oldIdentity.Engine
 		newSession.Model = oldIdentity.Model
@@ -467,12 +453,6 @@ func Replace(projectRoot string, args []string) error {
 	}
 	if opts.Effort != "" {
 		newSession.Effort = opts.Effort
-	}
-	if opts.RouteRole != "" {
-		newSession.RouteRole = opts.RouteRole
-	}
-	if opts.RouteProfile != "" {
-		newSession.RouteProfile = opts.RouteProfile
 	}
 	if len(opts.Dimensions) > 0 {
 		newSession.Dimensions = append([]string(nil), opts.Dimensions...)
@@ -511,14 +491,12 @@ func Replace(projectRoot string, args []string) error {
 		effectiveSession.Model,
 		effectiveSession.Effort,
 		"",
-		effectiveSession.RouteProfile,
 		"",
 		target,
 	)
 	if err != nil {
 		return fmt.Errorf("create session identity: %w", err)
 	}
-	sessionIdentity.RouteRole = effectiveSession.RouteRole
 	sessionIdentity.ReplacesSession = oldSessionName
 	sessionIdentity.BaseBranchSelector = replacementBaseSelector
 	sessionIdentity.BaseBranch = replacementBaseBranch

@@ -17,6 +17,7 @@ type savedPhaseSource struct {
 	Mode         goalx.Mode
 	Parallel     int
 	Metadata     *RunMetadata
+	Selection    *SelectionSnapshot
 	Context      []string
 	SessionNames []string
 }
@@ -54,6 +55,10 @@ func loadSavedPhaseSource(projectRoot, runName string) (*savedPhaseSource, error
 	if err != nil {
 		return nil, fmt.Errorf("collect saved run context for %q: %w", runName, err)
 	}
+	selection, err := LoadSelectionSnapshot(SelectionSnapshotPath(runDir))
+	if err != nil {
+		return nil, fmt.Errorf("load saved selection snapshot for %q: %w", runName, err)
+	}
 	meta, _ := LoadRunMetadata(filepath.Join(runDir, "run-metadata.json"))
 	return &savedPhaseSource{
 		Run:          runName,
@@ -61,6 +66,7 @@ func loadSavedPhaseSource(projectRoot, runName string) (*savedPhaseSource, error
 		Mode:         cfg.Mode,
 		Parallel:     parallel,
 		Metadata:     meta,
+		Selection:    selection,
 		Context:      contextFiles,
 		SessionNames: sessionNames,
 	}, nil
@@ -119,10 +125,11 @@ func runPhaseAction(projectRoot string, spec phaseActionSpec, opts phaseOptions,
 		return fmt.Errorf(spec.NoContextErr, source.Dir)
 	}
 
-	cfg, engines, err := resolvePhaseConfig(projectRoot, spec.Kind, spec.Mode, source, opts)
+	resolved, err := resolvePhaseConfig(projectRoot, spec.Kind, spec.Mode, source, opts)
 	if err != nil {
 		return err
 	}
+	cfg := &resolved.Config
 	contextFiles, err := phaseContextFiles(cfg, source, opts.ContextPaths)
 	if err != nil {
 		return err
@@ -145,29 +152,35 @@ func runPhaseAction(projectRoot string, spec phaseActionSpec, opts phaseOptions,
 		return nil
 	}
 
-	return startWithConfig(projectRoot, cfg, engines, phaseRunMetadataPatch(source, spec.Kind), false)
+	selectionSnapshot := BuildSelectionSnapshot(cfg, resolved.SelectionPolicy, resolved.ExplicitSelection)
+	return startWithConfig(projectRoot, cfg, resolved.Engines, selectionSnapshot, phaseRunMetadataPatch(source, spec.Kind), false)
 }
 
-func resolvePhaseConfig(projectRoot string, phaseKind string, mode goalx.Mode, source *savedPhaseSource, opts phaseOptions) (*goalx.Config, map[string]goalx.EngineConfig, error) {
+func resolvePhaseConfig(projectRoot string, phaseKind string, mode goalx.Mode, source *savedPhaseSource, opts phaseOptions) (*goalx.ResolvedConfig, error) {
 	if source == nil {
-		return nil, nil, fmt.Errorf("saved phase source is required")
+		return nil, fmt.Errorf("saved phase source is required")
 	}
 	layers, err := goalx.LoadConfigLayers(projectRoot)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load config layers: %w", err)
+		return nil, fmt.Errorf("load config layers: %w", err)
 	}
 	req, err := buildPhaseResolveRequest(projectRoot, phaseKind, mode, source, layers.Config, opts)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	resolved, err := goalx.ResolveConfig(layers, req)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	if source.Selection != nil && !phaseSelectionOverrideRequested(opts) {
+		applySelectionSnapshotConfig(&resolved.Config, source.Selection)
+		resolved.SelectionPolicy = copySelectionPolicy(source.Selection.Policy)
+		resolved.ExplicitSelection = source.Selection.ExplicitSelection
 	}
 	if opts.BudgetSet {
 		resolved.Config.Budget.MaxDuration = opts.Budget
 	}
-	return &resolved.Config, resolved.Engines, nil
+	return resolved, nil
 }
 
 func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.Mode, source *savedPhaseSource, baseCfg goalx.Config, opts phaseOptions) (goalx.ResolveRequest, error) {
@@ -193,18 +206,27 @@ func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.M
 		parallel = source.Parallel
 	}
 	req := goalx.ResolveRequest{
-		Name:             derivePhaseRunName(source.Run, phaseKind, opts.Name),
-		Mode:             mode,
-		Objective:        resolvePhaseObjective(phaseKind, source.Run, opts.Objective),
-		Preset:           opts.Preset,
-		Parallel:         parallel,
-		ClearSessions:    true,
-		MasterOverride:   masterOverride,
-		ResearchOverride: researchOverride,
-		DevelopOverride:  developOverride,
+		Name:                      derivePhaseRunName(source.Run, phaseKind, opts.Name),
+		Mode:                      mode,
+		Objective:                 resolvePhaseObjective(phaseKind, source.Run, opts.Objective),
+		Parallel:                  parallel,
+		ClearSessions:             true,
+		MasterOverride:            masterOverride,
+		ResearchOverride:          researchOverride,
+		DevelopOverride:           developOverride,
 		RequireEngineAvailability: true,
 	}
 	return req, nil
+}
+
+func phaseSelectionOverrideRequested(opts phaseOptions) bool {
+	return strings.TrimSpace(opts.Master) != "" ||
+		strings.TrimSpace(opts.ResearchRole) != "" ||
+		strings.TrimSpace(opts.DevelopRole) != "" ||
+		opts.Effort != "" ||
+		opts.MasterEffort != "" ||
+		opts.ResearchEffort != "" ||
+		opts.DevelopEffort != ""
 }
 
 func resolvePhaseObjective(phaseKind string, sourceRun string, explicit string) string {
@@ -288,7 +310,7 @@ func applySessionDimensions(cfg *goalx.Config, dimensions []string, opts phaseOp
 	if cfg == nil {
 		return
 	}
-	if len(dimensions) == 0 && opts.RouteRole == "" && opts.RouteProfile == "" && opts.Effort == "" {
+	if len(dimensions) == 0 && opts.Effort == "" {
 		return
 	}
 	size := cfg.Parallel
@@ -304,12 +326,6 @@ func applySessionDimensions(cfg *goalx.Config, dimensions []string, opts phaseOp
 		if len(dimensions) > 0 {
 			sessions[i].Dimensions = append([]string(nil), dimensions...)
 		}
-		if opts.RouteRole != "" {
-			sessions[i].RouteRole = opts.RouteRole
-		}
-		if opts.RouteProfile != "" {
-			sessions[i].RouteProfile = opts.RouteProfile
-		}
 		if opts.Effort != "" && sessions[i].Effort == "" {
 			sessions[i].Effort = opts.Effort
 		}
@@ -323,7 +339,7 @@ func writePhaseConfig(projectRoot string, cfg *goalx.Config, header string) erro
 		return err
 	}
 	outPath := ManualDraftConfigPath(projectRoot)
-	data, err := yaml.Marshal(cfg)
+	data, err := yaml.Marshal(manualDraftRenderableConfig(cfg))
 	if err != nil {
 		return err
 	}

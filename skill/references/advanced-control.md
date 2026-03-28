@@ -24,37 +24,41 @@ goalx run --from RUN --intent implement
 goalx run --from RUN --intent explore
 ```
 
-Shared config now uses top-level `preset`, `master`, `roles`, `routing`, and `preferences` fields. A minimal manual draft looks like:
+Recommended engine/model policy lives in user-scoped `~/.goalx/config.yaml` under `selection`.
+Manual drafts do not persist `selection`; they stay focused on the run-local config the user is reviewing.
+
+User-level selection example:
 
 ```yaml
-preset: codex
+selection:
+  disabled_targets:
+    - claude-code/sonnet
+  master_candidates:
+    - codex/gpt-5.4
+    - claude-code/opus
+  research_candidates:
+    - claude-code/opus
+    - codex/gpt-5.4
+  develop_candidates:
+    - codex/gpt-5.4
+    - codex/gpt-5.4-mini
+  master_effort: high
+  research_effort: high
+  develop_effort: medium
+```
+
+Minimal manual draft example:
+
+```yaml
 master:
-  engine: claude-code
-  model: opus
-roles:
-  research:
-    engine: codex
-    model: gpt-5.4
-    effort: high
-  develop:
-    engine: codex
-    model: gpt-5.4
-    effort: medium
-routing:
-  profiles:
-    research_deep: { engine: claude-code, model: opus, effort: high }
-    build_fast: { engine: codex, model: gpt-5.4-mini, effort: minimal }
-  rules:
-    - role: research
-      any_dimensions: [depth]
-      efforts: [high, max]
-      profile: research_deep
-    - role: develop
-      efforts: [minimal, low]
-      profile: build_fast
+  check_interval: 2m
 preferences:
   research:
-    guidance: "Use high-effort Codex by default; escalate depth work to opus."
+    guidance: "Bias toward independent evidence before proposing fixes."
+  develop:
+    guidance: "Prefer small, mergeable changes."
+local_validation:
+  command: "go build ./... && go test ./..."
 ```
 
 ## Budget
@@ -114,9 +118,8 @@ Prefer durable GoalX commands over direct transport input:
 - `goalx tell --run NAME "direction"` to redirect the master or a session
 - `goalx tell --urgent --run NAME "message"` to send an urgent message through the durable inbox
 - `goalx add --run NAME --mode develop "direction"` to create a session manually in develop mode
-- `goalx add --run NAME --mode research --effort high "question"` to add a routed research session
-- `goalx add --run NAME --mode develop --route-profile PROFILE "task"` to force a specific routing profile
-- `goalx add --run NAME --mode research --engine ENGINE --model MODEL --effort LEVEL "task"` only when you intentionally want to bypass routing
+- `goalx add --run NAME --mode research --effort high "question"` to add a research session using the current selection policy
+- `goalx add --run NAME --mode research --engine ENGINE --model MODEL --effort LEVEL "task"` only when you intentionally want to bypass the current selection policy
 - `goalx run "goal" --intent research --effort high` to start a direct research run with explicit reasoning depth
 - `goalx run "goal" --intent develop --effort medium` to start a direct develop run with explicit reasoning depth
 - `goalx run --from RUN --intent debate` to start a debate phase from a saved research run
@@ -126,21 +129,22 @@ Prefer durable GoalX commands over direct transport input:
 - `--effort LEVEL`, `--master-effort LEVEL`, `--research-effort LEVEL`, and `--develop-effort LEVEL` to control provider-aware reasoning depth
 - `--dimension depth,adversarial` to seed launch-time viewpoints for a new run or phase
 - `goalx dimension --run NAME session-2 --set depth,adversarial` to change live runtime dimensions after launch
-- `--parallel N` to change the initial fan-out for this run or phase; omit it to keep project/preset defaults
+- `--parallel N` to change the initial fan-out for this run or phase; omit it to keep current defaults
 - `--write-config` only when the user explicitly wants to generate `.goalx/goalx.yaml` first, then continue with `goalx start --config .goalx/goalx.yaml`
 - `goalx park --run NAME session-N` to pause a session without losing its worktree
 - `goalx resume --run NAME session-N` to restart a parked session
-- `goalx replace --run NAME session-N --route-profile PROFILE` to hand the same slice to a new routed owner
+- `goalx replace --run NAME session-N --engine ENGINE --model MODEL --effort LEVEL` to hand the same slice to a new explicitly chosen owner
 - `goalx keep --run NAME session-N` to merge a develop session branch
 - `goalx integrate --run NAME --method partial_adopt --from run-root,session-N` to record a manual run-root integration after master merged or cherry-picked work itself
 
 `--parallel` is not a permanent cap. Master may still add or resume more durable sessions later if the goal warrants it.
 
-## Effort, Routing, and Runtime Dimensions
+## Effort, Selection, and Runtime Dimensions
 
 - Use `--dimension` at launch and `goalx dimension` at runtime.
-- Routing profiles are config entries under `routing.profiles`; ordered `routing.rules` match `route_role + dimensions + effort` to one of those profiles.
-- Session identity records `requested_effort`, `effective_effort`, `route_role`, `route_profile`, resolved dimensions, and replacement lineage for each worker.
+- Prefer user-scoped `selection.*` candidate pools and disabled targets for normal engine/model policy.
+- Older `routing.profiles` and `routing.rules` config still loads for backward compatibility, but it is not part of the recommended public operator surface.
+- Session identity records `requested_effort`, `effective_effort`, resolved dimensions, and replacement lineage for each worker.
 
 ## Urgent Delivery and Recovery
 

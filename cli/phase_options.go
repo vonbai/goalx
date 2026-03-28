@@ -16,8 +16,6 @@ type phaseOptions struct {
 	Parallel       int
 	ContextPaths   []string
 	Dimensions     []string
-	RouteRole      string
-	RouteProfile   string
 	Effort         goalx.EffortLevel
 	Master         string
 	ResearchRole   string
@@ -25,18 +23,18 @@ type phaseOptions struct {
 	MasterEffort   goalx.EffortLevel
 	ResearchEffort goalx.EffortLevel
 	DevelopEffort  goalx.EffortLevel
-	Preset         string
 	BudgetSet      bool
 	Budget         time.Duration
 	WriteConfig    bool
 }
 
 func phaseUsage(command string) string {
-	return fmt.Sprintf(`usage: goalx %s --from RUN [--name NAME] [--objective TEXT] [--parallel N] [--preset NAME] [--master ENGINE/MODEL] [--research-role ENGINE/MODEL] [--develop-role ENGINE/MODEL] [--context PATHS] [--dimension SPEC]... [--route-role ROLE] [--route-profile PROFILE] [--effort LEVEL] [--master-effort LEVEL] [--research-effort LEVEL] [--develop-effort LEVEL] [--budget DURATION] [--write-config]
+	return fmt.Sprintf(`usage: goalx %s --from RUN [--name NAME] [--objective TEXT] [--parallel N] [--master ENGINE/MODEL] [--research-role ENGINE/MODEL] [--develop-role ENGINE/MODEL] [--context PATHS] [--dimension SPEC]... [--effort LEVEL] [--master-effort LEVEL] [--research-effort LEVEL] [--develop-effort LEVEL] [--budget DURATION] [--write-config]
 
 notes:
   --from RUN is required and must reference a saved run.
   --parallel is optional initial fan-out for the new phase run.
+  saved run selection snapshot stays in effect unless you request an explicit CLI selection override.
   direct start is the default; use --write-config only for advanced config-first control.`, command)
 }
 
@@ -84,18 +82,6 @@ func parsePhaseOptions(command string, args []string) (phaseOptions, error) {
 			}
 			i++
 			opts.Dimensions = append(opts.Dimensions, splitListFlag(args[i])...)
-		case "--route-role":
-			if i+1 >= len(args) {
-				return opts, fmt.Errorf("missing value for --route-role")
-			}
-			i++
-			opts.RouteRole = strings.TrimSpace(args[i])
-		case "--route-profile":
-			if i+1 >= len(args) {
-				return opts, fmt.Errorf("missing value for --route-profile")
-			}
-			i++
-			opts.RouteProfile = strings.TrimSpace(args[i])
 		case "--master":
 			if i+1 >= len(args) {
 				return opts, fmt.Errorf("missing value for --master")
@@ -154,12 +140,6 @@ func parsePhaseOptions(command string, args []string) (phaseOptions, error) {
 				return opts, err
 			}
 			opts.DevelopEffort = level
-		case "--preset":
-			if i+1 >= len(args) {
-				return opts, fmt.Errorf("missing value for --preset")
-			}
-			i++
-			opts.Preset = args[i]
 		case "--budget":
 			if i+1 >= len(args) {
 				return opts, fmt.Errorf("missing value for --budget")
@@ -186,6 +166,7 @@ func parsePhaseOptions(command string, args []string) (phaseOptions, error) {
 }
 
 func mergeNextConfigIntoPhaseOptions(opts phaseOptions, nc *nextConfigJSON, phaseMode goalx.Mode) phaseOptions {
+	_ = phaseMode
 	if nc == nil {
 		return opts
 	}
@@ -195,53 +176,11 @@ func mergeNextConfigIntoPhaseOptions(opts phaseOptions, nc *nextConfigJSON, phas
 	if opts.Objective == "" && nc.Objective != "" {
 		opts.Objective = nc.Objective
 	}
-	if opts.Preset == "" && nc.Preset != "" {
-		opts.Preset = nc.Preset
-	}
 	if len(opts.ContextPaths) == 0 && len(nc.Context) > 0 {
 		opts.ContextPaths = append([]string(nil), nc.Context...)
 	}
 	if len(opts.Dimensions) == 0 && len(nc.Dimensions) > 0 {
 		opts.Dimensions = append([]string(nil), nc.Dimensions...)
-	}
-	if opts.Effort == "" && nc.Effort != "" {
-		opts.Effort = nc.Effort
-	}
-	if opts.RouteRole == "" && nc.RouteRole != "" {
-		opts.RouteRole = nc.RouteRole
-	}
-	if opts.RouteProfile == "" && nc.RouteProfile != "" {
-		opts.RouteProfile = nc.RouteProfile
-	}
-	if opts.Master == "" && nc.MasterEngine != "" && nc.MasterModel != "" {
-		opts.Master = nc.MasterEngine + "/" + nc.MasterModel
-	}
-	if opts.MasterEffort == "" && nc.MasterEffort != "" {
-		opts.MasterEffort = nc.MasterEffort
-	}
-	if nc.Engine != "" && nc.Model != "" {
-		targetMode := phaseMode
-		if nc.Mode == "research" {
-			targetMode = goalx.ModeResearch
-		} else if nc.Mode == "develop" {
-			targetMode = goalx.ModeDevelop
-		}
-		switch targetMode {
-		case goalx.ModeResearch:
-			if opts.ResearchRole == "" {
-				opts.ResearchRole = nc.Engine + "/" + nc.Model
-			}
-			if opts.ResearchEffort == "" && nc.Effort != "" {
-				opts.ResearchEffort = nc.Effort
-			}
-		case goalx.ModeDevelop:
-			if opts.DevelopRole == "" {
-				opts.DevelopRole = nc.Engine + "/" + nc.Model
-			}
-			if opts.DevelopEffort == "" && nc.Effort != "" {
-				opts.DevelopEffort = nc.Effort
-			}
-		}
 	}
 	return opts
 }

@@ -39,7 +39,13 @@ func TestExploreUsesSharedConfigAndPreservesSharedContext(t *testing.T) {
 	}
 
 	writeProjectConfigFixture(t, projectRoot, `
-preset: codex
+master:
+  engine: codex
+  model: gpt-5.4
+roles:
+  research:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -55,7 +61,13 @@ local_validation:
 		"integration.json":    "{\n  \"version\": 1,\n  \"current_experiment_id\": \"exp_shared\",\n  \"current_branch\": \"goalx/research-a/root\",\n  \"current_commit\": \"abc1234\",\n  \"updated_at\": \"2026-03-28T10:00:00Z\"\n}\n",
 	})
 	writeProjectConfigFixture(t, projectRoot, strings.TrimSpace(`
-preset: claude
+master:
+  engine: claude-code
+  model: opus
+roles:
+  research:
+    engine: claude-code
+    model: sonnet
 target:
   files: ["."]
 local_validation:
@@ -148,7 +160,6 @@ func writeSavedPhaseSourceFixture(t *testing.T, projectRoot, runName, phaseKind 
 		Name:      runName,
 		Mode:      goalx.ModeResearch,
 		Objective: "audit auth flow",
-		Preset:    "claude",
 		Parallel:  2,
 		Master: goalx.MasterConfig{
 			Engine: "codex",

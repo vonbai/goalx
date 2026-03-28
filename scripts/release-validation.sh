@@ -192,7 +192,16 @@ Temporary project used to validate GoalX release flows.
 EOF
 mkdir -p "${PROJECT_DIR}/.goalx"
 cat > "${PROJECT_DIR}/.goalx/config.yaml" <<'EOF'
-preset: codex
+master:
+  engine: codex
+  model: gpt-5.4
+roles:
+  research:
+    engine: codex
+    model: gpt-5.4
+  develop:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["README.md"]
 local_validation:

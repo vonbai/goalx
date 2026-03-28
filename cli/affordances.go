@@ -147,19 +147,19 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 		{
 			ID:      "add-research",
 			Kind:    "control",
-			Summary: "Launch a route-first research worker.",
+			Summary: "Launch a research worker using the current selection policy.",
 			Command: fmt.Sprintf(`goalx add --run %s --mode research --effort high --worktree "sub-goal"`, runName),
 		},
 		{
 			ID:      "add-develop",
 			Kind:    "control",
-			Summary: "Launch a route-first develop worker.",
+			Summary: "Launch a develop worker using the current selection policy.",
 			Command: fmt.Sprintf(`goalx add --run %s --mode develop --effort medium --worktree "sub-goal"`, runName),
 		},
 		{
 			ID:      "add-override",
 			Kind:    "control",
-			Summary: "Launch an explicit engine/model override worker.",
+			Summary: "Launch an explicit engine/model override worker that bypasses the current selection policy.",
 			Command: fmt.Sprintf(`goalx add --run %s --mode research --engine ENGINE --model MODEL --effort LEVEL --worktree "sub-goal"`, runName),
 		},
 		{
@@ -188,6 +188,9 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 		},
 	}
 	if index != nil {
+		if item := buildSelectionFactsAffordance(index); item != nil {
+			doc.Items = append(doc.Items, *item)
+		}
 		if item := buildWorktreeBoundaryAffordance(index, normalizedTarget); item != nil {
 			doc.Items = append(doc.Items, *item)
 		}
@@ -209,6 +212,36 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 		})
 	}
 	return doc, nil
+}
+
+func buildSelectionFactsAffordance(index *ContextIndex) *AffordanceItem {
+	if index == nil || index.Selection == nil {
+		return nil
+	}
+	item := &AffordanceItem{
+		ID:      "selection-facts",
+		Kind:    "fact",
+		Summary: "Selection candidate pools and disabled targets recorded for this run.",
+	}
+	if len(index.Selection.MasterCandidates) > 0 {
+		item.Facts = append(item.Facts, fmt.Sprintf("Master candidates: `%s`.", strings.Join(index.Selection.MasterCandidates, ", ")))
+	}
+	if len(index.Selection.ResearchCandidates) > 0 {
+		item.Facts = append(item.Facts, fmt.Sprintf("Research candidates: `%s`.", strings.Join(index.Selection.ResearchCandidates, ", ")))
+	}
+	if len(index.Selection.DevelopCandidates) > 0 {
+		item.Facts = append(item.Facts, fmt.Sprintf("Develop candidates: `%s`.", strings.Join(index.Selection.DevelopCandidates, ", ")))
+	}
+	if len(index.Selection.DisabledEngines) > 0 {
+		item.Facts = append(item.Facts, fmt.Sprintf("Disabled engines: `%s`.", strings.Join(index.Selection.DisabledEngines, ", ")))
+	}
+	if len(index.Selection.DisabledTargets) > 0 {
+		item.Facts = append(item.Facts, fmt.Sprintf("Disabled targets: `%s`.", strings.Join(index.Selection.DisabledTargets, ", ")))
+	}
+	if index.SelectionSnapshotPath != "" {
+		item.Paths = []string{index.SelectionSnapshotPath}
+	}
+	return item
 }
 
 func buildWorktreeBoundaryAffordance(index *ContextIndex, target string) *AffordanceItem {

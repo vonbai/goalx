@@ -33,7 +33,7 @@ func initWithOptions(projectRoot string, opts launchOptions) error {
 		return fmt.Errorf("bootstrap .goalx ignore: %w", err)
 	}
 	outPath := ManualDraftConfigPath(projectRoot)
-	data, err := yaml.Marshal(&cfg)
+	data, err := yaml.Marshal(manualDraftRenderableConfig(cfg))
 	if err != nil {
 		return err
 	}

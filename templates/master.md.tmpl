@@ -98,7 +98,7 @@ Write supporting findings to `{{.ReportsDir}}`. The final user-facing run result
 | Simple | {{.Preferences.Simple.Guidance}} |
 {{- end}}
 
-Use routing profiles, routing rules, and these preferences together when choosing engines. Prefer route-first session launches. Explicit `--engine/--model` bypasses routing. Use them only when intentionally overriding run config, and record why.
+Use the selection facts and these preferences together when choosing engines. Prefer policy-based session launches. Explicit `--engine/--model` is an override. Use it only when intentionally bypassing the current candidate pools, and record why.
 {{- end}}
 
 ## Strategy
@@ -157,7 +157,7 @@ Use routing profiles, routing rules, and these preferences together when choosin
 - Provider-native skills, plugins, and MCP tools are allowed when they materially help.
 - If the user or master explicitly names a provider-native capability and it is visible, use it before the default flow.
 - If the named capability is unavailable, report that immediately.
-- Do not treat skill presence as the routing standard.
+- Do not treat skill presence as the selection standard.
 - Do not start a competing orchestration loop inside them.
 {{if .MasterCapabilities.AutonomyPersistenceReminder}}- If helper work becomes multi-step, durable, worktree-bound, or expected to produce mergeable output, move it into `goalx add` instead of extending native-helper ownership.
 {{end}}
@@ -239,7 +239,7 @@ Use routing profiles, routing rules, and these preferences together when choosin
 - Do not wait on one session if other independent required work can proceed.
 - If a session is stale for 15+ minutes while its lease is healthy, park it and replace it.
 - If a session shows no journal output for 15+ minutes while its lease is healthy (check liveness.json JournalStaleMinutes), park it and launch a replacement. Do not just bypass.
-- When a session is stale or stuck, prefer `goalx park` plus a replacement or resumed worker over silently routing around the gap.
+- When a session is stale or stuck, prefer `goalx park` plus a replacement or resumed worker over silently working around the gap.
 - Research outputs may contain `dispatchable_slices`; you may dispatch them into fresh or resumed sessions or directly adopt them yourself.
 {{if .CoordinationPath}}- Check the coordination digest version each control cycle. Re-read the full coordination content only when it changes, when the user redirects the run, before `goalx verify`, before `goalx keep`, or before a phase transition.
 {{end}}- Re-read `goalx context --run {{.RunName}}`, `{{.GoalPath}}`, `{{.AcceptanceStatePath}}`, `{{.RunMetadataPath}}`, and `{{.CompletionProofPath}}` before deciding the run is complete.
@@ -293,6 +293,19 @@ Use routing profiles, routing rules, and these preferences together when choosin
    Replace `goalx run --from {{.RunName}} --intent debate` with `goalx run --from {{.RunName}} --intent implement` or `goalx run --from {{.RunName}} --intent explore` when that is the correct next phase.
 5. Do NOT just write a recommendation and wait. **You drive the transition.** The framework does not route between phases — you do.
 
+## Selection Facts
+
+{{if .SelectionSnapshotPath}}- Selection snapshot: `{{.SelectionSnapshotPath}}`{{end}}
+- Bootstrap master target: `{{.Master.Engine}}/{{.Master.Model}}`
+{{if and .Roles.Research.Engine .Roles.Research.Model}}- Research default target: `{{.Roles.Research.Engine}}/{{.Roles.Research.Model}}`{{end}}
+{{if and .Roles.Develop.Engine .Roles.Develop.Model}}- Develop default target: `{{.Roles.Develop.Engine}}/{{.Roles.Develop.Model}}`{{end}}
+{{if .SelectionPolicy.MasterCandidates}}- Master candidates: `{{join .SelectionPolicy.MasterCandidates ", "}}`{{end}}
+{{if .SelectionPolicy.ResearchCandidates}}- Research candidates: `{{join .SelectionPolicy.ResearchCandidates ", "}}`{{end}}
+{{if .SelectionPolicy.DevelopCandidates}}- Develop candidates: `{{join .SelectionPolicy.DevelopCandidates ", "}}`{{end}}
+{{if .SelectionPolicy.DisabledEngines}}- Disabled engines: `{{join .SelectionPolicy.DisabledEngines ", "}}`{{end}}
+{{if .SelectionPolicy.DisabledTargets}}- Disabled targets: `{{join .SelectionPolicy.DisabledTargets ", "}}`{{end}}
+- Treat these as factual candidate pools and bans, not hidden framework judgment.
+
 ## Tools
 
 - Bash: full access to all worktrees, transport sessions, project root (`{{.ProjectRoot}}`)
@@ -311,10 +324,10 @@ Use routing profiles, routing rules, and these preferences together when choosin
 - Append an event-log durable surface: `goalx durable append goal-log --run {{.RunName}} --file /abs/path.jsonl`
 - Record acceptance results: `goalx verify --run {{.RunName}}`
 - Record a manual run-root integration: `goalx integrate --run {{.RunName}} --method partial_adopt --from session-N,session-M`
-- Launch a route-first research worker: `goalx add --run {{.RunName}} --mode research --effort high --worktree "sub-goal"`
-- Launch a route-first develop worker: `goalx add --run {{.RunName}} --mode develop --effort medium --worktree "sub-goal"`
+- Launch a research worker using the current selection policy: `goalx add --run {{.RunName}} --mode research --effort high --worktree "sub-goal"`
+- Launch a develop worker using the current selection policy: `goalx add --run {{.RunName}} --mode develop --effort medium --worktree "sub-goal"`
 - Launch an explicit override worker: `goalx add --run {{.RunName}} --mode research --engine ENGINE --model MODEL --effort LEVEL --worktree "sub-goal"`
-- Explicit `--engine/--model` bypasses routing. Use it only for intentional overrides.
+- Explicit `--engine/--model` bypasses the current selection policy. Use it only for intentional overrides.
 - Save artifacts: `goalx save {{.RunName}}`
 - Stop current run before restarting if needed: `goalx stop --run {{.RunName}}`
 - Transport wake text is only a trigger. Real instructions live in the control files above.

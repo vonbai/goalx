@@ -89,123 +89,33 @@ func TestTmuxSessionName(t *testing.T) {
 	}
 }
 
-func TestPresetClaude(t *testing.T) {
-	cfg := Config{Preset: "claude", Mode: ModeDevelop}
-	applyPreset(&cfg)
-	if cfg.Master.Engine != "claude-code" || cfg.Master.Model != "opus" {
-		t.Errorf("master = %s/%s, want claude-code/opus", cfg.Master.Engine, cfg.Master.Model)
+func TestLoadConfigLayersRejectsRemovedPresetAndRoutingFields(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
 	}
-	if cfg.Roles.Develop.Engine != "codex" || cfg.Roles.Develop.Model != "gpt-5.4" {
-		t.Errorf("develop role = %s/%s, want codex/gpt-5.4", cfg.Roles.Develop.Engine, cfg.Roles.Develop.Model)
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte(`
+preset: codex
+routing:
+  profiles:
+    build_fast:
+      engine: codex
+      model: gpt-5.4-mini
+`), 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	if _, err := LoadConfigLayers(projectRoot); err == nil {
+		t.Fatal("LoadConfigLayers unexpectedly accepted removed preset/routing fields")
 	}
 }
 
-func TestPresetClaudeResearch(t *testing.T) {
-	cfg := Config{Preset: "claude", Mode: ModeResearch}
-	applyPreset(&cfg)
-	if cfg.Roles.Research.Engine != "claude-code" || cfg.Roles.Research.Model != "sonnet" {
-		t.Errorf("research role = %s/%s, want claude-code/sonnet", cfg.Roles.Research.Engine, cfg.Roles.Research.Model)
-	}
-}
-
-func TestPresetClaudeH(t *testing.T) {
-	cfg := Config{Preset: "claude-h", Mode: ModeDevelop}
-	applyPreset(&cfg)
-	if cfg.Master.Model != "opus" {
-		t.Errorf("claude-h master model = %q, want opus", cfg.Master.Model)
-	}
-	if cfg.Roles.Develop.Engine != "claude-code" || cfg.Roles.Develop.Model != "opus" {
-		t.Errorf("claude-h develop role = %s/%s, want claude-code/opus", cfg.Roles.Develop.Engine, cfg.Roles.Develop.Model)
-	}
-}
-
-func TestPresetCodex(t *testing.T) {
-	cfg := Config{Preset: "codex", Mode: ModeDevelop}
-	applyPreset(&cfg)
-	if cfg.Master.Engine != "codex" || cfg.Master.Model != "gpt-5.4" {
-		t.Errorf("codex master = %s/%s, want codex/gpt-5.4", cfg.Master.Engine, cfg.Master.Model)
-	}
-	if cfg.Roles.Develop.Engine != "codex" || cfg.Roles.Develop.Model != "gpt-5.4" {
-		t.Errorf("codex develop role = %s/%s, want codex/gpt-5.4", cfg.Roles.Develop.Engine, cfg.Roles.Develop.Model)
-	}
-}
-
-func TestPresetMixed(t *testing.T) {
-	cfg := Config{Preset: "mixed", Mode: ModeResearch}
-	applyPreset(&cfg)
-	if cfg.Master.Engine != "codex" || cfg.Master.Model != "gpt-5.4" {
-		t.Errorf("mixed master = %s/%s, want codex/gpt-5.4", cfg.Master.Engine, cfg.Master.Model)
-	}
-	if cfg.Roles.Research.Engine != "claude-code" || cfg.Roles.Research.Model != "opus" {
-		t.Errorf("mixed research role = %s/%s, want claude-code/opus", cfg.Roles.Research.Engine, cfg.Roles.Research.Model)
-	}
-}
-
-func TestDetectPresetFromEnvironment(t *testing.T) {
-	t.Run("none", func(t *testing.T) {
-		t.Setenv("PATH", t.TempDir())
-		preset, err := DetectPresetFromEnvironment()
-		if err == nil {
-			t.Fatal("DetectPresetFromEnvironment unexpectedly succeeded")
-		}
-		if preset != "" {
-			t.Fatalf("preset = %q, want empty", preset)
-		}
-		if !strings.Contains(err.Error(), "no supported engines found in PATH") {
-			t.Fatalf("error = %v, want no supported engines", err)
-		}
-	})
-
-	t.Run("claude only", func(t *testing.T) {
-		pathDir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(pathDir, "claude"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-			t.Fatalf("write claude shim: %v", err)
-		}
-		t.Setenv("PATH", pathDir)
-		preset, err := DetectPresetFromEnvironment()
-		if err != nil {
-			t.Fatalf("DetectPresetFromEnvironment: %v", err)
-		}
-		if preset != "claude-h" {
-			t.Fatalf("preset = %q, want claude-h", preset)
-		}
-	})
-
-	t.Run("codex only", func(t *testing.T) {
-		pathDir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(pathDir, "codex"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-			t.Fatalf("write codex shim: %v", err)
-		}
-		t.Setenv("PATH", pathDir)
-		preset, err := DetectPresetFromEnvironment()
-		if err != nil {
-			t.Fatalf("DetectPresetFromEnvironment: %v", err)
-		}
-		if preset != "codex" {
-			t.Fatalf("preset = %q, want codex", preset)
-		}
-	})
-}
-
-func TestBuiltinDefaultsIncludeRoutingRulesAndPreferences(t *testing.T) {
-	profile := BuiltinDefaults.Routing.Profiles["research_deep"]
-	if profile.Engine != "claude-code" || profile.Model != "opus" || profile.Effort != EffortHigh {
-		t.Fatalf("research_deep = %#v, want claude-code/opus/high", profile)
-	}
-	if got := BuiltinDefaults.Routing.Profiles["research_max"]; got.Effort != EffortMax {
-		t.Fatalf("research_max.effort = %q, want max", got.Effort)
-	}
-	if got := BuiltinDefaults.Routing.Profiles["build_fast"]; got.Engine != "codex" || got.Model != "gpt-5.4-mini" || got.Effort != EffortMinimal {
-		t.Fatalf("build_fast = %#v, want codex/gpt-5.4-mini/minimal", got)
-	}
+func TestBuiltinDefaultsIncludePreferencesAndDimensions(t *testing.T) {
 	if got := BuiltinDimensions["audit"]; got == "" {
 		t.Fatal("builtin audit dimension missing")
-	}
-	if len(BuiltinDefaults.Routing.Rules) == 0 {
-		t.Fatal("routing.rules is empty")
-	}
-	if BuiltinDefaults.Routing.Rules[0].Role == "" || BuiltinDefaults.Routing.Rules[0].Profile == "" {
-		t.Fatalf("routing.rules[0] = %#v", BuiltinDefaults.Routing.Rules[0])
 	}
 	if got := BuiltinDefaults.Preferences.Research.Guidance; got != "默认 gpt-5.4 high。深度分析/架构设计用 opus。简单信息收集用 fast。" {
 		t.Fatalf("research guidance = %q", got)
@@ -218,7 +128,290 @@ func TestBuiltinDefaultsIncludeRoutingRulesAndPreferences(t *testing.T) {
 	}
 }
 
-func TestLoadConfigUsesBuiltinRoutingAndPreferencesWhenUnset(t *testing.T) {
+func TestResolveSelectionUsesUserScopedPolicy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	pathDir := t.TempDir()
+	writeSelectionTestShim(t, pathDir, "claude")
+	writeSelectionTestShim(t, pathDir, "codex")
+	t.Setenv("PATH", pathDir)
+
+	userGoalxDir := filepath.Join(home, ".goalx")
+	if err := os.MkdirAll(userGoalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir user config dir: %v", err)
+	}
+	userCfg := []byte(strings.TrimSpace(`
+selection:
+  disabled_targets:
+    - claude-code/sonnet
+  master_candidates:
+    - claude-code/sonnet
+    - codex/gpt-5.4
+  research_candidates:
+    - claude-code/opus
+  develop_candidates:
+    - codex/fast
+  master_effort: high
+  research_effort: max
+  develop_effort: low
+`) + "\n")
+	if err := os.WriteFile(filepath.Join(userGoalxDir, "config.yaml"), userCfg, 0o644); err != nil {
+		t.Fatalf("write user config: %v", err)
+	}
+
+	projectRoot := t.TempDir()
+	layers, err := LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+	resolved, err := ResolveConfig(layers, ResolveRequest{
+		Name:                      "demo",
+		Mode:                      ModeAuto,
+		Objective:                 "ship it",
+		RequireEngineAvailability: true,
+		TargetOverride:            &TargetConfig{Files: []string{"README.md"}},
+		LocalValidationOverride:   &LocalValidationConfig{Command: "go test ./..."},
+	})
+	if err != nil {
+		t.Fatalf("ResolveConfig: %v", err)
+	}
+
+	if resolved.Config.Master.Engine != "codex" || resolved.Config.Master.Model != "gpt-5.4" {
+		t.Fatalf("master = %s/%s, want codex/gpt-5.4", resolved.Config.Master.Engine, resolved.Config.Master.Model)
+	}
+	if resolved.Config.Master.Effort != EffortHigh {
+		t.Fatalf("master effort = %q, want high", resolved.Config.Master.Effort)
+	}
+	if resolved.Config.Roles.Research.Engine != "claude-code" || resolved.Config.Roles.Research.Model != "opus" {
+		t.Fatalf("research = %s/%s, want claude-code/opus", resolved.Config.Roles.Research.Engine, resolved.Config.Roles.Research.Model)
+	}
+	if resolved.Config.Roles.Research.Effort != EffortMax {
+		t.Fatalf("research effort = %q, want max", resolved.Config.Roles.Research.Effort)
+	}
+	if resolved.Config.Roles.Develop.Engine != "codex" || resolved.Config.Roles.Develop.Model != "fast" {
+		t.Fatalf("develop = %s/%s, want codex/fast", resolved.Config.Roles.Develop.Engine, resolved.Config.Roles.Develop.Model)
+	}
+	if resolved.Config.Roles.Develop.Effort != EffortLow {
+		t.Fatalf("develop effort = %q, want low", resolved.Config.Roles.Develop.Effort)
+	}
+}
+
+func TestResolveConfigUsesImplicitSelectionDefaults(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	pathDir := t.TempDir()
+	writeSelectionTestShim(t, pathDir, "claude")
+	writeSelectionTestShim(t, pathDir, "codex")
+	t.Setenv("PATH", pathDir)
+
+	projectRoot := t.TempDir()
+	projectGoalxDir := filepath.Join(projectRoot, ".goalx")
+	if err := os.MkdirAll(projectGoalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	projectCfg := []byte(strings.TrimSpace(`
+target:
+  files: ["README.md"]
+local_validation:
+  command: go test ./...
+`) + "\n")
+	if err := os.WriteFile(filepath.Join(projectGoalxDir, "config.yaml"), projectCfg, 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	layers, err := LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+	resolved, err := ResolveConfig(layers, ResolveRequest{
+		Name:                      "demo",
+		Mode:                      ModeAuto,
+		Objective:                 "ship it",
+		RequireEngineAvailability: true,
+	})
+	if err != nil {
+		t.Fatalf("ResolveConfig: %v", err)
+	}
+
+	if resolved.Config.Master.Engine != "codex" || resolved.Config.Master.Model != "gpt-5.4" {
+		t.Fatalf("master = %s/%s, want codex/gpt-5.4", resolved.Config.Master.Engine, resolved.Config.Master.Model)
+	}
+	if resolved.Config.Roles.Research.Engine != "claude-code" || resolved.Config.Roles.Research.Model != "opus" {
+		t.Fatalf("research = %s/%s, want claude-code/opus", resolved.Config.Roles.Research.Engine, resolved.Config.Roles.Research.Model)
+	}
+	if resolved.Config.Roles.Develop.Engine != "codex" || resolved.Config.Roles.Develop.Model != "gpt-5.4" {
+		t.Fatalf("develop = %s/%s, want codex/gpt-5.4", resolved.Config.Roles.Develop.Engine, resolved.Config.Roles.Develop.Model)
+	}
+	if resolved.SelectionPolicy.MasterCandidates[0] != "codex/gpt-5.4" {
+		t.Fatalf("master_candidates = %#v, want codex first", resolved.SelectionPolicy.MasterCandidates)
+	}
+}
+
+func TestImplicitSelectionDefaultsFillMissingTargetsWithoutOverwritingLegacyValues(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	pathDir := t.TempDir()
+	writeSelectionTestShim(t, pathDir, "claude")
+	writeSelectionTestShim(t, pathDir, "codex")
+	t.Setenv("PATH", pathDir)
+
+	projectRoot := t.TempDir()
+	projectGoalxDir := filepath.Join(projectRoot, ".goalx")
+	if err := os.MkdirAll(projectGoalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	projectCfg := []byte(strings.TrimSpace(`
+master:
+  effort: max
+roles:
+  research:
+    engine: claude-code
+    model: sonnet
+  develop:
+    effort: low
+target:
+  files: ["README.md"]
+local_validation:
+  command: go test ./...
+`) + "\n")
+	if err := os.WriteFile(filepath.Join(projectGoalxDir, "config.yaml"), projectCfg, 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	layers, err := LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+	resolved, err := ResolveConfig(layers, ResolveRequest{
+		Name:                      "demo",
+		Mode:                      ModeDevelop,
+		Objective:                 "ship it",
+		RequireEngineAvailability: true,
+	})
+	if err != nil {
+		t.Fatalf("ResolveConfig: %v", err)
+	}
+
+	if resolved.Config.Master.Engine != "codex" || resolved.Config.Master.Model != "gpt-5.4" {
+		t.Fatalf("master = %s/%s, want codex/gpt-5.4", resolved.Config.Master.Engine, resolved.Config.Master.Model)
+	}
+	if resolved.Config.Master.Effort != EffortMax {
+		t.Fatalf("master effort = %q, want explicit max preserved", resolved.Config.Master.Effort)
+	}
+	if resolved.Config.Roles.Research.Engine != "claude-code" || resolved.Config.Roles.Research.Model != "sonnet" {
+		t.Fatalf("research = %s/%s, want explicit claude-code/sonnet preserved", resolved.Config.Roles.Research.Engine, resolved.Config.Roles.Research.Model)
+	}
+	if resolved.Config.Roles.Develop.Engine != "codex" || resolved.Config.Roles.Develop.Model != "gpt-5.4" {
+		t.Fatalf("develop = %s/%s, want codex/gpt-5.4 default", resolved.Config.Roles.Develop.Engine, resolved.Config.Roles.Develop.Model)
+	}
+	if resolved.Config.Roles.Develop.Effort != EffortLow {
+		t.Fatalf("develop effort = %q, want explicit low preserved", resolved.Config.Roles.Develop.Effort)
+	}
+}
+
+func TestLoadConfigLayersRejectsProjectScopedSelection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	projectGoalxDir := filepath.Join(projectRoot, ".goalx")
+	if err := os.MkdirAll(projectGoalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	projectCfg := []byte(strings.TrimSpace(`
+selection:
+  master_candidates:
+    - codex/gpt-5.4
+`) + "\n")
+	if err := os.WriteFile(filepath.Join(projectGoalxDir, "config.yaml"), projectCfg, 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	_, err := LoadConfigLayers(projectRoot)
+	if err == nil || !strings.Contains(err.Error(), "project config: selection is only supported in ~/.goalx/config.yaml") {
+		t.Fatalf("LoadConfigLayers error = %v, want project selection rejection", err)
+	}
+}
+
+func TestResolveConfigPreviewRejectsSelectionInManualDraft(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	layers, err := LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+
+	_, err = ResolveConfigPreview(layers, ResolveRequest{
+		ManualDraft: &Config{
+			Name:      "draft",
+			Mode:      ModeDevelop,
+			Objective: "ship it",
+			Selection: SelectionConfig{
+				MasterCandidates: []string{"codex/gpt-5.4"},
+			},
+			Target:          TargetConfig{Files: []string{"README.md"}},
+			LocalValidation: LocalValidationConfig{Command: "go test ./..."},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "manual draft config: selection is only supported in ~/.goalx/config.yaml") {
+		t.Fatalf("ResolveConfigPreview error = %v, want manual draft selection rejection", err)
+	}
+}
+
+func TestResolveSelectionRejectsMalformedAndDuplicateTargets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	pathDir := t.TempDir()
+	writeSelectionTestShim(t, pathDir, "codex")
+	t.Setenv("PATH", pathDir)
+
+	userGoalxDir := filepath.Join(home, ".goalx")
+	if err := os.MkdirAll(userGoalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir user config dir: %v", err)
+	}
+	userCfg := []byte(strings.TrimSpace(`
+selection:
+  master_candidates:
+    - codex
+  develop_candidates:
+    - codex/gpt-5.4
+    - codex/gpt-5.4
+`) + "\n")
+	if err := os.WriteFile(filepath.Join(userGoalxDir, "config.yaml"), userCfg, 0o644); err != nil {
+		t.Fatalf("write user config: %v", err)
+	}
+
+	projectRoot := t.TempDir()
+	layers, err := LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+	_, err = ResolveConfigPreview(layers, ResolveRequest{
+		Name:                    "demo",
+		Mode:                    ModeDevelop,
+		Objective:               "ship it",
+		TargetOverride:          &TargetConfig{Files: []string{"README.md"}},
+		LocalValidationOverride: &LocalValidationConfig{Command: "go test ./..."},
+	})
+	if err == nil || (!strings.Contains(err.Error(), "selection.master_candidates[0]") && !strings.Contains(err.Error(), "selection.develop_candidates contains duplicate")) {
+		t.Fatalf("ResolveConfigPreview error = %v, want malformed or duplicate selection target", err)
+	}
+}
+
+func writeSelectionTestShim(t *testing.T, dir, name string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write %s shim: %v", name, err)
+	}
+}
+
+func TestLoadConfigUsesBuiltinPreferencesAndDimensionsWhenUnset(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -226,12 +419,6 @@ func TestLoadConfigUsesBuiltinRoutingAndPreferencesWhenUnset(t *testing.T) {
 	cfg, _, err := loadResolvedConfigForTest(projectRoot, "")
 	if err != nil {
 		t.Fatalf("loadResolvedConfigForTest: %v", err)
-	}
-	if len(cfg.Routing.Rules) == 0 {
-		t.Fatal("routing.rules is empty")
-	}
-	if got := cfg.Routing.Rules[0].Role; got == "" {
-		t.Fatalf("routing.rules[0].role = %q, want non-empty", got)
 	}
 	if got := cfg.Preferences.Research.Guidance; got != "默认 gpt-5.4 high。深度分析/架构设计用 opus。简单信息收集用 fast。" {
 		t.Fatalf("research guidance = %q", got)
@@ -241,157 +428,6 @@ func TestLoadConfigUsesBuiltinRoutingAndPreferencesWhenUnset(t *testing.T) {
 	}
 	if got := cfg.dimensionCatalog["audit"]; got == "" {
 		t.Fatal("resolved config missing builtin audit dimension")
-	}
-}
-
-func TestResolveRouteProfileMatchesRulesInOrder(t *testing.T) {
-	cfg := &Config{
-		Routing: RoutingTableConfig{
-			Profiles: map[string]ExecutionProfile{
-				"build_fast":    {Engine: "codex", Model: "gpt-5.4-mini", Effort: EffortMinimal},
-				"research_deep": {Engine: "claude-code", Model: "opus", Effort: EffortHigh},
-				"research_max":  {Engine: "claude-code", Model: "opus", Effort: EffortMax},
-			},
-			Rules: []RoutingRule{
-				{Role: "develop", AnyDimensions: []string{"audit"}, Efforts: []EffortLevel{EffortHigh}, Profile: "research_deep"},
-				{Role: "develop", Efforts: []EffortLevel{EffortHigh}, Profile: "research_max"},
-			},
-		},
-	}
-
-	profileName, profile, ok := ResolveRouteProfile(cfg, "develop", []ResolvedDimension{{Name: "audit"}}, EffortHigh)
-	if !ok {
-		t.Fatal("ResolveRouteProfile did not match")
-	}
-	if profileName != "research_deep" {
-		t.Fatalf("profileName = %q, want research_deep", profileName)
-	}
-	if profile.Engine != "claude-code" || profile.Model != "opus" || profile.Effort != EffortHigh {
-		t.Fatalf("profile = %#v, want claude-code/opus/high", profile)
-	}
-}
-
-func TestResolveSessionRouteExplicitProfileBeatsRules(t *testing.T) {
-	cfg := &Config{
-		Routing: RoutingTableConfig{
-			Profiles: map[string]ExecutionProfile{
-				"build_fast":    {Engine: "codex", Model: "gpt-5.4-mini", Effort: EffortMinimal},
-				"research_deep": {Engine: "claude-code", Model: "opus", Effort: EffortHigh},
-			},
-			Rules: []RoutingRule{
-				{Role: "develop", AnyDimensions: []string{"audit"}, Efforts: []EffortLevel{EffortHigh}, Profile: "research_deep"},
-			},
-		},
-	}
-
-	resolved, err := ResolveSessionRoute(cfg, SessionConfig{
-		RouteRole:    "develop",
-		RouteProfile: "build_fast",
-		Dimensions:   []string{"audit"},
-		Effort:       EffortHigh,
-	})
-	if err != nil {
-		t.Fatalf("ResolveSessionRoute: %v", err)
-	}
-	if resolved.RouteProfile != "build_fast" {
-		t.Fatalf("route_profile = %q, want build_fast", resolved.RouteProfile)
-	}
-	if resolved.Engine != "codex" || resolved.Model != "gpt-5.4-mini" || resolved.Effort != EffortMinimal {
-		t.Fatalf("resolved = %#v, want codex/gpt-5.4-mini/minimal", resolved)
-	}
-}
-
-func TestResolveSessionRouteRejectsUnknownExplicitProfile(t *testing.T) {
-	cfg := &Config{
-		Routing: RoutingTableConfig{
-			Profiles: map[string]ExecutionProfile{
-				"build_fast": {Engine: "codex", Model: "gpt-5.4-mini", Effort: EffortMinimal},
-			},
-		},
-	}
-
-	_, err := ResolveSessionRoute(cfg, SessionConfig{
-		Mode:         ModeDevelop,
-		RouteProfile: "missing-profile",
-	})
-	if err == nil || !strings.Contains(err.Error(), `unknown route profile "missing-profile"`) {
-		t.Fatalf("ResolveSessionRoute error = %v, want unknown route profile", err)
-	}
-}
-
-func TestResolveSessionRouteExplicitEngineModelDoesNotBackfillRouteRole(t *testing.T) {
-	cfg := &Config{
-		Roles: RoleDefaultsConfig{
-			Research: SessionConfig{Engine: "claude-code", Model: "opus", Effort: EffortHigh},
-		},
-	}
-
-	resolved, err := ResolveSessionRoute(cfg, SessionConfig{
-		Mode:   ModeResearch,
-		Engine: "codex",
-		Model:  "gpt-5.4",
-		Effort: EffortHigh,
-	})
-	if err != nil {
-		t.Fatalf("ResolveSessionRoute: %v", err)
-	}
-	if resolved.RouteRole != "" {
-		t.Fatalf("route_role = %q, want unset for explicit override", resolved.RouteRole)
-	}
-	if resolved.Engine != "codex" || resolved.Model != "gpt-5.4" {
-		t.Fatalf("engine/model = %s/%s, want codex/gpt-5.4", resolved.Engine, resolved.Model)
-	}
-}
-
-func TestResolveSessionRouteLeavesUnspecifiedSessionsUnassigned(t *testing.T) {
-	cfg := &Config{
-		Mode: ModeAuto,
-		Roles: RoleDefaultsConfig{
-			Research: SessionConfig{Engine: "claude-code", Model: "opus"},
-			Develop:  SessionConfig{Engine: "codex", Model: "gpt-5.4"},
-		},
-	}
-
-	resolved, err := ResolveSessionRoute(cfg, SessionConfig{})
-	if err != nil {
-		t.Fatalf("ResolveSessionRoute: %v", err)
-	}
-	if resolved.Mode != "" {
-		t.Fatalf("mode = %q, want unset mode", resolved.Mode)
-	}
-	if resolved.RouteRole != "" {
-		t.Fatalf("route_role = %q, want unset route_role", resolved.RouteRole)
-	}
-	if resolved.Engine != "" || resolved.Model != "" {
-		t.Fatalf("engine/model = %s/%s, want unset engine/model", resolved.Engine, resolved.Model)
-	}
-}
-
-func TestPresetNoOverrideExplicit(t *testing.T) {
-	cfg := Config{
-		Preset: "claude",
-		Mode:   ModeDevelop,
-		Roles: RoleDefaultsConfig{
-			Develop: SessionConfig{Engine: "aider", Model: "opus"},
-		},
-	}
-	applyPreset(&cfg)
-	if cfg.Roles.Develop.Engine != "aider" || cfg.Roles.Develop.Model != "opus" {
-		t.Errorf("explicit should not be overridden: %s/%s", cfg.Roles.Develop.Engine, cfg.Roles.Develop.Model)
-	}
-}
-
-func TestApplyPresetFillsRoleDefaults(t *testing.T) {
-	cfg := Config{Preset: "hybrid", Mode: ModeResearch}
-	applyPreset(&cfg)
-	if cfg.Master.Engine != "claude-code" || cfg.Master.Model != "opus" {
-		t.Fatalf("master = %s/%s", cfg.Master.Engine, cfg.Master.Model)
-	}
-	if cfg.Roles.Research.Engine != "claude-code" || cfg.Roles.Research.Model != "opus" {
-		t.Fatalf("research role = %s/%s", cfg.Roles.Research.Engine, cfg.Roles.Research.Model)
-	}
-	if cfg.Roles.Develop.Engine != "codex" || cfg.Roles.Develop.Model != "gpt-5.4" {
-		t.Fatalf("develop role = %s/%s", cfg.Roles.Develop.Engine, cfg.Roles.Develop.Model)
 	}
 }
 
@@ -746,7 +782,7 @@ local_validation:
 	}
 }
 
-func TestLoadConfigReadsTopLevelRoutingAndEffort(t *testing.T) {
+func TestLoadConfigReadsTopLevelSelectionAndEffort(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -755,7 +791,15 @@ func TestLoadConfigReadsTopLevelRoutingAndEffort(t *testing.T) {
 		t.Fatalf("mkdir user config dir: %v", err)
 	}
 	userCfg := []byte(strings.TrimSpace(`
-preset: codex
+selection:
+  master_candidates:
+    - claude-code/opus
+  research_candidates:
+    - codex/gpt-5.4
+  develop_candidates:
+    - codex/gpt-5.4-mini
+  research_effort: high
+  develop_effort: medium
 master:
   engine: claude-code
   model: opus
@@ -769,17 +813,6 @@ roles:
     engine: codex
     model: gpt-5.4
     effort: medium
-routing:
-  profiles:
-    research_deep: { engine: claude-code, model: opus, effort: high }
-    build_fast: { engine: codex, model: gpt-5.4-mini, effort: minimal }
-  rules:
-    - role: research
-      efforts: [medium]
-      profile: research_deep
-    - role: develop
-      efforts: [low]
-      profile: build_fast
 preferences:
   research:
     guidance: default to gpt-5.4 high
@@ -807,9 +840,6 @@ local_validation:
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Preset != "codex" {
-		t.Fatalf("preset = %q, want codex", cfg.Preset)
-	}
 	if cfg.Master.Engine != "claude-code" || cfg.Master.Model != "opus" || cfg.Master.Effort != EffortHigh {
 		t.Fatalf("master = %#v, want claude-code/opus/high", cfg.Master)
 	}
@@ -825,11 +855,11 @@ local_validation:
 	if cfg.Preferences.Develop.Guidance != "default to gpt-5.4 medium" {
 		t.Fatalf("develop guidance = %q, want top-level guidance", cfg.Preferences.Develop.Guidance)
 	}
-	if got := cfg.Routing.Profiles["research_deep"]; got.Engine != "claude-code" || got.Model != "opus" || got.Effort != EffortHigh {
-		t.Fatalf("research_deep = %#v, want claude-code/opus/high", got)
+	if cfg.Roles.Develop.Engine != "codex" || cfg.Roles.Develop.Model != "gpt-5.4-mini" {
+		t.Fatalf("develop = %#v, want codex/gpt-5.4-mini", cfg.Roles.Develop)
 	}
-	if len(cfg.Routing.Rules) == 0 {
-		t.Fatal("routing.rules is empty")
+	if cfg.Roles.Research.Engine != "codex" || cfg.Roles.Research.Model != "gpt-5.4" {
+		t.Fatalf("research = %#v, want codex/gpt-5.4", cfg.Roles.Research)
 	}
 	if cfg.LocalValidation.Command != "go build ./... && go test ./..." {
 		t.Fatalf("local_validation.command = %q, want project local validation", cfg.LocalValidation.Command)
@@ -945,10 +975,6 @@ engines:
     prompt: "Read {protocol}"
     models:
       fast: user-fast
-presets:
-  project-dev:
-    master: {engine: claude-code, model: opus}
-    develop: {engine: claude-code, model: sonnet}
 dimensions:
   architecture: "user architecture strategy"
 `) + "\n")
@@ -968,12 +994,15 @@ engines:
     prompt: "Read {protocol}"
     models:
       fast: project-fast
-presets:
-  project-dev:
-    master: {engine: codex, model: fast}
-    develop: {engine: codex, model: fast}
 dimensions:
   architecture: "project architecture strategy"
+master:
+  engine: codex
+  model: fast
+roles:
+  develop:
+    engine: codex
+    model: fast
 `) + "\n")
 	if err := os.WriteFile(filepath.Join(projectGoalxDir, "config.yaml"), projectCfg, 0o644); err != nil {
 		t.Fatalf("write project config: %v", err)
@@ -981,7 +1010,6 @@ dimensions:
 	runCfg := []byte(strings.TrimSpace(`
 name: demo
 mode: develop
-preset: project-dev
 objective: ship it
 target:
   files: [README.md]
@@ -1012,14 +1040,8 @@ local_validation:
 	if engines["codex"].Models["fast"] != "project-fast" {
 		t.Fatalf("engines[codex].models[fast] = %q, want project-fast", engines["codex"].Models["fast"])
 	}
-	if layers.Presets["project-dev"].Master.Engine != "codex" || layers.Presets["project-dev"].Master.Model != "fast" {
-		t.Fatalf("layers.presets[project-dev].master = %#v, want codex/fast", layers.Presets["project-dev"].Master)
-	}
 	if layers.Dimensions["architecture"] != "project architecture strategy" {
 		t.Fatalf("layers.dimensions[architecture] = %q, want project override", layers.Dimensions["architecture"])
-	}
-	if _, ok := Presets["project-dev"]; ok {
-		t.Fatalf("global Presets leaked project-dev entry")
 	}
 	if _, ok := BuiltinDimensions["architecture"]; ok {
 		t.Fatalf("global BuiltinDimensions leaked architecture entry")
@@ -1047,9 +1069,6 @@ engines:
     prompt: "Read {protocol}"
     models:
       fast: project-a-fast
-presets:
-  project-a:
-    master: {engine: codex, model: fast}
 dimensions:
   architecture: "project A architecture"
 `) + "\n")
@@ -1069,9 +1088,6 @@ engines:
     prompt: "Read {protocol}"
     models:
       fast: project-b-fast
-presets:
-  project-b:
-    master: {engine: claude-code, model: opus}
 dimensions:
   architecture: "project B architecture"
 `) + "\n")
@@ -1088,12 +1104,6 @@ dimensions:
 		t.Fatalf("LoadConfigLayers(projectB): %v", err)
 	}
 
-	if got := layersA.Presets["project-a"].Master.Engine; got != "codex" {
-		t.Fatalf("layersA.presets[project-a].master.engine = %q, want codex", got)
-	}
-	if _, ok := layersA.Presets["project-b"]; ok {
-		t.Fatalf("layersA.presets unexpectedly contains project-b")
-	}
 	if got := layersA.Dimensions["architecture"]; got != "project A architecture" {
 		t.Fatalf("layersA.dimensions[architecture] = %q, want project A architecture", got)
 	}
@@ -1101,12 +1111,6 @@ dimensions:
 		t.Fatalf("layersA.engines[codex].command = %q, want project A override", got)
 	}
 
-	if got := layersB.Presets["project-b"].Master.Engine; got != "claude-code" {
-		t.Fatalf("layersB.presets[project-b].master.engine = %q, want claude-code", got)
-	}
-	if _, ok := layersB.Presets["project-a"]; ok {
-		t.Fatalf("layersB.presets unexpectedly contains project-a")
-	}
 	if got := layersB.Dimensions["architecture"]; got != "project B architecture" {
 		t.Fatalf("layersB.dimensions[architecture] = %q, want project B architecture", got)
 	}
@@ -1119,10 +1123,10 @@ func TestLoadConfigDoesNotMutateSharedCatalogs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	origPresets := clonePresetMap(Presets)
+	origEngines := copyEngines(BuiltinEngines)
 	origDimensions := cloneStringMap(BuiltinDimensions)
 	t.Cleanup(func() {
-		Presets = origPresets
+		BuiltinEngines = origEngines
 		BuiltinDimensions = origDimensions
 	})
 
@@ -1131,10 +1135,12 @@ func TestLoadConfigDoesNotMutateSharedCatalogs(t *testing.T) {
 		t.Fatalf("mkdir user config dir: %v", err)
 	}
 	userCfg := []byte(strings.TrimSpace(`
-presets:
-  local-research:
-    master: {engine: claude-code, model: opus}
-    research: {engine: claude-code, model: opus}
+engines:
+  codex:
+    command: "codex --local {model_id}"
+    prompt: "Read {protocol}"
+    models:
+      fast: local-fast
 dimensions:
   reliability: "reliability: focus on stable behavior"
 `) + "\n")
@@ -1164,8 +1170,8 @@ local_validation:
 		t.Fatalf("LoadConfigWithManualDraft: %v", err)
 	}
 
-	if !reflect.DeepEqual(Presets, origPresets) {
-		t.Fatalf("Presets mutated across config load: got %#v, want %#v", Presets, origPresets)
+	if !reflect.DeepEqual(BuiltinEngines, origEngines) {
+		t.Fatalf("BuiltinEngines mutated across config load: got %#v, want %#v", BuiltinEngines, origEngines)
 	}
 	if !reflect.DeepEqual(BuiltinDimensions, origDimensions) {
 		t.Fatalf("BuiltinDimensions mutated across config load: got %#v, want %#v", BuiltinDimensions, origDimensions)
@@ -1383,14 +1389,6 @@ func TestLoadYAMLValid(t *testing.T) {
 	}
 }
 
-func clonePresetMap(src map[string]PresetConfig) map[string]PresetConfig {
-	dst := make(map[string]PresetConfig, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
-}
-
 func cloneStringMap(src map[string]string) map[string]string {
 	dst := make(map[string]string, len(src))
 	for k, v := range src {
@@ -1500,7 +1498,7 @@ func TestEffectiveSessionConfigLeavesAutoRunSessionsUnsetByDefault(t *testing.T)
 	}
 }
 
-func TestEffectiveSessionConfigRequiresExplicitRoutingForRoleDefaults(t *testing.T) {
+func TestEffectiveSessionConfigRequiresExplicitSessionModeForRoleDefaults(t *testing.T) {
 	cfg := &Config{
 		Mode: ModeResearch,
 		Roles: RoleDefaultsConfig{

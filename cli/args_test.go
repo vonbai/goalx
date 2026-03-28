@@ -110,13 +110,11 @@ func TestParseLaunchOptionsAcceptsNoSnapshotFlag(t *testing.T) {
 	}
 }
 
-func TestParseLaunchOptionsSupportsRepeatedDimensionsAndRoutingFlags(t *testing.T) {
+func TestParseLaunchOptionsSupportsRepeatedDimensions(t *testing.T) {
 	opts, err := parseLaunchOptions([]string{
 		"audit auth",
 		"--dimension", "audit",
 		"--dimension", "adversarial,user",
-		"--route-role", "develop",
-		"--route-profile", "build_balanced",
 	}, goalx.ModeResearch, true)
 	if err != nil {
 		t.Fatalf("parseLaunchOptions: %v", err)
@@ -124,11 +122,20 @@ func TestParseLaunchOptionsSupportsRepeatedDimensionsAndRoutingFlags(t *testing.
 	if got, want := opts.Dimensions, []string{"audit", "adversarial", "user"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("dimensions = %#v, want %#v", got, want)
 	}
-	if opts.RouteRole != "develop" {
-		t.Fatalf("route role = %q, want develop", opts.RouteRole)
+}
+
+func TestParseLaunchOptionsRejectsRemovedLegacySelectionFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := [][]string{
+		{"audit auth", "--preset", "codex"},
+		{"audit auth", "--route-role", "develop"},
+		{"audit auth", "--route-profile", "build_balanced"},
 	}
-	if opts.RouteProfile != "build_balanced" {
-		t.Fatalf("route profile = %q, want build_balanced", opts.RouteProfile)
+	for _, args := range tests {
+		if _, err := parseLaunchOptions(args, goalx.ModeResearch, true); err == nil {
+			t.Fatalf("parseLaunchOptions(%#v) unexpectedly succeeded", args)
+		}
 	}
 }
 

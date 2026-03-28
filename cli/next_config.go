@@ -9,57 +9,24 @@ import (
 )
 
 const maxNextConfigParallel = 10
-const maxNextConfigIterations = 20
 
 type nextConfigJSON struct {
-	Parallel      int               `json:"parallel,omitempty"`
-	Engine        string            `json:"engine,omitempty"`
-	Model         string            `json:"model,omitempty"`
-	Effort        goalx.EffortLevel `json:"effort,omitempty"`
-	Preset        string            `json:"preset,omitempty"`
-	Dimensions    []string          `json:"dimensions,omitempty"`
-	Objective     string            `json:"objective,omitempty"`
-	Mode          string            `json:"mode,omitempty"`
-	MaxIterations int               `json:"max_iterations,omitempty"`
-	Context       []string          `json:"context,omitempty"`
-	MasterEngine  string            `json:"master_engine,omitempty"`
-	MasterModel   string            `json:"master_model,omitempty"`
-	MasterEffort  goalx.EffortLevel `json:"master_effort,omitempty"`
-	RouteRole     string            `json:"route_role,omitempty"`
-	RouteProfile  string            `json:"route_profile,omitempty"`
-	QuotaState    string            `json:"quota_state,omitempty"`
+	Parallel   int      `json:"parallel,omitempty"`
+	Dimensions []string `json:"dimensions,omitempty"`
+	Objective  string   `json:"objective,omitempty"`
+	Context    []string `json:"context,omitempty"`
 }
 
 func validateNextConfig(projectRoot string, nc *nextConfigJSON) *nextConfigJSON {
 	if nc == nil {
 		return nil
 	}
+	_ = projectRoot
 
 	validated := *nc
-	validated.Engine = strings.TrimSpace(validated.Engine)
-	validated.Model = strings.TrimSpace(validated.Model)
-	validated.Preset = strings.TrimSpace(validated.Preset)
 	validated.Objective = strings.TrimSpace(validated.Objective)
-	validated.Mode = strings.TrimSpace(validated.Mode)
 	validated.Context = normalizeNextConfigContext(validated.Context)
-	validated.MasterEngine = strings.TrimSpace(validated.MasterEngine)
-	validated.MasterModel = strings.TrimSpace(validated.MasterModel)
-	validated.RouteRole = strings.TrimSpace(validated.RouteRole)
-	validated.RouteProfile = strings.TrimSpace(validated.RouteProfile)
-	validated.QuotaState = strings.TrimSpace(validated.QuotaState)
 	validated.Dimensions = normalizeNextConfigDimensions(validated.Dimensions)
-	if level, err := goalx.ParseEffortLevel(string(validated.Effort)); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: ignoring next_config.effort=%q (%v)\n", validated.Effort, err)
-		validated.Effort = ""
-	} else {
-		validated.Effort = level
-	}
-	if level, err := goalx.ParseEffortLevel(string(validated.MasterEffort)); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: ignoring next_config.master_effort=%q (%v)\n", validated.MasterEffort, err)
-		validated.MasterEffort = ""
-	} else {
-		validated.MasterEffort = level
-	}
 
 	if validated.Parallel < 0 {
 		fmt.Fprintf(os.Stderr, "warning: ignoring next_config.parallel=%d (must be >= 0)\n", validated.Parallel)
@@ -68,30 +35,9 @@ func validateNextConfig(projectRoot string, nc *nextConfigJSON) *nextConfigJSON 
 		fmt.Fprintf(os.Stderr, "warning: capping next_config.parallel=%d to %d\n", validated.Parallel, maxNextConfigParallel)
 		validated.Parallel = maxNextConfigParallel
 	}
-	if validated.MaxIterations < 0 || validated.MaxIterations > maxNextConfigIterations {
-		fmt.Fprintf(os.Stderr, "warning: ignoring next_config.max_iterations=%d (must be 1-%d or 0)\n", validated.MaxIterations, maxNextConfigIterations)
-		validated.MaxIterations = 0
-	}
 	if len(validated.Dimensions) > maxNextConfigParallel {
 		fmt.Fprintf(os.Stderr, "warning: truncating next_config.dimensions to %d entries\n", maxNextConfigParallel)
 		validated.Dimensions = validated.Dimensions[:maxNextConfigParallel]
-	}
-
-	engines := goalx.BuiltinEngines
-	if loadedEngines, err := loadEngineCatalog(projectRoot); err == nil && len(loadedEngines) > 0 {
-		engines = loadedEngines
-	}
-	switch validated.Mode {
-	case "", string(goalx.ModeResearch), string(goalx.ModeDevelop):
-	default:
-		fmt.Fprintf(os.Stderr, "warning: ignoring next_config.mode=%q (must be research or develop)\n", validated.Mode)
-		validated.Mode = ""
-	}
-	if validated.Engine != "" {
-		if _, ok := engines[validated.Engine]; !ok {
-			fmt.Fprintf(os.Stderr, "warning: ignoring next_config.engine=%q (unknown engine)\n", validated.Engine)
-			validated.Engine = ""
-		}
 	}
 	if len(validated.Dimensions) > 0 {
 		if _, err := goalx.ResolveDimensionSpecs(validated.Dimensions); err != nil {
@@ -99,33 +45,8 @@ func validateNextConfig(projectRoot string, nc *nextConfigJSON) *nextConfigJSON 
 			validated.Dimensions = nil
 		}
 	}
-	validated.MasterEngine, validated.MasterModel = validateNamedEngineModelPair(engines, validated.MasterEngine, validated.MasterModel, "next_config.master")
 
 	return &validated
-}
-
-func nextConfigParallel(fallback int, nc *nextConfigJSON) int {
-	if nc != nil && nc.Parallel > 0 {
-		return nc.Parallel
-	}
-	return fallback
-}
-
-func nextConfigObjective(fallback string, nc *nextConfigJSON) string {
-	if nc != nil && nc.Objective != "" {
-		return nc.Objective
-	}
-	return fallback
-}
-
-func nextConfigDimensions(fallback []string, nc *nextConfigJSON) []string {
-	if nc == nil {
-		return normalizeNextConfigDimensions(fallback)
-	}
-	if len(nc.Dimensions) == 0 {
-		return normalizeNextConfigDimensions(fallback)
-	}
-	return normalizeNextConfigDimensions(nc.Dimensions)
 }
 
 func normalizeNextConfigDimensions(values []string) []string {
@@ -145,79 +66,6 @@ func normalizeNextConfigDimensions(values []string) []string {
 		return nil
 	}
 	return normalized
-}
-
-func resolveNextEngineModel(engines map[string]goalx.EngineConfig, defaultEngine, defaultModel string, nc *nextConfigJSON) (string, string) {
-	if len(engines) == 0 {
-		engines = goalx.BuiltinEngines
-	}
-
-	engine := defaultEngine
-	model := defaultModel
-	if nc == nil {
-		return engine, model
-	}
-
-	if nc.Engine != "" {
-		if _, ok := engines[nc.Engine]; ok {
-			engine = nc.Engine
-		} else {
-			fmt.Fprintf(os.Stderr, "warning: ignoring next_config.engine=%q (unknown engine)\n", nc.Engine)
-		}
-	}
-	if nc.Model != "" {
-		if err := validateNextConfigModel(engines, engine, nc.Model); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: ignoring next_config.model=%q for engine %q: %v\n", nc.Model, engine, err)
-		} else {
-			model = nc.Model
-		}
-	}
-
-	return engine, model
-}
-
-func validateNextConfigModel(engines map[string]goalx.EngineConfig, engine, model string) error {
-	if strings.TrimSpace(model) == "" {
-		return nil
-	}
-	if strings.TrimSpace(engine) == "" {
-		return fmt.Errorf("engine is required")
-	}
-	if goalx.ModelAliasBelongsToOtherEngine(engines, engine, model) {
-		return fmt.Errorf("model alias belongs to a different engine")
-	}
-	if _, err := goalx.ResolveLaunchSpec(engines, goalx.LaunchRequest{Engine: engine, Model: model}); err != nil {
-		return err
-	}
-
-	modelID := model
-	if ec, ok := engines[engine]; ok {
-		if resolved, ok := ec.Models[model]; ok {
-			modelID = resolved
-		}
-	}
-	if engine == "codex" && (modelID == "gpt-5.3-codex" || modelID == "gpt-5.2") {
-		return fmt.Errorf("model resolves to an interactive Codex migration target")
-	}
-	return nil
-}
-
-func validateNamedEngineModelPair(engines map[string]goalx.EngineConfig, engine, model, label string) (string, string) {
-	if strings.TrimSpace(engine) == "" {
-		if strings.TrimSpace(model) != "" {
-			fmt.Fprintf(os.Stderr, "warning: ignoring %s.model=%q (engine is required)\n", label, model)
-		}
-		return "", ""
-	}
-	if _, ok := engines[engine]; !ok {
-		fmt.Fprintf(os.Stderr, "warning: ignoring %s.engine=%q (unknown engine)\n", label, engine)
-		return "", ""
-	}
-	if err := validateNextConfigModel(engines, engine, model); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: ignoring %s.model=%q for engine %q: %v\n", label, model, engine, err)
-		return engine, ""
-	}
-	return engine, model
 }
 
 func normalizeNextConfigContext(paths []string) []string {

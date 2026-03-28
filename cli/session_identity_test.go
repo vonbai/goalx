@@ -34,7 +34,7 @@ func TestSessionIdentityPathAndRoundTrip(t *testing.T) {
 		t.Fatalf("SaveRunCharter: %v", err)
 	}
 
-	identity, err := NewSessionIdentity(runDir, "session-1", "master-derived-develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "xhigh", "deep-codex", "", goalx.TargetConfig{Files: []string{"main.go"}})
+	identity, err := NewSessionIdentity(runDir, "session-1", "master-derived-develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortHigh, "xhigh", "", goalx.TargetConfig{Files: []string{"main.go"}})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}
@@ -53,9 +53,6 @@ func TestSessionIdentityPathAndRoundTrip(t *testing.T) {
 	}
 	if identity.RequestedEffort != goalx.EffortHigh || identity.EffectiveEffort != "xhigh" {
 		t.Fatalf("effort = %q/%q", identity.RequestedEffort, identity.EffectiveEffort)
-	}
-	if identity.RouteProfile != "deep-codex" {
-		t.Fatalf("route profile = %q", identity.RouteProfile)
 	}
 	if strings.TrimSpace(identity.ExperimentID) == "" {
 		t.Fatal("ExperimentID empty")
@@ -99,7 +96,7 @@ func TestSessionIdentityPathAndRoundTrip(t *testing.T) {
 
 func TestNewSessionIdentityRequiresRunCharter(t *testing.T) {
 	runDir := t.TempDir()
-	if _, err := NewSessionIdentity(runDir, "session-1", "master-derived-develop", goalx.ModeDevelop, "codex", "gpt-5.4", "", "", "", "", goalx.TargetConfig{}); err == nil {
+	if _, err := NewSessionIdentity(runDir, "session-1", "master-derived-develop", goalx.ModeDevelop, "codex", "gpt-5.4", "", "", "", goalx.TargetConfig{}); err == nil {
 		t.Fatal("NewSessionIdentity should fail when run-charter.json is missing")
 	}
 }
@@ -115,7 +112,7 @@ func TestSessionIdentityRoundTripKeepsSourceAndRole(t *testing.T) {
 		t.Fatalf("SaveRunCharter: %v", err)
 	}
 
-	identity, err := NewSessionIdentity(runDir, "session-2", "master-derived-research", goalx.ModeResearch, "claude-code", "opus", goalx.EffortMedium, "medium", "", "", goalx.TargetConfig{Files: []string{"report.md"}})
+	identity, err := NewSessionIdentity(runDir, "session-2", "master-derived-research", goalx.ModeResearch, "claude-code", "opus", goalx.EffortMedium, "medium", "", goalx.TargetConfig{Files: []string{"report.md"}})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}
@@ -142,7 +139,7 @@ func TestSessionIdentityRoundTripKeepsRecordedWorktreeBase(t *testing.T) {
 		t.Fatalf("SaveRunCharter: %v", err)
 	}
 
-	identity, err := NewSessionIdentity(runDir, "session-2", "master-derived-develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortMedium, "medium", "", "", goalx.TargetConfig{Files: []string{"web/"}})
+	identity, err := NewSessionIdentity(runDir, "session-2", "master-derived-develop", goalx.ModeDevelop, "codex", "gpt-5.4", goalx.EffortMedium, "medium", "", goalx.TargetConfig{Files: []string{"web/"}})
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}

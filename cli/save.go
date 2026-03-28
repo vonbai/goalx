@@ -68,6 +68,9 @@ func Save(projectRoot string, args []string) error {
 	if err := copyFileIfExists(RunSpecPath(rc.RunDir), filepath.Join(saveDir, "run-spec.yaml")); err != nil {
 		return fmt.Errorf("copy run spec: %w", err)
 	}
+	if err := copyFileIfExists(SelectionSnapshotPath(rc.RunDir), SelectionSnapshotPath(saveDir)); err != nil {
+		return fmt.Errorf("copy selection snapshot: %w", err)
+	}
 	if err := copyFileIfExists(RunRuntimeStatePath(rc.RunDir), filepath.Join(saveDir, "run.json")); err != nil {
 		return fmt.Errorf("copy run state: %w", err)
 	}

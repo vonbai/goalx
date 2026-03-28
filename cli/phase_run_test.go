@@ -43,10 +43,11 @@ local_validation:
 		Parallel: 1,
 	}
 
-	cfg, _, err := resolvePhaseConfig(projectRoot, "debate", goalx.ModeResearch, source, phaseOptions{})
+	resolved, err := resolvePhaseConfig(projectRoot, "debate", goalx.ModeResearch, source, phaseOptions{})
 	if err != nil {
 		t.Fatalf("resolvePhaseConfig: %v", err)
 	}
+	cfg := &resolved.Config
 	if cfg.Budget.MaxDuration != 0 {
 		t.Fatalf("budget = %v, want unlimited (0)", cfg.Budget.MaxDuration)
 	}

@@ -8,42 +8,46 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 type ContextIndex struct {
-	Version             int                `json:"version"`
-	CheckedAt           string             `json:"checked_at,omitempty"`
-	ProjectRoot         string             `json:"project_root,omitempty"`
-	RunDir              string             `json:"run_dir,omitempty"`
-	RunName             string             `json:"run_name,omitempty"`
-	RunWorktree         string             `json:"run_worktree,omitempty"`
-	RunIdentity         ContextRunIdentity `json:"run_identity"`
-	ReportsDir          string             `json:"reports_dir,omitempty"`
-	CharterPath         string             `json:"charter_path,omitempty"`
-	GoalPath            string             `json:"goal_path,omitempty"`
-	ExperimentsLogPath  string             `json:"experiments_log_path,omitempty"`
-	IntegrationStatePath string            `json:"integration_state_path,omitempty"`
-	AcceptanceStatePath string             `json:"acceptance_state_path,omitempty"`
-	CompletionProofPath string             `json:"completion_proof_path,omitempty"`
-	CoordinationPath    string             `json:"coordination_path,omitempty"`
-	SummaryPath         string             `json:"summary_path,omitempty"`
-	ControlDir          string             `json:"control_dir,omitempty"`
-	ActivityPath        string             `json:"activity_path,omitempty"`
-	WorktreeSnapshotPath string            `json:"worktree_snapshot_path,omitempty"`
-	TransportFactsPath  string             `json:"transport_facts_path,omitempty"`
-	MemoryQueryPath     string             `json:"memory_query_path,omitempty"`
-	MemoryContextPath   string             `json:"memory_context_path,omitempty"`
-	AffordancesJSONPath string             `json:"affordances_json_path,omitempty"`
-	AffordancesMarkdown string             `json:"affordances_markdown_path,omitempty"`
-	ContextIndexPath    string             `json:"context_index_path,omitempty"`
-	DimensionsPath      string             `json:"dimensions_path,omitempty"`
-	Master              ContextMaster      `json:"master"`
-	Sessions            []ContextSession   `json:"sessions,omitempty"`
-	ProviderFacts       []ProviderFact     `json:"provider_facts,omitempty"`
-	ClaudeCodeAvailable bool               `json:"claude_code_available,omitempty"`
-	CodexAvailable      bool               `json:"codex_available,omitempty"`
-	GitAvailable        bool               `json:"git_available,omitempty"`
-	TmuxAvailable       bool               `json:"tmux_available,omitempty"`
+	Version               int                `json:"version"`
+	CheckedAt             string             `json:"checked_at,omitempty"`
+	ProjectRoot           string             `json:"project_root,omitempty"`
+	RunDir                string             `json:"run_dir,omitempty"`
+	RunName               string             `json:"run_name,omitempty"`
+	RunWorktree           string             `json:"run_worktree,omitempty"`
+	RunIdentity           ContextRunIdentity `json:"run_identity"`
+	ReportsDir            string             `json:"reports_dir,omitempty"`
+	CharterPath           string             `json:"charter_path,omitempty"`
+	GoalPath              string             `json:"goal_path,omitempty"`
+	ExperimentsLogPath    string             `json:"experiments_log_path,omitempty"`
+	IntegrationStatePath  string             `json:"integration_state_path,omitempty"`
+	AcceptanceStatePath   string             `json:"acceptance_state_path,omitempty"`
+	CompletionProofPath   string             `json:"completion_proof_path,omitempty"`
+	CoordinationPath      string             `json:"coordination_path,omitempty"`
+	SummaryPath           string             `json:"summary_path,omitempty"`
+	ControlDir            string             `json:"control_dir,omitempty"`
+	ActivityPath          string             `json:"activity_path,omitempty"`
+	WorktreeSnapshotPath  string             `json:"worktree_snapshot_path,omitempty"`
+	SelectionSnapshotPath string             `json:"selection_snapshot_path,omitempty"`
+	TransportFactsPath    string             `json:"transport_facts_path,omitempty"`
+	MemoryQueryPath       string             `json:"memory_query_path,omitempty"`
+	MemoryContextPath     string             `json:"memory_context_path,omitempty"`
+	AffordancesJSONPath   string             `json:"affordances_json_path,omitempty"`
+	AffordancesMarkdown   string             `json:"affordances_markdown_path,omitempty"`
+	ContextIndexPath      string             `json:"context_index_path,omitempty"`
+	DimensionsPath        string             `json:"dimensions_path,omitempty"`
+	Master                ContextMaster      `json:"master"`
+	Selection             *ContextSelection  `json:"selection,omitempty"`
+	Sessions              []ContextSession   `json:"sessions,omitempty"`
+	ProviderFacts         []ProviderFact     `json:"provider_facts,omitempty"`
+	ClaudeCodeAvailable   bool               `json:"claude_code_available,omitempty"`
+	CodexAvailable        bool               `json:"codex_available,omitempty"`
+	GitAvailable          bool               `json:"git_available,omitempty"`
+	TmuxAvailable         bool               `json:"tmux_available,omitempty"`
 }
 
 type ContextRunIdentity struct {
@@ -61,6 +65,18 @@ type ContextMaster struct {
 	Engine string `json:"engine,omitempty"`
 	Model  string `json:"model,omitempty"`
 	Mode   string `json:"mode,omitempty"`
+}
+
+type ContextSelection struct {
+	ExplicitSelection  bool              `json:"explicit_selection,omitempty"`
+	DisabledEngines    []string          `json:"disabled_engines,omitempty"`
+	DisabledTargets    []string          `json:"disabled_targets,omitempty"`
+	MasterCandidates   []string          `json:"master_candidates,omitempty"`
+	ResearchCandidates []string          `json:"research_candidates,omitempty"`
+	DevelopCandidates  []string          `json:"develop_candidates,omitempty"`
+	MasterEffort       goalx.EffortLevel `json:"master_effort,omitempty"`
+	ResearchEffort     goalx.EffortLevel `json:"research_effort,omitempty"`
+	DevelopEffort      goalx.EffortLevel `json:"develop_effort,omitempty"`
 }
 
 type ContextSession struct {
@@ -135,32 +151,32 @@ func BuildContextIndex(projectRoot, runName, runDir string) (*ContextIndex, erro
 		return nil, err
 	}
 	index := &ContextIndex{
-		Version:             1,
-		CheckedAt:           time.Now().UTC().Format(time.RFC3339),
-		ProjectRoot:         projectRoot,
-		RunDir:              runDir,
-		RunName:             runName,
-		RunWorktree:         RunWorktreePath(runDir),
-		RunIdentity:         contextRunIdentity(charter, meta),
-		ReportsDir:          ReportsDir(runDir),
-		CharterPath:         RunCharterPath(runDir),
-		GoalPath:            GoalPath(runDir),
-		ExperimentsLogPath:  ExperimentsLogPath(runDir),
+		Version:              1,
+		CheckedAt:            time.Now().UTC().Format(time.RFC3339),
+		ProjectRoot:          projectRoot,
+		RunDir:               runDir,
+		RunName:              runName,
+		RunWorktree:          RunWorktreePath(runDir),
+		RunIdentity:          contextRunIdentity(charter, meta),
+		ReportsDir:           ReportsDir(runDir),
+		CharterPath:          RunCharterPath(runDir),
+		GoalPath:             GoalPath(runDir),
+		ExperimentsLogPath:   ExperimentsLogPath(runDir),
 		IntegrationStatePath: IntegrationStatePath(runDir),
-		AcceptanceStatePath: AcceptanceStatePath(runDir),
-		CompletionProofPath: CompletionStatePath(runDir),
-		CoordinationPath:    CoordinationPath(runDir),
-		SummaryPath:         SummaryPath(runDir),
-		ControlDir:          ControlDir(runDir),
-		ActivityPath:        ActivityPath(runDir),
+		AcceptanceStatePath:  AcceptanceStatePath(runDir),
+		CompletionProofPath:  CompletionStatePath(runDir),
+		CoordinationPath:     CoordinationPath(runDir),
+		SummaryPath:          SummaryPath(runDir),
+		ControlDir:           ControlDir(runDir),
+		ActivityPath:         ActivityPath(runDir),
 		WorktreeSnapshotPath: WorktreeSnapshotPath(runDir),
-		TransportFactsPath:  TransportFactsPath(runDir),
-		MemoryQueryPath:     MemoryQueryPath(runDir),
-		MemoryContextPath:   MemoryContextPath(runDir),
-		AffordancesJSONPath: AffordancesJSONPath(runDir),
-		AffordancesMarkdown: AffordancesMarkdownPath(runDir),
-		ContextIndexPath:    ContextIndexPath(runDir),
-		DimensionsPath:      ControlDimensionsPath(runDir),
+		TransportFactsPath:   TransportFactsPath(runDir),
+		MemoryQueryPath:      MemoryQueryPath(runDir),
+		MemoryContextPath:    MemoryContextPath(runDir),
+		AffordancesJSONPath:  AffordancesJSONPath(runDir),
+		AffordancesMarkdown:  AffordancesMarkdownPath(runDir),
+		ContextIndexPath:     ContextIndexPath(runDir),
+		DimensionsPath:       ControlDimensionsPath(runDir),
 		Master: ContextMaster{
 			Engine: cfg.Master.Engine,
 			Model:  cfg.Master.Model,
@@ -170,6 +186,24 @@ func BuildContextIndex(projectRoot, runName, runDir string) (*ContextIndex, erro
 		CodexAvailable:      toolAvailable("codex"),
 		GitAvailable:        toolAvailable("git"),
 		TmuxAvailable:       toolAvailable("tmux"),
+	}
+	selectionSnapshot, err := LoadSelectionSnapshot(SelectionSnapshotPath(runDir))
+	if err != nil {
+		return nil, err
+	}
+	if selectionSnapshot != nil {
+		index.SelectionSnapshotPath = SelectionSnapshotPath(runDir)
+		index.Selection = &ContextSelection{
+			ExplicitSelection:  selectionSnapshot.ExplicitSelection,
+			DisabledEngines:    append([]string(nil), selectionSnapshot.Policy.DisabledEngines...),
+			DisabledTargets:    append([]string(nil), selectionSnapshot.Policy.DisabledTargets...),
+			MasterCandidates:   append([]string(nil), selectionSnapshot.Policy.MasterCandidates...),
+			ResearchCandidates: append([]string(nil), selectionSnapshot.Policy.ResearchCandidates...),
+			DevelopCandidates:  append([]string(nil), selectionSnapshot.Policy.DevelopCandidates...),
+			MasterEffort:       selectionSnapshot.Policy.MasterEffort,
+			ResearchEffort:     selectionSnapshot.Policy.ResearchEffort,
+			DevelopEffort:      selectionSnapshot.Policy.DevelopEffort,
+		}
 	}
 	index.ProviderFacts = append(index.ProviderFacts, providerFactsForEngine("master", cfg.Master.Engine)...)
 	indexes, err := existingSessionIndexes(runDir)

@@ -3,6 +3,8 @@ package cli
 import (
 	"strings"
 	"testing"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 func TestBuildAffordancesIncludesRunScopedCommands(t *testing.T) {
@@ -245,5 +247,40 @@ func TestBuildAffordancesIncludesProviderFactsForClaudeTargets(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("provider facts affordance missing for claude target: %+v", doc.Items)
+	}
+}
+
+func TestBuildAffordancesIncludesSelectionFacts(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	writeSelectionSnapshotFixture(t, runDir, testSelectionSnapshot{
+		Version: 1,
+		Policy: goalx.EffectiveSelectionPolicy{
+			DisabledEngines:    []string{"aider"},
+			MasterCandidates:   []string{"codex/gpt-5.4", "claude-code/opus"},
+			ResearchCandidates: []string{"claude-code/opus"},
+			DevelopCandidates:  []string{"codex/gpt-5.4-mini"},
+		},
+		Master:   goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4", Effort: goalx.EffortHigh},
+		Research: goalx.SessionConfig{Engine: "claude-code", Model: "opus", Effort: goalx.EffortHigh},
+		Develop:  goalx.SessionConfig{Engine: "codex", Model: "gpt-5.4-mini", Effort: goalx.EffortMedium},
+	})
+
+	doc, err := BuildAffordances(repo, cfg.Name, runDir, "master")
+	if err != nil {
+		t.Fatalf("BuildAffordances: %v", err)
+	}
+
+	found := false
+	for _, item := range doc.Items {
+		if item.ID != "selection-facts" {
+			continue
+		}
+		found = strings.Contains(item.Summary, "Selection candidate pools and disabled targets") &&
+			strings.Contains(strings.Join(item.Facts, "\n"), "Master candidates: `codex/gpt-5.4, claude-code/opus`") &&
+			strings.Contains(strings.Join(item.Facts, "\n"), "Disabled engines: `aider`") &&
+			len(item.Paths) == 1 && item.Paths[0] == SelectionSnapshotPath(runDir)
+	}
+	if !found {
+		t.Fatalf("selection facts affordance missing: %+v", doc.Items)
 	}
 }

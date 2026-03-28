@@ -26,6 +26,7 @@ type ProtocolData struct {
 	Engines                map[string]goalx.EngineConfig
 	Sessions               []SessionData
 	Master                 goalx.MasterConfig
+	Roles                  goalx.RoleDefaultsConfig
 	MasterCapabilities     ProviderCapabilities
 	LocalValidationCommand string
 	Budget                 goalx.BudgetConfig
@@ -48,7 +49,6 @@ type ProtocolData struct {
 	SessionsStatePath      string
 	ReportsDir             string
 	DimensionsPath         string
-	Routing                goalx.RoutingTableConfig
 	DimensionsCatalog      map[string]string
 	ProjectRegistryPath    string
 	RunMetadataPath        string
@@ -66,19 +66,21 @@ type ProtocolData struct {
 	ActivityPath           string
 	ContextIndexPath       string
 	AffordancesPath        string
+	SelectionSnapshotPath  string
+	SelectionPolicy        goalx.EffectiveSelectionPolicy
 	MasterJournalPath      string
 	StatusPath             string // run-scoped master-written status record
 	EngineCommand          string // resolved master engine command
 
 	// Subagent-specific (used in program.md.tmpl)
-	SessionName         string
-	SessionIndex        int // 0-based index of this session in the Sessions slice
-	CurrentDimensions   []goalx.ResolvedDimension
-	JournalPath         string
-	SessionIdentityPath string
-	SessionInboxPath    string
-	SessionCursorPath   string
-	WorktreePath        string
+	SessionName               string
+	SessionIndex              int // 0-based index of this session in the Sessions slice
+	CurrentDimensions         []goalx.ResolvedDimension
+	JournalPath               string
+	SessionIdentityPath       string
+	SessionInboxPath          string
+	SessionCursorPath         string
+	WorktreePath              string
 	SessionBaseBranchSelector string
 	SessionBaseBranch         string
 }
@@ -95,8 +97,6 @@ type SessionData struct {
 	Model             string
 	Mode              goalx.Mode
 	Hint              string
-	RouteRole         string
-	RouteProfile      string
 	Dimensions        []goalx.ResolvedDimension
 	EngineCommand     string
 	Prompt            string

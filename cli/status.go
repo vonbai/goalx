@@ -339,14 +339,6 @@ func sessionLaunchFacts(runDir, sessionName string) string {
 	case identity.EffectiveEffort != "":
 		parts = append(parts, "effort="+identity.EffectiveEffort)
 	}
-	switch {
-	case identity.RouteRole != "" && identity.RouteProfile != "":
-		parts = append(parts, "route="+identity.RouteRole+"/"+identity.RouteProfile)
-	case identity.RouteRole != "":
-		parts = append(parts, "route="+identity.RouteRole)
-	case identity.RouteProfile != "":
-		parts = append(parts, "route="+identity.RouteProfile)
-	}
 	return strings.Join(parts, " ")
 }
 

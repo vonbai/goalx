@@ -74,6 +74,45 @@ Use this by default unless the user explicitly asks for config-first control.
 - `goalx result` = read the current result surfaces
 - `goalx save` = export a durable saved run for later continuation
 
+## Selection Policy
+
+GoalX now defaults to auto-detected candidate pools rather than preset-first launch.
+
+- use `~/.goalx/config.yaml` `selection.*` for long-term engine/model preferences
+- do not suggest project-scoped `selection`; project config is for shared repo facts
+- use explicit `--engine/--model` only when the user clearly wants a one-off override
+- if the user wants help configuring engine choices, help them write or edit `~/.goalx/config.yaml` directly instead of improvising a custom config shape
+
+When helping with selection config, stay inside this shape:
+
+```yaml
+selection:
+  disabled_engines:
+    - aider
+  disabled_targets:
+    - claude-code/sonnet
+  master_candidates:
+    - codex/gpt-5.4
+    - claude-code/opus
+  research_candidates:
+    - claude-code/opus
+    - codex/gpt-5.4
+  develop_candidates:
+    - codex/gpt-5.4
+    - codex/gpt-5.4-mini
+  master_effort: high
+  research_effort: high
+  develop_effort: medium
+```
+
+Recommended guidance when a human asks for engine/model setup:
+
+- ask which engines or targets should be disabled because of quota, stability, or preference
+- ask which target should bootstrap master by default
+- ask whether research and develop should use different first-choice targets
+- keep the config user-scoped in `~/.goalx/config.yaml`
+- avoid `preset`, `routing`, or project-scoped policy unless the human explicitly asks for legacy compatibility
+
 ## Intent Routing
 
 Use intent to express the kind of outcome the user wants.
@@ -160,7 +199,7 @@ Use these when the user wants to shape the run, not as the default first move.
 ```bash
 goalx run "goal" --effort high --dimension adversarial,evidence
 goalx dimension --run NAME session-2 --set depth,creative
-goalx replace --run NAME session-2 --route-profile research_deep
+goalx replace --run NAME session-2 --engine claude-code --model opus --effort high
 ```
 
 Prefer the simplest viable control surface first:

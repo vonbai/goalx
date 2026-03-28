@@ -29,13 +29,13 @@ goalx tell --run NAME --urgent master "stop: production is down"
 ```bash
 goalx add --run NAME --mode research "investigate the auth boundary"
 goalx add --run NAME --mode develop --worktree "implement the fix"
-goalx replace --run NAME session-2 --route-profile research_deep
+goalx replace --run NAME session-2 --engine claude-code --model opus --effort high
 ```
 
 Use:
 
 - `add` to create a new durable session
-- `replace` to hand the slice to a fresh routed owner
+- `replace` to hand the slice to a fresh owner, optionally with an explicit engine/model override
 
 ## Live Runtime Adjustments
 

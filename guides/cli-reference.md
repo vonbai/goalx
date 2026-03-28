@@ -30,7 +30,7 @@ goalx tell [--run NAME] [master|session-N] "message"
 goalx tell --urgent [--run NAME] [master|session-N] "message"
 goalx add --run NAME --mode research "goal"
 goalx add --run NAME --mode develop --worktree "goal"
-goalx replace --run NAME session-N --route-profile PROFILE
+goalx replace --run NAME session-N --engine ENGINE --model MODEL --effort LEVEL
 goalx dimension --run NAME session-N --set depth,evidence
 goalx focus --run NAME
 ```

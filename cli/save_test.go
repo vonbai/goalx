@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,14 +230,14 @@ func TestSaveCopiesDevelopIntegrationAndExperimentState(t *testing.T) {
 		t.Fatalf("write experiments.jsonl: %v", err)
 	}
 	if err := SaveIntegrationState(IntegrationStatePath(runDir), &IntegrationState{
-		Version:             1,
-		CurrentExperimentID: "exp-2",
-		CurrentBranch:       "goalx/demo/2",
-		CurrentCommit:       "abc123",
-		LastIntegrationID:   "int-1",
-		LastMethod:          "keep",
+		Version:                 1,
+		CurrentExperimentID:     "exp-2",
+		CurrentBranch:           "goalx/demo/2",
+		CurrentCommit:           "abc123",
+		LastIntegrationID:       "int-1",
+		LastMethod:              "keep",
 		LastSourceExperimentIDs: []string{"exp-2"},
-		UpdatedAt:           "2026-03-28T10:00:00Z",
+		UpdatedAt:               "2026-03-28T10:00:00Z",
 	}); err != nil {
 		t.Fatalf("SaveIntegrationState: %v", err)
 	}
@@ -263,6 +264,64 @@ func TestSaveCopiesDevelopIntegrationAndExperimentState(t *testing.T) {
 		t.Fatalf("read saved coordination.json: %v", err)
 	} else if string(got) != coordination {
 		t.Fatalf("saved coordination.json = %q, want %q", string(got), coordination)
+	}
+}
+
+func TestSaveCopiesSelectionSnapshot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	runName := "demo"
+	runDir := goalx.RunDir(projectRoot, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+
+	cfg := goalx.Config{
+		Name:      runName,
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship feature",
+		Target:    goalx.TargetConfig{Files: []string{"README.md"}},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
+	want := testSelectionSnapshot{
+		Version: 1,
+		Policy: goalx.EffectiveSelectionPolicy{
+			MasterCandidates:   []string{"codex/gpt-5.4"},
+			ResearchCandidates: []string{"claude-code/opus"},
+			DevelopCandidates:  []string{"codex/gpt-5.4-mini"},
+		},
+		Master:   goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4", Effort: goalx.EffortHigh},
+		Research: goalx.SessionConfig{Engine: "claude-code", Model: "opus", Effort: goalx.EffortHigh},
+		Develop:  goalx.SessionConfig{Engine: "codex", Model: "gpt-5.4-mini", Effort: goalx.EffortMedium},
+	}
+	writeSelectionSnapshotFixture(t, runDir, want)
+
+	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	data, err = os.ReadFile(testSelectionSnapshotPath(SavedRunDir(projectRoot, runName)))
+	if err != nil {
+		t.Fatalf("read saved selection snapshot: %v", err)
+	}
+	var got testSelectionSnapshot
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal saved selection snapshot: %v", err)
+	}
+	if got.Master.Engine != want.Master.Engine || got.Master.Model != want.Master.Model {
+		t.Fatalf("saved snapshot master = %s/%s, want %s/%s", got.Master.Engine, got.Master.Model, want.Master.Engine, want.Master.Model)
+	}
+	if len(got.Policy.DevelopCandidates) != 1 || got.Policy.DevelopCandidates[0] != "codex/gpt-5.4-mini" {
+		t.Fatalf("saved snapshot develop_candidates = %#v", got.Policy.DevelopCandidates)
 	}
 }
 
@@ -572,7 +631,7 @@ func seedSaveRunProvenance(t *testing.T, projectRoot, runDir, runName, objective
 func seedSaveSessionIdentity(t *testing.T, runDir, sessionName string, mode goalx.Mode, engine, model string, target goalx.TargetConfig, localValidation goalx.LocalValidationConfig) {
 	t.Helper()
 
-	identity, err := NewSessionIdentity(runDir, sessionName, sessionRoleKind(mode), mode, engine, model, "", "", "", "", target)
+	identity, err := NewSessionIdentity(runDir, sessionName, sessionRoleKind(mode), mode, engine, model, "", "", "", target)
 	if err != nil {
 		t.Fatalf("NewSessionIdentity: %v", err)
 	}

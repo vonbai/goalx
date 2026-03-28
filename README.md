@@ -49,6 +49,84 @@ goalx run "the dashboard feels production-ready, fast, and clear on desktop and 
 
 `goalx run` is the canonical public entrypoint.
 
+## Engine Selection
+
+GoalX auto-detects available engines at launch and builds a candidate pool.
+
+Default behavior:
+
+- if `codex` and `claude` are both available:
+  - bootstrap master defaults to `codex/gpt-5.4`
+  - research workers default to `claude-code/opus`
+  - develop workers default to `codex/gpt-5.4`
+- if only one supported engine is available, GoalX uses that engine
+- if no supported engine is on `PATH`, launch fails loudly
+
+User-level long-term selection policy lives in `~/.goalx/config.yaml`:
+
+```yaml
+selection:
+  disabled_engines:
+    - aider
+
+  disabled_targets:
+    - claude-code/sonnet
+
+  master_candidates:
+    - codex/gpt-5.4
+    - claude-code/opus
+
+  research_candidates:
+    - claude-code/opus
+    - codex/gpt-5.4
+
+  develop_candidates:
+    - codex/gpt-5.4
+    - codex/gpt-5.4-mini
+
+  master_effort: high
+  research_effort: high
+  develop_effort: medium
+```
+
+Important boundaries:
+
+- `selection` is user-scoped only; project config and manual drafts do not persist it
+- explicit `--engine/--model` is an intentional override, not the default path
+- master sees the resulting candidate pools as facts and chooses workers from them at runtime
+
+How to shape `selection` in practice:
+
+- put the engine/model you want to bootstrap master with first in `master_candidates`
+- put the strongest analysis target first in `research_candidates`
+- put the fastest reliable implementation target first in `develop_candidates`
+- use `disabled_engines` when a whole provider is currently off-limits
+- use `disabled_targets` when the engine is fine but a specific model is not
+- prefer 2-3 candidates per lane, not a long list
+
+Common example:
+
+```yaml
+selection:
+  master_candidates:
+    - codex/gpt-5.4
+    - claude-code/opus
+  research_candidates:
+    - claude-code/opus
+    - codex/gpt-5.4
+  develop_candidates:
+    - codex/gpt-5.4
+    - codex/gpt-5.4-mini
+  disabled_targets:
+    - claude-code/sonnet
+```
+
+If you use GoalX through Claude or Codex, the skill should help you edit this user config instead of inventing ad-hoc engine policy. Tell it what you want:
+
+- "default master to codex, but keep opus available for research"
+- "disable sonnet for now"
+- "develop should prefer gpt-5.4-mini unless explicitly overridden"
+
 ## Core Workflows
 
 ### Default Deliver Workflow

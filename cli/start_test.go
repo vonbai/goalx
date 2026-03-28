@@ -287,6 +287,7 @@ esac
 		filepath.Join(runDir, "master.md"),
 		filepath.Join(runDir, "master.jsonl"),
 		filepath.Join(runDir, "run-charter.json"),
+		testSelectionSnapshotPath(runDir),
 		filepath.Join(runDir, "acceptance.json"),
 		filepath.Join(runDir, "goal.json"),
 		filepath.Join(runDir, "goal-log.jsonl"),
@@ -301,6 +302,16 @@ esac
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
 		}
+	}
+	snapshot := readSelectionSnapshotFixture(t, runDir)
+	if snapshot.Master.Engine != "codex" || snapshot.Master.Model != "gpt-5.4" {
+		t.Fatalf("selection snapshot master = %s/%s, want codex/gpt-5.4", snapshot.Master.Engine, snapshot.Master.Model)
+	}
+	if snapshot.Research.Engine != "codex" || snapshot.Research.Model != "gpt-5.4" {
+		t.Fatalf("selection snapshot research = %s/%s, want codex/gpt-5.4", snapshot.Research.Engine, snapshot.Research.Model)
+	}
+	if snapshot.Policy.MasterCandidates[0] != "codex/gpt-5.4" {
+		t.Fatalf("selection snapshot master_candidates = %#v, want codex first", snapshot.Policy.MasterCandidates)
 	}
 	for _, path := range []string{
 		filepath.Join(runDir, "acceptance.md"),
@@ -363,6 +374,104 @@ esac
 		if strings.Contains(stateText, unwanted) {
 			t.Fatalf("acceptance state must not contain governance field %q:\n%s", unwanted, stateText)
 		}
+	}
+}
+
+func TestStartWithManualDraftPreservesImplicitSelectionPolicySnapshot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	goalxDir := filepath.Join(repo, ".goalx")
+	if err := os.MkdirAll(goalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	draft := []byte(`
+name: demo
+mode: auto
+objective: audit auth flow
+target:
+  files: ["README.md"]
+local_validation:
+  command: test -f README.md
+`)
+	if err := os.WriteFile(filepath.Join(goalxDir, "goalx.yaml"), draft, 0o644); err != nil {
+		t.Fatalf("write goalx.yaml: %v", err)
+	}
+
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	for _, name := range []string{"codex", "claude"} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatalf("write %s shim: %v", name, err)
+		}
+	}
+	tmuxPath := filepath.Join(binDir, "tmux")
+	script := `#!/bin/sh
+set -eu
+state="${GOALX_FAKE_TMUX_STATE:?}"
+mkdir -p "$state"
+log="$state/log"
+cmd="$1"
+shift
+echo "$cmd $*" >> "$log"
+case "$cmd" in
+  has-session)
+    target="$2"
+    if [ -f "$state/session_$target" ]; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  new-session)
+    name=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "-s" ]; then
+        shift
+        name="$1"
+        break
+      fi
+      shift
+    done
+    : > "$state/session_$name"
+    exit 0
+    ;;
+  kill-session)
+    target="$2"
+    rm -f "$state/session_$target"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
+
+	origLaunchSidecar := launchRunSidecar
+	defer func() { launchRunSidecar = origLaunchSidecar }()
+	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+
+	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	runDir := goalx.RunDir(repo, "demo")
+	snapshot := readSelectionSnapshotFixture(t, runDir)
+	if snapshot.Master.Engine != "codex" || snapshot.Master.Model != "gpt-5.4" {
+		t.Fatalf("snapshot master = %s/%s, want codex/gpt-5.4", snapshot.Master.Engine, snapshot.Master.Model)
+	}
+	if len(snapshot.Policy.MasterCandidates) < 2 || snapshot.Policy.MasterCandidates[0] != "codex/gpt-5.4" || snapshot.Policy.MasterCandidates[1] != "claude-code/opus" {
+		t.Fatalf("snapshot master_candidates = %#v, want codex then claude", snapshot.Policy.MasterCandidates)
+	}
+	if len(snapshot.Policy.ResearchCandidates) == 0 || snapshot.Policy.ResearchCandidates[0] != "claude-code/opus" {
+		t.Fatalf("snapshot research_candidates = %#v, want claude-code/opus first", snapshot.Policy.ResearchCandidates)
 	}
 }
 
@@ -732,14 +841,23 @@ local_validation:
 	}
 }
 
-func TestStartPreservesExplicitCodexPreset(t *testing.T) {
+func TestStartPreservesExplicitCodexTargets(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
 	writeLaunchConfigProjectFile(t, repo, `
-preset: codex
+master:
+  engine: codex
+  model: gpt-5.4
+roles:
+  research:
+    engine: codex
+    model: gpt-5.4
+  develop:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["README.md"]
 local_validation:
@@ -784,9 +902,6 @@ esac
 	cfg, err := LoadRunSpec(runDir)
 	if err != nil {
 		t.Fatalf("LoadRunSpec: %v", err)
-	}
-	if cfg.Preset != "codex" {
-		t.Fatalf("preset = %q, want codex", cfg.Preset)
 	}
 	if cfg.Master.Engine != "codex" || cfg.Master.Model != "gpt-5.4" {
 		t.Fatalf("master = %s/%s, want codex/gpt-5.4", cfg.Master.Engine, cfg.Master.Model)
@@ -1030,8 +1145,8 @@ esac
 		"### Preferences",
 		"| Research | multi-perspective |",
 		"| Develop | speed |",
-		"Prefer route-first session launches.",
-		"Explicit `--engine/--model` bypasses routing.",
+		"Prefer policy-based session launches.",
+		"Explicit `--engine/--model` is an override.",
 		"Liveness state: `" + LivenessPath(runDir) + "`",
 		"Worktree snapshot: `" + WorktreeSnapshotPath(runDir) + "`",
 		"Sessions without dedicated worktrees share the run worktree.",
@@ -1153,7 +1268,7 @@ esac
 		"master",
 		"FOO_TOOLCHAIN_ROOT='/opt/goalx-toolchain'",
 		"HOME='" + home + "'",
-			"PATH='" + binDir + ":" + origPath + "'",
+		"PATH='" + binDir + ":" + origPath + "'",
 		"OPENAI_API_KEY='sk-goalx'",
 		"codex -m gpt-5.4 -a never -s danger-full-access",
 	} {

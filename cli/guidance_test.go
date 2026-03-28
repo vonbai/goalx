@@ -66,8 +66,6 @@ func seedGuidanceSessionFixture(t *testing.T, runDir string, cfg *goalx.Config) 
 		Mode:            string(goalx.ModeDevelop),
 		Engine:          "codex",
 		Model:           "gpt-5.4-mini",
-		RouteRole:       "develop",
-		RouteProfile:    "build_fast",
 		OriginCharterID: loadCharterIDForTests(t, runDir),
 		CreatedAt:       time.Now().UTC().Format(time.RFC3339),
 	}

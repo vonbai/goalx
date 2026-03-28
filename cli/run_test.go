@@ -110,7 +110,7 @@ func TestRunIntentDebateUsesPhasePath(t *testing.T) {
 	defer func() { runDebateWithNextConfig = oldDebate }()
 
 	calls := 0
-	expectedNC := &nextConfigJSON{Preset: "codex"}
+	expectedNC := &nextConfigJSON{Parallel: 3}
 	runDebateWithNextConfig = func(projectRoot string, args []string, nc *nextConfigJSON) error {
 		calls++
 		if projectRoot == "" {
@@ -164,7 +164,7 @@ func TestDebateRoutesThroughRunEntrypoint(t *testing.T) {
 	oldRun := runEntrypoint
 	defer func() { runEntrypoint = oldRun }()
 
-	expectedNC := &nextConfigJSON{Preset: "claude"}
+	expectedNC := &nextConfigJSON{Context: []string{"README.md"}}
 	runEntrypoint = func(_ string, args []string, nc *nextConfigJSON) error {
 		if nc != expectedNC {
 			t.Fatalf("next config = %#v, want %#v", nc, expectedNC)

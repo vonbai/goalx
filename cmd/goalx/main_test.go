@@ -158,7 +158,6 @@ master:
 		Name:      "research-a",
 		Mode:      goalx.ModeResearch,
 		Objective: "audit auth",
-		Preset:    "hybrid",
 		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		Roles: goalx.RoleDefaultsConfig{
 			Research: goalx.SessionConfig{Engine: "claude-code", Model: "opus"},
@@ -170,7 +169,7 @@ master:
 		"summary.md": "# research summary\n",
 	})
 
-	out := runGoalx(t, binPath, home, projectRoot, "run", "--from", "research-a", "--intent", "debate", "--write-config", "--preset", "codex", "--name", "debate-a")
+	out := runGoalx(t, binPath, home, projectRoot, "run", "--from", "research-a", "--intent", "debate", "--write-config", "--research-role", "codex/gpt-5.4", "--name", "debate-a")
 	if !strings.Contains(out, "Generated manual draft") {
 		t.Fatalf("debate output missing generated message:\n%s", out)
 	}

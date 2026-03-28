@@ -50,7 +50,6 @@ func TestBuildLaunchConfigPreservesConfiguredParallelWhenFlagOmitted(t *testing.
 		t.Fatalf("mkdir .goalx: %v", err)
 	}
 	cfgYAML := `
-preset: hybrid
 parallel: 4
 master:
   engine: codex
@@ -292,7 +291,16 @@ local_validation:
 func TestResolveLaunchConfigResearchWithClaudePresetAndClaudeOnlyPath(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `
-preset: claude
+master:
+  engine: claude-code
+  model: opus
+roles:
+  research:
+    engine: claude-code
+    model: sonnet
+  develop:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -317,7 +325,16 @@ local_validation:
 func TestResolveLaunchConfigDevelopWithClaudePresetAndClaudeOnlyPathFailsOnMissingCodex(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `
-preset: claude
+master:
+  engine: claude-code
+  model: opus
+roles:
+  research:
+    engine: claude-code
+    model: sonnet
+  develop:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -342,7 +359,16 @@ local_validation:
 func TestResolveLaunchConfigAutoWithHybridPresetAndClaudeOnlyPathFailsOnMissingCodex(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `
-preset: hybrid
+master:
+  engine: claude-code
+  model: opus
+roles:
+  research:
+    engine: claude-code
+    model: opus
+  develop:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -494,7 +520,13 @@ local_validation:
 func TestResolveLaunchConfigIgnoresSharedSessionsForDirectLaunch(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `
-preset: codex
+master:
+  engine: codex
+  model: gpt-5.4
+roles:
+  develop:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -525,7 +557,9 @@ func TestResolveLaunchConfigPreservesLocalValidationTimeoutWithoutInferringComma
 		t.Fatalf("write go.mod: %v", err)
 	}
 	writeLaunchConfigProjectFile(t, projectRoot, `
-preset: codex
+master:
+  engine: codex
+  model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -550,7 +584,6 @@ local_validation:
 func TestResolveLaunchConfigPreservesConfiguredParallelWhenFlagOmitted(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `
-preset: hybrid
 parallel: 4
 master:
   engine: codex
@@ -676,7 +709,9 @@ target:
 func TestResolveLaunchConfigDimensionsDoNotIncreaseParallel(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `
-preset: codex
+master:
+  engine: codex
+  model: gpt-5.4
 parallel: 1
 target:
   files: ["."]
@@ -701,7 +736,13 @@ func TestResolveLaunchConfigFailsWhenSelectedEngineUnavailable(t *testing.T) {
 	projectRoot := t.TempDir()
 	t.Setenv("PATH", t.TempDir())
 	writeLaunchConfigProjectFile(t, projectRoot, `
-preset: codex
+master:
+  engine: codex
+  model: gpt-5.4
+roles:
+  develop:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -723,8 +764,17 @@ local_validation:
 func TestBuildLaunchConfigMatchesResolveLaunchConfig(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `
-preset: hybrid
 parallel: 2
+master:
+  engine: claude-code
+  model: opus
+roles:
+  research:
+    engine: claude-code
+    model: opus
+  develop:
+    engine: codex
+    model: gpt-5.4
 target:
   files: ["."]
 local_validation:
@@ -749,9 +799,6 @@ local_validation:
 		t.Fatalf("resolveLaunchConfig: %v", err)
 	}
 
-	if buildCfg.Preset != resolvedCfg.Config.Preset {
-		t.Fatalf("preset = %q, want %q", buildCfg.Preset, resolvedCfg.Config.Preset)
-	}
 	if buildCfg.Master.Engine != resolvedCfg.Config.Master.Engine || buildCfg.Master.Model != resolvedCfg.Config.Master.Model {
 		t.Fatalf("master = %s/%s, want %s/%s", buildCfg.Master.Engine, buildCfg.Master.Model, resolvedCfg.Config.Master.Engine, resolvedCfg.Config.Master.Model)
 	}
