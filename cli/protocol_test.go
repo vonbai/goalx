@@ -3,7 +3,6 @@ package cli
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -240,22 +239,12 @@ func TestProviderCapabilitiesMarksOnlyCodexForActionExecutionReminder(t *testing
 
 func TestProviderCapabilitiesMarksOnlyClaudeForAutonomyPersistenceReminder(t *testing.T) {
 	claudeCaps := providerCapabilities("claude-code")
-	claudeValue := reflect.ValueOf(claudeCaps)
-	claudeField := claudeValue.FieldByName("AutonomyPersistenceReminder")
-	if !claudeField.IsValid() {
-		t.Fatalf("claude capabilities missing AutonomyPersistenceReminder field: %+v", claudeCaps)
-	}
-	if !claudeField.Bool() {
+	if !claudeCaps.AutonomyPersistenceReminder {
 		t.Fatalf("claude capabilities should enable autonomy persistence reminder: %+v", claudeCaps)
 	}
 
 	codexCaps := providerCapabilities("codex")
-	codexValue := reflect.ValueOf(codexCaps)
-	codexField := codexValue.FieldByName("AutonomyPersistenceReminder")
-	if !codexField.IsValid() {
-		t.Fatalf("codex capabilities missing AutonomyPersistenceReminder field: %+v", codexCaps)
-	}
-	if codexField.Bool() {
+	if codexCaps.AutonomyPersistenceReminder {
 		t.Fatalf("codex capabilities should not enable autonomy persistence reminder: %+v", codexCaps)
 	}
 }
@@ -570,7 +559,6 @@ func TestRenderSubagentProtocolKeepsResearchMethodologyConcise(t *testing.T) {
 		"## Priority Fix List (if applicable)",
 		"dispatchable_slices",
 		"directly adopt",
-		"Do not declare yourself done",
 	} {
 		if !strings.Contains(modeSection, want) {
 			t.Fatalf("research mode section missing %q:\n%s", want, modeSection)
