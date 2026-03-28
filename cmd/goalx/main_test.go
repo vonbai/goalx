@@ -288,6 +288,46 @@ func TestRunCommandDispatchesDurable(t *testing.T) {
 	}
 }
 
+func TestRunCommandDispatchesSchema(t *testing.T) {
+	oldSchema := mainSchema
+	defer func() { mainSchema = oldSchema }()
+	called := false
+	mainSchema = func(_ string, args []string) error {
+		called = true
+		want := []string{"status", "--json"}
+		if len(args) != len(want) {
+			t.Fatalf("args = %v, want %v", args, want)
+		}
+		for i := range want {
+			if args[i] != want[i] {
+				t.Fatalf("args = %v, want %v", args, want)
+			}
+		}
+		return nil
+	}
+	if err := runCommand(t.TempDir(), "schema", []string{"status", "--json"}); err != nil {
+		t.Fatalf("runCommand schema: %v", err)
+	}
+	if !called {
+		t.Fatal("schema dispatch was not called")
+	}
+}
+
+func TestUsageIncludesSchemaCommand(t *testing.T) {
+	if !strings.Contains(usage, "goalx schema  <surface> [--json]") {
+		t.Fatalf("usage missing schema command:\n%s", usage)
+	}
+}
+
+func TestUsageDescribesDurableAsWritePath(t *testing.T) {
+	if !strings.Contains(usage, "goalx durable <replace|append> ...  Validate and write durable protocol surfaces") {
+		t.Fatalf("usage durable line should describe write path, not schema authority:\n%s", usage)
+	}
+	if strings.Contains(usage, "Validate and write canonical durable protocol surfaces") {
+		t.Fatalf("usage should not describe durable as canonical authority:\n%s", usage)
+	}
+}
+
 func TestRunCommandRejectsLegacyTopLevelAliases(t *testing.T) {
 	for _, legacy := range []string{"auto", "research", "develop", "debate", "implement", "explore"} {
 		if err := runCommand(t.TempDir(), legacy, []string{"demo"}); !errors.Is(err, errUnknownCommand) {

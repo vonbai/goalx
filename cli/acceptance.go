@@ -104,10 +104,10 @@ func EnsureAcceptanceState(runDir string, cfg *goalx.Config, goalVersion int) (*
 func parseAcceptanceState(data []byte) (*AcceptanceState, error) {
 	var state AcceptanceState
 	if err := decodeStrictJSON(data, &state); err != nil {
-		return nil, err
+		return nil, durableSchemaHintError(DurableSurfaceAcceptance, err)
 	}
 	if err := validateAcceptanceState(&state); err != nil {
-		return nil, err
+		return nil, durableSchemaHintError(DurableSurfaceAcceptance, err)
 	}
 	return &state, nil
 }

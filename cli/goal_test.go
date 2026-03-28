@@ -27,7 +27,7 @@ func TestLoadGoalStateRejectsUnknownFields(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected LoadGoalState to fail")
 	}
-	for _, want := range []string{"parse goal state", "unknown field"} {
+	for _, want := range []string{"parse goal state", "unknown field", "goalx schema goal"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("LoadGoalState error = %v, want %q", err, want)
 		}

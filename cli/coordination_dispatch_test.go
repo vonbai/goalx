@@ -195,7 +195,13 @@ func TestLoadCoordinationStateRejectsLegacySessionSchema(t *testing.T) {
 		t.Fatalf("write coordination state: %v", err)
 	}
 
-	if _, err := LoadCoordinationState(CoordinationPath(runDir)); err == nil || !strings.Contains(err.Error(), "unknown field") {
-		t.Fatalf("LoadCoordinationState error = %v, want unknown field rejection", err)
+	_, err := LoadCoordinationState(CoordinationPath(runDir))
+	if err == nil {
+		t.Fatal("LoadCoordinationState should reject legacy aliases")
+	}
+	for _, want := range []string{"unknown field", "goalx schema coordination"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("LoadCoordinationState error = %v, want %q", err, want)
+		}
 	}
 }

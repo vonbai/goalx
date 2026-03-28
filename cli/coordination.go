@@ -97,10 +97,10 @@ func EnsureCoordinationState(runDir, objective string) (*CoordinationState, erro
 func parseCoordinationState(data []byte) (*CoordinationState, error) {
 	var state CoordinationState
 	if err := decodeStrictJSON(data, &state); err != nil {
-		return nil, err
+		return nil, durableSchemaHintError(DurableSurfaceCoordination, err)
 	}
 	if err := validateCoordinationState(&state); err != nil {
-		return nil, err
+		return nil, durableSchemaHintError(DurableSurfaceCoordination, err)
 	}
 	return &state, nil
 }

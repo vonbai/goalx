@@ -127,16 +127,22 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 		{
 			ID:      "durable-replace",
 			Kind:    "control",
-			Summary: "Replace a machine-consumed structured durable surface after validating canonical JSON shape.",
+			Summary: "Replace a machine-consumed structured durable surface. Inspect the contract with `goalx schema <surface>` first.",
 			Command: fmt.Sprintf("goalx durable replace status --run %s --file /abs/path.json", runName),
 			Paths:   []string{GoalPath(runDir), AcceptanceStatePath(runDir), CoordinationPath(runDir), RunStatusPath(runDir)},
 		},
 		{
 			ID:      "durable-append",
 			Kind:    "control",
-			Summary: "Append a machine-consumed durable event log using the canonical JSONL envelope.",
+			Summary: "Append a machine-consumed durable event log. Inspect the contract with `goalx schema <surface>` first.",
 			Command: fmt.Sprintf("goalx durable append goal-log --run %s --file /abs/path.jsonl", runName),
 			Paths:   []string{GoalLogPath(runDir), ExperimentsLogPath(runDir)},
+		},
+		{
+			ID:      "schema",
+			Kind:    "context",
+			Summary: "Read the canonical contract for a durable surface before writing it.",
+			Command: "goalx schema status",
 		},
 		{
 			ID:      "attach",

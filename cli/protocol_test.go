@@ -907,10 +907,11 @@ func TestRenderMasterProtocolIncludesGoalBoundaryChecklistInstructions(t *testin
 		"run-charter.json",
 		"goal boundary",
 		"control/identity-fence.json",
-		"state\":\"open|claimed|waived\"",
 		"acceptance.json",
 		"goal.json",
 		"goal-log.jsonl",
+		"`goalx schema goal`",
+		"Do not invent goal item fields from memory or from older docs.",
 		"goalx verify --run demo",
 		"goalx add --run demo",
 		"goalx afford --run demo master",
@@ -919,13 +920,24 @@ func TestRenderMasterProtocolIncludesGoalBoundaryChecklistInstructions(t *testin
 		"check evidence density, clear evidence, and actionability of findings",
 		"If any required item is uncovered, that is a scheduling bug.",
 		"If parallel capacity exists and independent required work remains, dispatch it now instead of waiting.",
-		"waiting_external",
+		"An external blocker does not silence dispatch",
 		"If a required item stays stuck, reassign it, split it, or take it over yourself.",
 		"Do not wait on one session if other independent required work can proceed.",
 		"Prefer reusing a parked or idle session with fresh inbox instructions before launching another session.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{
+		"Required items start as `open`.",
+		"Move an item to `claimed`",
+		"`waived` only counts",
+		"`waiting_external`",
+		"An open required item with",
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("rendered protocol should route goal item field semantics through schema authority, found %q:\n%s", unwanted, text)
 		}
 	}
 	if strings.Contains(text, "tmux send-keys -t ar-demo:<window> Enter") {
@@ -1024,7 +1036,7 @@ func TestRenderMasterProtocolDefinesGenericLastMileAutonomy(t *testing.T) {
 	for _, want := range []string{
 		"Do not label work as external just because it happens late in the run or touches runtime state.",
 		"Local shell work such as building, restarting services, launching local deploy/dev processes, checking readiness, inspecting running revisions, and running acceptance/eval commands is part of the job when the required access is already available.",
-		"Before marking a required item `waiting_external`, verify that the blocker is truly outside your available permissions, credentials, or reachable environment.",
+		"Before recording a required item as externally blocked, verify that the blocker is truly outside your available permissions, credentials, or reachable environment.",
 		"If a required proof step depends on a long-running local process, confirm that the live process matches current `HEAD`; if it does not, rebuild/restart or relaunch it yourself before evaluating.",
 		"Do not stop at intermediate states such as \"implementation complete\", \"ready for eval\", or \"awaiting external verification\" while an actionable required item remains.",
 		"If the only remaining gap is proof or verification that you can execute yourself, run it now instead of waiting for another cycle.",
@@ -1330,12 +1342,15 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 		"goalx stop --run demo",
 		"## Status",
 		"You drive the transition.",
-		"Set `keep_session` when a develop-mode session should be merged",
+		"Inspect the canonical status contract with `goalx schema status`",
 		"Do NOT just write a recommendation and wait.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
 		}
+	}
+	if strings.Contains(text, "Set `keep_session` when a develop-mode session should be merged") {
+		t.Fatalf("rendered master protocol should not define status fields inline:\n%s", text)
 	}
 }
 
@@ -1461,7 +1476,7 @@ func TestRenderMasterProtocolBindsBlockedOwnersToImmediateIntervention(t *testin
 	}
 	text := string(out)
 	for _, want := range []string{
-		"An open required item with `owner_attention`, `owner_blocked`, or `owner_risky` facts is **not** a no-change fast path.",
+		"A required item with blocking or risk facts such as `owner_attention`, `owner_blocked`, or `owner_risky` is **not** a no-change fast path.",
 		"If a required item owner is blocked or risky, resolve it in the current control cycle: inspect directly (including shell/tmux if needed), redirect, park+replace, or take the work over yourself.",
 		"If an active session becomes `active_idle`, treat that as \"worker result or next-step handoff is waiting on you\" and review, redirect, keep, or take over in the current control cycle.",
 	} {
@@ -1504,8 +1519,8 @@ func TestRenderMasterProtocolIncludesReportsAndResearchCompletionGuidance(t *tes
 		"`/tmp/goal.json` required items are the canonical current-goal obligations and definition of done.",
 		"Do not use required goal items as implementation tasks or temporary decomposition.",
 		"Keep execution decomposition in coordination, inbox, journals, and session briefs instead of rewriting goal items.",
-		"Move an item to `claimed` only when decisive evidence says the goal outcome itself is satisfied and ready for closeout review.",
-		"Missing user credentials, external approval, or real-world publish access does not justify claiming a required item as end-to-end verified.",
+		"Only move a required item toward closeout when decisive evidence says the goal outcome itself is satisfied or the user explicitly approved removing it from scope.",
+		"Missing user credentials, external approval, or real-world publish access does not justify treating a required outcome as end-to-end verified.",
 		"If a session produced valuable work outside the original items, that work matters.",
 		"If a session shows no journal output for 15+ minutes while its lease is healthy",
 		"Research runs usually close out through reports and goal updates; develop runs usually close out through reviewed code, verification evidence, and `goalx keep`.",
@@ -1686,7 +1701,7 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		"If you use `/tmp/proof/completion.json`, treat it as an agent-owned closeout/evidence surface.",
 		"If parallel capacity exists and independent required work remains, dispatch it now instead of waiting.",
 		"Treat configured `parallel` as initial fan-out guidance, not a permanent ceiling;",
-		"waiting_external",
+		"An external blocker does not silence dispatch",
 		"Do not wait on one session if other independent required work can proceed.",
 		"Prefer reusing a parked or idle session with fresh inbox instructions before launching another session.",
 		"Improvement backlog",
@@ -2044,9 +2059,9 @@ func TestRenderMasterProtocolIncludesExplicitCoverageOwnershipGuidance(t *testin
 	}
 	text := string(out)
 	for _, want := range []string{
-		"When durable ownership becomes explicit, replace `coordination` through `goalx durable replace coordination --run demo --file /abs/path.json` and record `owners` entries mapping `req-*` required items to owner tokens.",
-		"If `/tmp/coordination.json` has a non-empty `owners` map, open required items must not remain silently unmapped.",
-		"When explicit coverage facts show uncovered open work and reusable capacity exists, either dispatch or reassign it now, or record why this control cycle stays serial.",
+		"When durable ownership becomes explicit, inspect `goalx schema coordination` and replace `coordination` through `goalx durable replace coordination --run demo --file /abs/path.json`.",
+		"If `/tmp/coordination.json` shows uncovered current-goal work, required outcomes must not remain silently unmapped.",
+		"When explicit coverage facts show uncovered required work and reusable capacity exists, either dispatch or reassign it now, or record why this control cycle stays serial.",
 		"Do not infer ownership from journals or `owner_scope`.",
 	} {
 		if !strings.Contains(text, want) {
@@ -2397,17 +2412,24 @@ func TestRenderMasterProtocolStatusRecordIsFactsOnly(t *testing.T) {
 		`"acceptance_met"`,
 		`"acceptance_status"`,
 		`"goal_satisfied"`,
+		`"phase":"working|review|complete"`,
+		`"user_approved":false`,
+		"`keep_session`",
+		"`default_command`",
+		"`effective_command`",
+		"`goal_version`",
 	} {
 		if strings.Contains(text, unwanted) {
 			t.Fatalf("rendered master protocol should omit judgment field %q:\n%s", unwanted, text)
 		}
 	}
 	for _, want := range []string{
-		`"version":1`,
-		`"phase":"working|review|complete"`,
-		`"required_remaining":0`,
-		`"keep_session":"session-N"`,
-		`"updated_at":"`,
+		"`goalx schema goal`",
+		"`goalx schema acceptance`",
+		"`goalx schema coordination`",
+		"`goalx schema status`",
+		"`goalx schema goal-log`",
+		"`goalx schema experiments`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)

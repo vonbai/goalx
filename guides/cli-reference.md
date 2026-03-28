@@ -68,6 +68,19 @@ goalx stop --run NAME
 goalx drop --run NAME
 ```
 
+## Durable Surface Schemas
+
+```bash
+goalx schema goal
+goalx schema acceptance
+goalx schema coordination
+goalx schema status
+goalx schema goal-log
+goalx schema experiments
+```
+
+Use `goalx schema <surface>` as the canonical machine-consumed durable contract authority.
+
 ## Durable Surface Writes
 
 ```bash
@@ -80,4 +93,4 @@ goalx durable append goal-log --run NAME --file /abs/path.jsonl
 goalx durable append experiments --run NAME --file /abs/path.jsonl
 ```
 
-Use the durable command for machine-consumed run surfaces. Do not hand-edit those files in place.
+Inspect the surface first with `goalx schema <surface>`, then use `goalx durable` to write it. Do not hand-edit those files in place.

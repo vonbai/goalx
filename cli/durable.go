@@ -9,6 +9,7 @@ import (
 func Durable(projectRoot string, args []string) error {
 	if len(args) == 1 && isHelpToken(args[0]) {
 		fmt.Println("usage: goalx durable <replace|append> <surface> --run NAME --file /abs/path")
+		fmt.Println("inspect the canonical contract first with `goalx schema <surface>`")
 		return nil
 	}
 	if len(args) == 0 {

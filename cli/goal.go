@@ -252,18 +252,18 @@ func validateGoalItemInput(item GoalItem) error {
 func parseGoalState(data []byte) (*GoalState, error) {
 	var state GoalState
 	if len(strings.TrimSpace(string(data))) == 0 {
-		return nil, fmt.Errorf("goal state is empty")
+		return nil, durableSchemaHintError(DurableSurfaceGoal, fmt.Errorf("goal state is empty"))
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&state); err != nil {
-		return nil, err
+		return nil, durableSchemaHintError(DurableSurfaceGoal, err)
 	}
 	if err := ensureJSONEOF(decoder); err != nil {
-		return nil, err
+		return nil, durableSchemaHintError(DurableSurfaceGoal, err)
 	}
 	if err := validateGoalStateInput(&state); err != nil {
-		return nil, err
+		return nil, durableSchemaHintError(DurableSurfaceGoal, err)
 	}
 	normalizeGoalState(&state)
 	return &state, nil

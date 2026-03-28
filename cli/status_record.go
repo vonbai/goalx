@@ -53,10 +53,10 @@ func SaveRunStatusRecord(path string, record *RunStatusRecord) error {
 func parseRunStatusRecord(data []byte) (*RunStatusRecord, error) {
 	var record RunStatusRecord
 	if err := decodeStrictJSON(data, &record); err != nil {
-		return nil, err
+		return nil, durableSchemaHintError(DurableSurfaceStatus, err)
 	}
 	if err := validateRunStatusRecord(&record); err != nil {
-		return nil, err
+		return nil, durableSchemaHintError(DurableSurfaceStatus, err)
 	}
 	return &record, nil
 }

@@ -40,8 +40,13 @@ func TestLoadRunStatusRecordRejectsUnknownFields(t *testing.T) {
 		t.Fatalf("writeFileAtomic: %v", err)
 	}
 	_, err := LoadRunStatusRecord(path)
-	if err == nil || !strings.Contains(err.Error(), "unknown field") {
-		t.Fatalf("LoadRunStatusRecord error = %v, want unknown field", err)
+	if err == nil {
+		t.Fatal("LoadRunStatusRecord should fail")
+	}
+	for _, want := range []string{"unknown field", "goalx schema status"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("LoadRunStatusRecord error = %v, want %q", err, want)
+		}
 	}
 }
 

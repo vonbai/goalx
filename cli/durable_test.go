@@ -85,3 +85,46 @@ func TestDurableCommandRejectsWrongSurfaceMode(t *testing.T) {
 		t.Fatalf("Durable replace error = %v, want structured state failure", err)
 	}
 }
+
+func TestDurableCommandRejectsUnknownStatusFieldWithSchemaHint(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := initNamedGitRepo(t, "durable-bad-status")
+	cfg := &goalx.Config{
+		Name:      "demo",
+		Objective: "ship it",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+	}
+	_ = writeRunSpecFixture(t, repo, cfg)
+	payloadPath := filepath.Join(t.TempDir(), "status.json")
+	if err := os.WriteFile(payloadPath, []byte(`{"version":1,"phase":"working","required_remaining":1,"run":"demo"}`), 0o644); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+
+	err := Durable(repo, []string{"replace", "status", "--run", cfg.Name, "--file", payloadPath})
+	if err == nil {
+		t.Fatal("Durable replace should fail")
+	}
+	for _, want := range []string{`unknown field`, `goalx schema status`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Durable replace error = %v, want %q", err, want)
+		}
+	}
+}
+
+func TestDurableHelpPointsToSchemaAuthority(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := Durable(t.TempDir(), []string{"--help"}); err != nil {
+			t.Fatalf("Durable --help: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"usage: goalx durable <replace|append> <surface> --run NAME --file /abs/path",
+		"inspect the canonical contract first with `goalx schema <surface>`",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("durable help missing %q:\n%s", want, out)
+		}
+	}
+}

@@ -26,10 +26,39 @@ func TestBuildAffordancesIncludesRunScopedCommands(t *testing.T) {
 		"goalx observe --run guidance-run",
 		"goalx context --run guidance-run",
 		"goalx afford --run guidance-run",
+		"goalx schema status",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("affordance commands missing %q:\n%s", want, joined)
 		}
+	}
+}
+
+func TestBuildAffordancesRouteDurableInspectionThroughSchemaCommand(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	doc, err := BuildAffordances(repo, cfg.Name, runDir, "")
+	if err != nil {
+		t.Fatalf("BuildAffordances: %v", err)
+	}
+
+	var found bool
+	for _, item := range doc.Items {
+		if item.ID != "durable-replace" && item.ID != "durable-append" {
+			continue
+		}
+		found = true
+		if !strings.Contains(item.Summary, "Inspect the contract with `goalx schema <surface>` first.") {
+			t.Fatalf("%s summary = %q", item.ID, item.Summary)
+		}
+		for _, unwanted := range []string{"canonical JSON shape", "canonical JSONL envelope"} {
+			if strings.Contains(item.Summary, unwanted) {
+				t.Fatalf("%s summary should not define schema authority inline: %q", item.ID, item.Summary)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("durable replace/append affordance not found")
 	}
 }
 

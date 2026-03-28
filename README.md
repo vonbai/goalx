@@ -245,6 +245,7 @@ GoalX is not "start and hope." It has a durable control plane.
 ```bash
 goalx status
 goalx observe
+goalx schema status
 goalx tell "focus on payments first"
 goalx tell --urgent "stop: production is down"
 goalx verify
@@ -254,10 +255,13 @@ goalx save
 
 - `goalx status` shows durable run/control facts
 - `goalx observe` shows live transport plus control summary
+- `goalx schema <surface>` shows the canonical contract for a machine-consumed durable surface
 - `goalx tell` redirects the master or a session durably
 - `goalx verify` records acceptance facts; it does not declare completion
 - `goalx result` reads the current saved result surfaces
 - `goalx save` exports the run into durable saved-run storage for later continuation
+
+Active operator docs explain the workflow. `goalx schema` is the canonical place to inspect durable protocol shape.
 
 ## Truthful Constraints
 

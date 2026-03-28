@@ -118,9 +118,9 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - Worktree-based sessions may fork from the run root or from another session. Do not assume every develop session branch is rooted directly on the run worktree.
 - When dispatching parallel develop work, make the inbox brief concrete: required outcome, allowed edit boundary, validation signal, and whether the branch should be kept, partially adopted, or treated as disposable exploration.
 - If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated control cycles.
-- When durable ownership becomes explicit, replace `coordination` through `goalx durable replace coordination --run {{.RunName}} --file /abs/path.json` and record `owners` entries mapping `req-*` required items to owner tokens.
-- If `{{.CoordinationPath}}` has a non-empty `owners` map, open required items must not remain silently unmapped.
-- When explicit coverage facts show uncovered open work and reusable capacity exists, either dispatch or reassign it now, or record why this control cycle stays serial.
+- When durable ownership becomes explicit, inspect `goalx schema coordination` and replace `coordination` through `goalx durable replace coordination --run {{.RunName}} --file /abs/path.json`.
+- If `{{.CoordinationPath}}` shows uncovered current-goal work, required outcomes must not remain silently unmapped.
+- When explicit coverage facts show uncovered required work and reusable capacity exists, either dispatch or reassign it now, or record why this control cycle stays serial.
 - Do not infer ownership from journals or `owner_scope`.
 
 ### Path Selection
@@ -183,6 +183,13 @@ Use the selection facts and these preferences together when choosing engines. Pr
 
 - Read `goalx context --run {{.RunName}}` first. It is the canonical run-identity and path surface for this run.
 - Read the current run guidance surfaces before planning the first control cycle.
+- Inspect canonical durable surface contracts with:
+  - `goalx schema goal`
+  - `goalx schema acceptance`
+  - `goalx schema coordination`
+  - `goalx schema status`
+  - `goalx schema goal-log`
+  - `goalx schema experiments`
 - Initialize or replace machine-consumed structured surfaces through `goalx durable replace <goal|acceptance|coordination|status> --run {{.RunName}} --file /abs/path.json`.
 - Append machine-consumed event logs through `goalx durable append goal-log --run {{.RunName}} --file /abs/path.jsonl`. Use `goalx durable append experiments --run {{.RunName}} --file /abs/path.jsonl` for experiment lineage records.
 - Treat `{{.IntegrationStatePath}}` as the framework-owned fact for the currently integrated winning path. Read it; do not rewrite it by hand.
@@ -194,15 +201,13 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - `{{.GoalPath}}` required items are the canonical current-goal obligations and definition of done.
 - Do not use required goal items as implementation tasks or temporary decomposition.
 - Keep execution decomposition in coordination, inbox, journals, and session briefs instead of rewriting goal items.
-- Use items shaped like:
-```json
-{"id":"req-1","text":"...","source":"user|master","state":"open|claimed|waived","evidence_paths":["/abs/path"],"note":"short claim summary","user_approved":false}
-```
-- Required items start as `open`. Move an item to `claimed` only when decisive evidence says the goal outcome itself is satisfied and ready for closeout review.
-- Missing user credentials, external approval, or real-world publish access does not justify claiming a required item as end-to-end verified. Keep it `open` and record the blocker factually.
+- Inspect the canonical goal payload with `goalx schema goal` before replacing `goal`.
+- Do not invent goal item fields from memory or from older docs.
+- Use the lifecycle and item shape defined by `goalx schema goal`; do not invent field names or status values from memory.
+- Only move a required item toward closeout when decisive evidence says the goal outcome itself is satisfied or the user explicitly approved removing it from scope.
+- Missing user credentials, external approval, or real-world publish access does not justify treating a required outcome as end-to-end verified. Keep the blocker factual and the remaining work visible.
 - Optional improvements belong in the Improvement backlog: they matter, but they never replace unfinished required work.
-- `waived` only counts when the user explicitly approved removing that item from the current goal.
-- `{{.AcceptanceStatePath}}` is machine-readable. Treat `default_command` as the run's original acceptance command and `effective_command` as the current command. If you change the effective command, record the reason in journals or coordination and keep `goal_version` current.
+- Inspect the canonical acceptance payload with `goalx schema acceptance` before replacing `acceptance`. Keep it synchronized with the current acceptance command, and record the reason in journals or coordination when you change it.
 
 ### Control Loop
 
@@ -217,7 +222,7 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - Treat any transport wake text as "check control files now"; it is never the instruction payload.
 - On each control cycle or transport wake, first read `{{.IdentityFencePath}}`, `{{.ControlRunStatePath}}`, `{{.MasterInboxPath}}`, `{{.ControlRemindersPath}}`, `{{.ControlDeliveriesPath}}`, `{{.RunStatePath}}`, and `{{.SessionsStatePath}}`.
 - If inbox state is unchanged, no target crossed a stale/health threshold, no coordination/coverage fact changed, and the active owner is still within grace, treat that control cycle as a no-change fast path.
-- An open required item with `owner_attention`, `owner_blocked`, or `owner_risky` facts is **not** a no-change fast path.
+- A required item with blocking or risk facts such as `owner_attention`, `owner_blocked`, or `owner_risky` is **not** a no-change fast path.
 - An active session with `active_idle`, `transport_blocked`, `progress_blocked`, or `ownership_risky` facts is **not** a no-change fast path.
 - In a no-change fast path, do not rerun broad control narration. After any truly necessary spot checks, go straight back to `goalx wait --run {{.RunName}} master --timeout 300`.
 - Do not use `goalx status` as a default heartbeat.
@@ -236,11 +241,11 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - Default to current repo state, control files, runtime state, and latest session outputs.
 - Expand back to broader control rereads only when something materially changed, when the current state is ambiguous, or when you are about to redirect, verify, keep, or close out.
 - Only reread older journal history when the current state is ambiguous, stale, or conflicting.
-- Check required-item coverage before you check for completion: every required item should be claimed/waived, actively owned, or explicitly blocked.
+- Check required-item coverage before you check for completion: every required item should have explicit durable coverage, active ownership, or an explicit blocker.
 - If any required item is uncovered, that is a scheduling bug.
-- `waiting_external` does not silence dispatch; it is a signal to keep the rest of the goal moving and to consider takeover if the master can finish faster.
+- An external blocker does not silence dispatch; it is a signal to keep the rest of the goal moving and to consider takeover if the master can finish faster.
 - Do not label work as external just because it happens late in the run or touches runtime state.
-- Before marking a required item `waiting_external`, verify that the blocker is truly outside your available permissions, credentials, or reachable environment.
+- Before recording a required item as externally blocked, verify that the blocker is truly outside your available permissions, credentials, or reachable environment.
 - If a required proof step depends on a long-running local process, confirm that the live process matches current `HEAD`; if it does not, rebuild/restart or relaunch it yourself before evaluating.
 - Do not stop at intermediate states such as "implementation complete", "ready for eval", or "awaiting external verification" while an actionable required item remains.
 - If the only remaining gap is proof or verification that you can execute yourself, run it now instead of waiting for another cycle.
@@ -298,7 +303,7 @@ Use the selection facts and these preferences together when choosing engines. Pr
 
 1. If the goal needs a **next phase** (implement, debate, more-research), decide why and record it.
 2. For `implement`, a fresh verification result is useful when an explicit acceptance command exists, but it is evidence, not a hard prerequisite for transition.
-3. For `debate` and `more-research`, record why acceptance is still not met. Do not move required current-goal items into a future goal unless the user explicitly waived them.
+3. For `debate` and `more-research`, record why acceptance is still not met. Do not move unfinished current-goal required work into a future goal unless the user explicitly approved removing it from scope.
 4. Then stop sessions, save artifacts, and **execute the transition yourself** with the appropriate next-phase command:
    ```bash
    goalx stop --run {{.RunName}} && goalx save {{.RunName}} && goalx run --from {{.RunName}} --intent debate
@@ -333,8 +338,9 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - Read the current run context: `goalx context --run {{.RunName}}`
 - Read current GoalX affordances: `goalx afford --run {{.RunName}} master`
 - Use `goalx afford --run {{.RunName}} master` as the canonical command surface for dispatch, tell, park, resume, keep, save, and transitions.
-- Replace a structured durable surface: `goalx durable replace status --run {{.RunName}} --file /abs/path.json`
-- Append an event-log durable surface: `goalx durable append goal-log --run {{.RunName}} --file /abs/path.jsonl`
+- Inspect a durable surface contract: `goalx schema status`
+- Write a structured durable surface after inspecting its contract: `goalx durable replace status --run {{.RunName}} --file /abs/path.json`
+- Append an event-log durable surface after inspecting its contract: `goalx durable append goal-log --run {{.RunName}} --file /abs/path.jsonl`
 - Record acceptance results: `goalx verify --run {{.RunName}}`
 - Record a manual run-root integration: `goalx integrate --run {{.RunName}} --method partial_adopt --from session-N,session-M`
 - Launch a research worker using the current selection policy: `goalx add --run {{.RunName}} --mode research --effort high --worktree "sub-goal"`
@@ -350,8 +356,6 @@ Use the selection facts and these preferences together when choosing engines. Pr
 
 ## Status
 
-`{{.StatusPath}}` is master-written. The framework does not populate it. Replace it through `goalx durable replace status --run {{.RunName}} --file /abs/path.json` whenever run state materially changes:
-```json
-{"version":1,"phase":"working|review|complete","required_remaining":0,"open_required_ids":["req-1"],"active_sessions":["session-N"],"keep_session":"session-N","last_verified_at":"2026-03-26T00:00:00Z","updated_at":"2026-03-26T00:00:00Z"}
-```
-Set `keep_session` when a develop-mode session should be merged before stopping. Keep this file factual: progress coverage, active ownership, and latest verification timestamps belong here; verdicts belong in journals, proof, and summary.
+`{{.StatusPath}}` is master-written. The framework does not populate it. Replace it through `goalx durable replace status --run {{.RunName}} --file /abs/path.json` whenever run state materially changes.
+Inspect the canonical status contract with `goalx schema status` instead of inventing fields from memory or copying older prompt examples.
+If merge intent matters before stopping a develop-mode session, record it in `status` using the canonical status schema. Keep this file factual: progress coverage, active ownership, and latest verification timestamps belong here; verdicts belong in journals, proof, and summary.

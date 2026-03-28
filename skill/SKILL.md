@@ -20,7 +20,7 @@ Use GoalX when the user wants any of these:
 - durable observation and redirection
 - a saved run that can continue into the next phase
 
-Do not default to manual config or raw tmux operations. Use GoalX's durable commands first.
+Do not default to manual config or raw tmux operations. For machine-consumed durable surfaces, inspect the contract with `goalx schema <surface>` before writing with `goalx durable`.
 
 When operating through a host assistant:
 
@@ -59,6 +59,7 @@ The normal loop is:
 goalx run "goal"
 goalx status
 goalx observe
+goalx schema status
 goalx tell "redirect"
 goalx verify
 goalx result
@@ -69,6 +70,7 @@ Use this by default unless the user explicitly asks for config-first control.
 
 - `goalx status` = durable control/state view
 - `goalx observe` = live transport view plus control summary
+- `goalx schema <surface>` = canonical contract view for machine-consumed durable surfaces
 - `goalx tell` = durable redirect to master or session
 - `goalx verify` = record acceptance facts, not completion verdict
 - `goalx result` = read the current result surfaces
@@ -225,6 +227,7 @@ Keep these truths straight:
 - `goalx verify` records exit code and output; it does not auto-declare success
 - transport delivery is not the same thing as task completion
 - local-first control and durable state are the public release contract
+- active docs explain the workflow, but `goalx schema` is the canonical durable-surface contract authority
 
 ## What Not To Do
 

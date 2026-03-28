@@ -47,3 +47,20 @@ func TestDurableSurfaceRegistryRejectsUnknownSurface(t *testing.T) {
 		t.Fatal("LookupDurableSurface should reject unknown surface")
 	}
 }
+
+func TestDurableSurfaceRegistryIncludesSchemaMetadataForAllSurfaces(t *testing.T) {
+	for name, spec := range durableSurfaceRegistry {
+		if spec.Schema.Format == "" {
+			t.Fatalf("%s schema format is empty", name)
+		}
+		if spec.Schema.Summary == "" {
+			t.Fatalf("%s schema summary is empty", name)
+		}
+		if spec.Schema.Example == "" {
+			t.Fatalf("%s schema example is empty", name)
+		}
+		if spec.Class != DurableSurfaceClassArtifact && len(spec.Schema.FieldNotes) == 0 {
+			t.Fatalf("%s schema field notes are empty", name)
+		}
+	}
+}
