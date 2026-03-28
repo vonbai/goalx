@@ -411,6 +411,31 @@ func TestReplaceCreatesReplacementSessionWithRouteOverrideAndLineage(t *testing.
 
 	logPath := installFakeTmux(t, "master session-1")
 	runName, runDir := writeLifecycleRunFixture(t, repo)
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
+	session1WT := WorktreePath(runDir, runName, 1)
+	if err := os.RemoveAll(session1WT); err != nil {
+		t.Fatalf("remove placeholder session-1 worktree: %v", err)
+	}
+	if err := CreateWorktree(runWT, session1WT, "goalx/"+runName+"/1", "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree session-1: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(session1WT, "feature.txt"), []byte("from session 1\n"), 0o644); err != nil {
+		t.Fatalf("write feature.txt: %v", err)
+	}
+	runGit(t, session1WT, "add", "feature.txt")
+	runGit(t, session1WT, "commit", "-m", "session branch change")
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:         "session-1",
+		State:        "active",
+		Mode:         string(goalx.ModeDevelop),
+		Branch:       "goalx/" + runName + "/1",
+		WorktreePath: session1WT,
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-1: %v", err)
+	}
 
 	cfg, err := LoadRunSpec(runDir)
 	if err != nil {
@@ -481,8 +506,18 @@ func TestReplaceCreatesReplacementSessionWithRouteOverrideAndLineage(t *testing.
 	if got := oldState.Sessions["session-2"].State; got != "active" {
 		t.Fatalf("session-2 state = %q, want active", got)
 	}
-	if oldState.Sessions["session-2"].WorktreePath != WorktreePath(runDir, runName, 1) {
-		t.Fatalf("session-2 worktree = %q, want %q", oldState.Sessions["session-2"].WorktreePath, WorktreePath(runDir, runName, 1))
+	if oldState.Sessions["session-2"].WorktreePath != WorktreePath(runDir, runName, 2) {
+		t.Fatalf("session-2 worktree = %q, want %q", oldState.Sessions["session-2"].WorktreePath, WorktreePath(runDir, runName, 2))
+	}
+	if oldState.Sessions["session-2"].Branch != "goalx/"+runName+"/2" {
+		t.Fatalf("session-2 branch = %q, want %q", oldState.Sessions["session-2"].Branch, "goalx/"+runName+"/2")
+	}
+	data, err := os.ReadFile(filepath.Join(WorktreePath(runDir, runName, 2), "feature.txt"))
+	if err != nil {
+		t.Fatalf("read session-2 feature.txt: %v", err)
+	}
+	if string(data) != "from session 1\n" {
+		t.Fatalf("session-2 feature.txt = %q, want %q", string(data), "from session 1\n")
 	}
 
 	identity, err := LoadSessionIdentity(SessionIdentityPath(runDir, "session-2"))
@@ -500,6 +535,12 @@ func TestReplaceCreatesReplacementSessionWithRouteOverrideAndLineage(t *testing.
 	}
 	if identity.Engine != "claude-code" || identity.Model != "opus" || identity.RequestedEffort != goalx.EffortHigh {
 		t.Fatalf("identity = %+v, want claude-code/opus/high", identity)
+	}
+	if identity.BaseBranchSelector != "session-1" {
+		t.Fatalf("base_branch_selector = %q, want session-1", identity.BaseBranchSelector)
+	}
+	if identity.BaseBranch != "goalx/"+runName+"/1" {
+		t.Fatalf("base_branch = %q, want %q", identity.BaseBranch, "goalx/"+runName+"/1")
 	}
 
 	coord, err = LoadCoordinationState(CoordinationPath(runDir))
@@ -522,8 +563,68 @@ func TestReplaceCreatesReplacementSessionWithRouteOverrideAndLineage(t *testing.
 	if !strings.Contains(logText, "kill-window -t "+tmuxSession+":session-1") {
 		t.Fatalf("tmux log missing kill-window for session-1:\n%s", logText)
 	}
-	if !strings.Contains(logText, "new-window -t "+tmuxSession+" -n session-2 -c "+WorktreePath(runDir, runName, 1)+" env ") {
+	if !strings.Contains(logText, "new-window -t "+tmuxSession+" -n session-2 -c "+WorktreePath(runDir, runName, 2)+" env ") {
 		t.Fatalf("tmux log missing new-window for session-2:\n%s", logText)
+	}
+}
+
+func TestReplaceRejectsDirtyDedicatedWorktreeTakeover(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	installFakeTmux(t, "master session-1")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
+	session1WT := WorktreePath(runDir, runName, 1)
+	if err := os.RemoveAll(session1WT); err != nil {
+		t.Fatalf("remove placeholder session-1 worktree: %v", err)
+	}
+	if err := CreateWorktree(runWT, session1WT, "goalx/"+runName+"/1", "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree session-1: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(session1WT, "feature.txt"), []byte("dirty takeover\n"), 0o644); err != nil {
+		t.Fatalf("write feature.txt: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:         "session-1",
+		State:        "active",
+		Mode:         string(goalx.ModeDevelop),
+		Branch:       "goalx/" + runName + "/1",
+		WorktreePath: session1WT,
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-1: %v", err)
+	}
+
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	coord, err := EnsureCoordinationState(runDir, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureCoordinationState: %v", err)
+	}
+	coord.Sessions["session-1"] = CoordinationSession{
+		State: "active",
+		Scope: "db race triage",
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), coord); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+
+	err = Replace(repo, []string{"--run", runName, "session-1"})
+	if err == nil {
+		t.Fatal("Replace error = nil, want dirty dedicated worktree rejection")
+	}
+	for _, want := range []string{"session-1", "dedicated worktree", "uncommitted changes", "cannot hand off", "unsealed worktree boundary"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Replace error = %q, want substring %q", err, want)
+		}
 	}
 }
 

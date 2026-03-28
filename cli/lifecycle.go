@@ -395,22 +395,35 @@ func Replace(projectRoot string, args []string) error {
 	if scope == "" {
 		scope = oldSessionName
 	}
-
-	if err := Park(projectRoot, append(buildServeRunArgs(rc.Name), oldSessionName)); err != nil {
-		return err
-	}
-
 	sessionState, err := EnsureSessionsRuntimeState(rc.RunDir)
 	if err != nil {
 		return fmt.Errorf("load session runtime state: %w", err)
 	}
-	oldSnapshot := sessionState.Sessions[oldSessionName]
+	oldWorktreePath := resolvedSessionWorktreePath(rc.RunDir, rc.Config.Name, oldSessionName, sessionState)
+	oldBranch := resolvedSessionBranch(rc.RunDir, rc.Config.Name, oldSessionName, sessionState)
 	workdir := sessionWorkdir(rc.RunDir, rc.Config.Name, oldSessionName, sessionState)
 	if info, err := os.Stat(workdir); err != nil || !info.IsDir() {
 		if err == nil {
 			err = fmt.Errorf("%s is not a directory", workdir)
 		}
 		return fmt.Errorf("replacement requires existing workdir: %w", err)
+	}
+	dedicatedWorktree := strings.TrimSpace(oldWorktreePath) != ""
+	if dedicatedWorktree {
+		if strings.TrimSpace(oldBranch) == "" {
+			return fmt.Errorf("session %s has no recorded dedicated branch; replace requires a sealed worktree boundary", oldSessionName)
+		}
+		dirtyPaths, err := dirtyWorktreePaths(oldWorktreePath)
+		if err != nil {
+			return fmt.Errorf("inspect %s worktree: %w", oldSessionName, err)
+		}
+		if len(dirtyPaths) > 0 {
+			return fmt.Errorf("session %s dedicated worktree has uncommitted changes (%s); replace cannot hand off an unsealed worktree boundary", oldSessionName, summarizeDirtyPaths(dirtyPaths))
+		}
+	}
+
+	if err := Park(projectRoot, append(buildServeRunArgs(rc.Name), oldSessionName)); err != nil {
+		return err
 	}
 
 	newNum, err := nextAvailableSessionIndex(rc.ProjectRoot, rc.RunDir, rc.Config.Name)
@@ -421,6 +434,18 @@ func Replace(projectRoot string, args []string) error {
 	journalPath := JournalPath(rc.RunDir, newSessionName)
 	sessionIdentityPath := SessionIdentityPath(rc.RunDir, newSessionName)
 	windowName := sessionWindowName(rc.Config.Name, newNum)
+	replacementWorktreePath := oldWorktreePath
+	replacementBranch := oldBranch
+	replacementWorkdir := workdir
+	replacementBaseSelector := oldIdentity.BaseBranchSelector
+	replacementBaseBranch := oldIdentity.BaseBranch
+	if dedicatedWorktree {
+		replacementWorktreePath = WorktreePath(rc.RunDir, rc.Config.Name, newNum)
+		replacementBranch = fmt.Sprintf("goalx/%s/%d", rc.Config.Name, newNum)
+		replacementWorkdir = replacementWorktreePath
+		replacementBaseSelector = oldSessionName
+		replacementBaseBranch = oldBranch
+	}
 
 	oldDimensions := goalx.ResolveDimensionNames(oldIdentity.Dimensions)
 	newSession := goalx.SessionConfig{
@@ -495,8 +520,8 @@ func Replace(projectRoot string, args []string) error {
 	}
 	sessionIdentity.RouteRole = effectiveSession.RouteRole
 	sessionIdentity.ReplacesSession = oldSessionName
-	sessionIdentity.BaseBranchSelector = oldIdentity.BaseBranchSelector
-	sessionIdentity.BaseBranch = oldIdentity.BaseBranch
+	sessionIdentity.BaseBranchSelector = replacementBaseSelector
+	sessionIdentity.BaseBranch = replacementBaseBranch
 	if len(effectiveSession.Dimensions) > 0 {
 		dimensionsCatalog, err := loadDimensionCatalog(rc.ProjectRoot)
 		if err != nil {
@@ -532,10 +557,19 @@ func Replace(projectRoot string, args []string) error {
 	if err := EnsureSessionControl(rc.RunDir, newSessionName); err != nil {
 		return fmt.Errorf("init session control: %w", err)
 	}
-	if err := GenerateAdapter(sessionIdentity.Engine, workdir, ControlInboxPath(rc.RunDir, newSessionName), SessionCursorPath(rc.RunDir, newSessionName)); err != nil {
+	if dedicatedWorktree {
+		runWT := RunWorktreePath(rc.RunDir)
+		if err := CreateWorktree(runWT, replacementWorktreePath, replacementBranch, replacementBaseBranch); err != nil {
+			return fmt.Errorf("create replacement worktree: %w", err)
+		}
+		if err := CopyGitignoredFiles(runWT, replacementWorktreePath); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: copy gitignored files to replacement worktree: %v\n", err)
+		}
+	}
+	if err := GenerateAdapter(sessionIdentity.Engine, replacementWorkdir, ControlInboxPath(rc.RunDir, newSessionName), SessionCursorPath(rc.RunDir, newSessionName)); err != nil {
 		return fmt.Errorf("generate adapter: %w", err)
 	}
-	if err := EnsureEngineTrusted(sessionIdentity.Engine, workdir); err != nil {
+	if err := EnsureEngineTrusted(sessionIdentity.Engine, replacementWorkdir); err != nil {
 		return fmt.Errorf("trust bootstrap: %w", err)
 	}
 
@@ -566,7 +600,7 @@ func Replace(projectRoot string, args []string) error {
 		SessionIdentityPath:    sessionIdentityPath,
 		SessionInboxPath:       ControlInboxPath(rc.RunDir, newSessionName),
 		SessionCursorPath:      SessionCursorPath(rc.RunDir, newSessionName),
-		WorktreePath:           oldSnapshot.WorktreePath,
+		WorktreePath:           replacementWorktreePath,
 		GoalPath:               GoalPath(rc.RunDir),
 		GoalLogPath:            GoalLogPath(rc.RunDir),
 		IdentityFencePath:      IdentityFencePath(rc.RunDir),
@@ -596,7 +630,7 @@ func Replace(projectRoot string, args []string) error {
 	protocolPath := filepath.Join(rc.RunDir, sessionNameToProgramFile(newNum))
 	prompt := goalx.ResolvePrompt(engines, sessionIdentity.Engine, protocolPath)
 	launchCmd := buildLeaseWrappedLaunchCommand(goalxBin, rc.Name, rc.RunDir, newSessionName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
-	if err := NewWindowWithCommand(rc.TmuxSession, windowName, workdir, launchCmd); err != nil {
+	if err := NewWindowWithCommand(rc.TmuxSession, windowName, replacementWorkdir, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
 
@@ -619,8 +653,8 @@ func Replace(projectRoot string, args []string) error {
 		Name:         newSessionName,
 		State:        "active",
 		Mode:         sessionIdentity.Mode,
-		Branch:       oldSnapshot.Branch,
-		WorktreePath: oldSnapshot.WorktreePath,
+		Branch:       replacementBranch,
+		WorktreePath: replacementWorktreePath,
 		OwnerScope:   scope,
 	}); err != nil {
 		return fmt.Errorf("update session runtime state: %w", err)
