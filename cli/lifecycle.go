@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -288,7 +289,7 @@ func Resume(projectRoot string, args []string) error {
 	return nil
 }
 
-func Replace(projectRoot string, args []string) error {
+func Replace(projectRoot string, args []string) (err error) {
 	const usage = "usage: goalx replace [--run NAME] <session-name> [--mode MODE] [--engine ENGINE] [--model MODEL] [--effort LEVEL] [--route-role ROLE] [--route-profile PROFILE] [--dimension SPEC]..."
 	if printUsageIfHelp(args, usage) {
 		return nil
@@ -428,9 +429,27 @@ func Replace(projectRoot string, args []string) error {
 		}
 	}
 
+	cleanup := &cleanupStack{}
+	replacementCommitted := false
+	oldParked := false
+	defer func() {
+		if err == nil || replacementCommitted {
+			return
+		}
+		rollbackErr := cleanup.Run()
+		if oldParked {
+			if restoreErr := restoreParkedSession(projectRoot, rc.Name, rc.RunDir, oldSessionName, scope); restoreErr != nil {
+				rollbackErr = errors.Join(rollbackErr, fmt.Errorf("restore %s: %w", oldSessionName, restoreErr))
+			}
+		}
+		if rollbackErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback replace %s: %w", oldSessionName, rollbackErr))
+		}
+	}()
 	if err := Park(projectRoot, []string{"--run", rc.Name, oldSessionName}); err != nil {
 		return err
 	}
+	oldParked = true
 
 	newNum, err := nextAvailableSessionIndex(rc.ProjectRoot, rc.RunDir, rc.Config.Name)
 	if err != nil {
@@ -558,32 +577,24 @@ func Replace(projectRoot string, args []string) error {
 	if err := SaveSessionIdentity(sessionIdentityPath, sessionIdentity); err != nil {
 		return fmt.Errorf("write session identity: %w", err)
 	}
+	cleanup.Add(func() error { return cleanupSessionIdentitySurface(rc.RunDir, newSessionName) })
 	if err := os.WriteFile(journalPath, nil, 0o644); err != nil {
 		return fmt.Errorf("init journal: %w", err)
 	}
+	cleanup.Add(func() error { return cleanupSessionJournal(rc.RunDir, newSessionName) })
 	if err := EnsureSessionControl(rc.RunDir, newSessionName); err != nil {
 		return fmt.Errorf("init session control: %w", err)
 	}
+	cleanup.Add(func() error { return cleanupSessionControlSurface(rc.RunDir, newSessionName) })
 	if dedicatedWorktree {
 		runWT := RunWorktreePath(rc.RunDir)
 		if err := CreateWorktree(runWT, replacementWorktreePath, replacementBranch, replacementBaseBranch); err != nil {
 			return fmt.Errorf("create replacement worktree: %w", err)
 		}
+		cleanup.Add(func() error { return cleanupSessionWorktreeBoundary(runWT, replacementWorktreePath, replacementBranch) })
 		if err := CopyGitignoredFiles(runWT, replacementWorktreePath); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: copy gitignored files to replacement worktree: %v\n", err)
 		}
-	}
-	if err := appendExperimentCreated(rc.RunDir, ExperimentCreatedBody{
-		ExperimentID:     sessionIdentity.ExperimentID,
-		Session:          newSessionName,
-		Branch:           replacementBranch,
-		Worktree:         replacementWorkdir,
-		Intent:           sessionIdentity.Mode,
-		BaseRef:          sessionIdentity.BaseBranch,
-		BaseExperimentID: sessionIdentity.BaseExperimentID,
-		CreatedAt:        sessionIdentity.CreatedAt,
-	}); err != nil {
-		return fmt.Errorf("append experiment.created for %s: %w", newSessionName, err)
 	}
 	if err := GenerateAdapter(sessionIdentity.Engine, replacementWorkdir, ControlInboxPath(rc.RunDir, newSessionName), SessionCursorPath(rc.RunDir, newSessionName)); err != nil {
 		return fmt.Errorf("generate adapter: %w", err)
@@ -634,6 +645,7 @@ func Replace(projectRoot string, args []string) error {
 	if err := RenderSubagentProtocol(subData, rc.RunDir, newNum-1); err != nil {
 		return fmt.Errorf("render protocol: %w", err)
 	}
+	cleanup.Add(func() error { return cleanupSessionProgram(rc.RunDir, newNum) })
 
 	meta, err := EnsureRunMetadata(rc.RunDir, rc.ProjectRoot, rc.Config.Objective)
 	if err != nil {
@@ -652,6 +664,7 @@ func Replace(projectRoot string, args []string) error {
 	if err := NewWindowWithCommand(rc.TmuxSession, windowName, replacementWorkdir, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
+	cleanup.Add(func() error { return cleanupSessionWindow(rc.TmuxSession, windowName) })
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	coord, err = EnsureCoordinationState(rc.RunDir, rc.Config.Objective)
@@ -668,6 +681,7 @@ func Replace(projectRoot string, args []string) error {
 	if err := SaveCoordinationState(CoordinationPath(rc.RunDir), coord); err != nil {
 		return err
 	}
+	cleanup.Add(func() error { return cleanupCoordinationSession(rc.RunDir, newSessionName) })
 	if err := UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
 		Name:         newSessionName,
 		State:        "active",
@@ -678,8 +692,30 @@ func Replace(projectRoot string, args []string) error {
 	}); err != nil {
 		return fmt.Errorf("update session runtime state: %w", err)
 	}
+	cleanup.Add(func() error { return cleanupSessionRuntimeEntry(rc.RunDir, newSessionName) })
+	if err := appendExperimentCreated(rc.RunDir, ExperimentCreatedBody{
+		ExperimentID:     sessionIdentity.ExperimentID,
+		Session:          newSessionName,
+		Branch:           replacementBranch,
+		Worktree:         replacementWorkdir,
+		Intent:           sessionIdentity.Mode,
+		BaseRef:          sessionIdentity.BaseBranch,
+		BaseExperimentID: sessionIdentity.BaseExperimentID,
+		CreatedAt:        sessionIdentity.CreatedAt,
+	}); err != nil {
+		return fmt.Errorf("append experiment.created for %s: %w", newSessionName, err)
+	}
+	replacementCommitted = true
+	cleanup.Commit()
+	if err := PersistPanePIDsFromTmux(rc.RunDir, newSessionName, rc.TmuxSession+":"+windowName); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: persist %s pane pid: %v\n", newSessionName, err)
+	}
 	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_replaced", "goalx replace", fmt.Sprintf("%s was replaced by %s.", oldSessionName, newSessionName)); err == nil {
-		_, _ = DeliverControlNudge(rc.RunDir, "session-replaced:"+oldSessionName, "session-replaced:"+newSessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed)
+		if _, err := DeliverControlNudge(rc.RunDir, "session-replaced:"+oldSessionName, "session-replaced:"+newSessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: nudge master: %v\n", err)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "warning: notify master inbox: %v\n", err)
 	}
 	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)

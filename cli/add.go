@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -168,13 +169,14 @@ func Add(projectRoot string, args []string) (err error) {
 	sessionIdentityPath := SessionIdentityPath(rc.RunDir, sName)
 	journalPath := JournalPath(rc.RunDir, sName)
 	windowName := sessionWindowName(rc.Config.Name, newNum)
-	sessionIdentityWritten := false
+	cleanup := &cleanupStack{}
+	sessionCommitted := false
 	defer func() {
-		if err == nil || !sessionIdentityWritten {
+		if err == nil || sessionCommitted {
 			return
 		}
-		if removeErr := os.Remove(sessionIdentityPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			fmt.Fprintf(os.Stderr, "warning: cleanup session identity %s: %v\n", sessionIdentityPath, removeErr)
+		if cleanupErr := cleanup.Run(); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback add %s: %w", sName, cleanupErr))
 		}
 	}()
 
@@ -313,28 +315,17 @@ func Add(projectRoot string, args []string) (err error) {
 	if err := SaveSessionIdentity(sessionIdentityPath, sessionIdentity); err != nil {
 		return fmt.Errorf("write session identity: %w", err)
 	}
-	sessionIdentityWritten = true
+	cleanup.Add(func() error { return cleanupSessionIdentitySurface(rc.RunDir, sName) })
 
 	if useWorktree {
 		if err := CreateWorktree(runWT, wtPath, branch, baseBranch); err != nil {
 			return fmt.Errorf("create worktree: %w", err)
 		}
+		cleanup.Add(func() error { return cleanupSessionWorktreeBoundary(runWT, wtPath, branch) })
 		if err := CopyGitignoredFiles(runWT, wtPath); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: copy gitignored files to session worktree: %v\n", err)
 		}
 		workdir = wtPath
-	}
-	if err := appendExperimentCreated(rc.RunDir, ExperimentCreatedBody{
-		ExperimentID:     sessionIdentity.ExperimentID,
-		Session:          sName,
-		Branch:           branch,
-		Worktree:         workdir,
-		Intent:           sessionIdentity.Mode,
-		BaseRef:          sessionIdentity.BaseBranch,
-		BaseExperimentID: sessionIdentity.BaseExperimentID,
-		CreatedAt:        sessionIdentity.CreatedAt,
-	}); err != nil {
-		return fmt.Errorf("append experiment.created for %s: %w", sName, err)
 	}
 	absProjectRoot, _ := filepath.Abs(rc.ProjectRoot)
 
@@ -342,9 +333,11 @@ func Add(projectRoot string, args []string) (err error) {
 	if err := os.WriteFile(journalPath, nil, 0644); err != nil {
 		return fmt.Errorf("init journal: %w", err)
 	}
+	cleanup.Add(func() error { return cleanupSessionJournal(rc.RunDir, sName) })
 	if err := EnsureSessionControl(rc.RunDir, sName); err != nil {
 		return fmt.Errorf("init session control: %w", err)
 	}
+	cleanup.Add(func() error { return cleanupSessionControlSurface(rc.RunDir, sName) })
 	assignmentType := string(sessionIdentity.Mode)
 	if assignmentType == "" {
 		assignmentType = "tell"
@@ -359,17 +352,6 @@ func Add(projectRoot string, args []string) (err error) {
 	}
 	if err := EnsureEngineTrusted(engine, workdir); err != nil {
 		return fmt.Errorf("trust bootstrap: %w", err)
-	}
-
-	if err := UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
-		Name:         sName,
-		State:        "active",
-		Mode:         sessionIdentity.Mode,
-		Branch:       branch,
-		WorktreePath: wtPath,
-		OwnerScope:   hint,
-	}); err != nil {
-		return fmt.Errorf("prime session runtime state: %w", err)
 	}
 	sessionDataList, err := buildSessionDataList(rc.RunDir, &renderCfg, engines, dimensionsCatalog)
 	if err != nil {
@@ -414,6 +396,7 @@ func Add(projectRoot string, args []string) (err error) {
 	if err := RenderSubagentProtocol(subData, rc.RunDir, newNum-1); err != nil {
 		return fmt.Errorf("render protocol: %w", err)
 	}
+	cleanup.Add(func() error { return cleanupSessionProgram(rc.RunDir, newNum) })
 
 	// Launch in tmux
 	prompt := goalx.ResolvePrompt(engines, engine, protocolPath)
@@ -421,9 +404,7 @@ func Add(projectRoot string, args []string) (err error) {
 	if err := NewWindowWithCommand(rc.TmuxSession, windowName, workdir, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
-	if err := PersistPanePIDsFromTmux(rc.RunDir, sName, rc.TmuxSession+":"+windowName); err != nil {
-		return fmt.Errorf("persist %s pane pid: %w", sName, err)
-	}
+	cleanup.Add(func() error { return cleanupSessionWindow(rc.TmuxSession, windowName) })
 
 	if coord, err := EnsureCoordinationState(rc.RunDir, rc.Config.Objective); err == nil {
 		now := time.Now().UTC().Format(time.RFC3339)
@@ -437,19 +418,51 @@ func Add(projectRoot string, args []string) (err error) {
 		if err := SaveCoordinationState(CoordinationPath(rc.RunDir), coord); err != nil {
 			return fmt.Errorf("update coordination state: %w", err)
 		}
+		cleanup.Add(func() error { return cleanupCoordinationSession(rc.RunDir, sName) })
 	} else {
 		return fmt.Errorf("load coordination state: %w", err)
 	}
+	if err := UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
+		Name:         sName,
+		State:        "active",
+		Mode:         sessionIdentity.Mode,
+		Branch:       branch,
+		WorktreePath: wtPath,
+		OwnerScope:   hint,
+	}); err != nil {
+		return fmt.Errorf("prime session runtime state: %w", err)
+	}
+	cleanup.Add(func() error { return cleanupSessionRuntimeEntry(rc.RunDir, sName) })
+	if err := appendExperimentCreated(rc.RunDir, ExperimentCreatedBody{
+		ExperimentID:     sessionIdentity.ExperimentID,
+		Session:          sName,
+		Branch:           branch,
+		Worktree:         workdir,
+		Intent:           sessionIdentity.Mode,
+		BaseRef:          sessionIdentity.BaseBranch,
+		BaseExperimentID: sessionIdentity.BaseExperimentID,
+		CreatedAt:        sessionIdentity.CreatedAt,
+	}); err != nil {
+		return fmt.Errorf("append experiment.created for %s: %w", sName, err)
+	}
+	sessionCommitted = true
+	cleanup.Commit()
 	// Notify master through durable inbox, then best-effort tmux nudge.
 	masterMsg := fmt.Sprintf(
 		"New %s added to your run. Window: %s, Workdir: %s, Journal: %s, Inbox: %s. Direction: %s. Add it to your check cycle.",
 		sName, windowName, workdir, journalPath, ControlInboxPath(rc.RunDir, sName), hint,
 	)
-	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_added", "goalx add", masterMsg); err != nil {
-		return fmt.Errorf("notify master inbox: %w", err)
+	masterNotified := false
+	if err := PersistPanePIDsFromTmux(rc.RunDir, sName, rc.TmuxSession+":"+windowName); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: persist %s pane pid: %v\n", sName, err)
 	}
-	if _, err := DeliverControlNudge(rc.RunDir, "session-added:"+sName, "session-added:"+sName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed); err != nil {
-		return fmt.Errorf("nudge master: %w", err)
+	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_added", "goalx add", masterMsg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: notify master inbox: %v\n", err)
+	} else if _, err := DeliverControlNudge(rc.RunDir, "session-added:"+sName, "session-added:"+sName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: nudge master: %v\n", err)
+		masterNotified = true
+	} else {
+		masterNotified = true
 	}
 	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
@@ -458,7 +471,9 @@ func Add(projectRoot string, args []string) (err error) {
 	fmt.Printf("Added %s to run '%s'\n", sName, rc.Name)
 	fmt.Printf("  window: %s\n", windowName)
 	fmt.Printf("  direction: %s\n", hint)
-	fmt.Printf("  master notified\n")
+	if masterNotified {
+		fmt.Printf("  master notified\n")
+	}
 	return nil
 }
 

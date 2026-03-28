@@ -1404,8 +1404,37 @@ local_validation:
 	if err == nil || !strings.Contains(err.Error(), "create tmux window") {
 		t.Fatalf("Add error = %v, want tmux window failure", err)
 	}
-	if _, statErr := os.Stat(SessionIdentityPath(runDir, "session-2")); !os.IsNotExist(statErr) {
-		t.Fatalf("session identity should not remain after failed add, stat err = %v", statErr)
+	for _, path := range []string{
+		SessionIdentityPath(runDir, "session-2"),
+		filepath.Dir(SessionIdentityPath(runDir, "session-2")),
+		JournalPath(runDir, "session-2"),
+		ControlInboxPath(runDir, "session-2"),
+		SessionCursorPath(runDir, "session-2"),
+		filepath.Join(runDir, "program-2.md"),
+	} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("expected %s to be absent after failed add, stat err = %v", path, statErr)
+		}
+	}
+	state, stateErr := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+	if stateErr != nil {
+		t.Fatalf("LoadSessionsRuntimeState: %v", stateErr)
+	}
+	if _, ok := state.Sessions["session-2"]; ok {
+		t.Fatalf("session-2 runtime state should be removed after failed add: %#v", state.Sessions["session-2"])
+	}
+	events, loadErr := LoadDurableLog(ExperimentsLogPath(runDir), DurableSurfaceExperiments)
+	if loadErr != nil {
+		t.Fatalf("LoadDurableLog: %v", loadErr)
+	}
+	for _, event := range events {
+		var body ExperimentCreatedBody
+		if event.Kind != "experiment.created" {
+			continue
+		}
+		if err := decodeStrictJSON(event.Body, &body); err == nil && body.Session == "session-2" {
+			t.Fatalf("unexpected experiment.created for failed add: %+v", body)
+		}
 	}
 }
 

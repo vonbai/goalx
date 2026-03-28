@@ -698,6 +698,159 @@ func TestReplaceFailsWhenRunBudgetIsExhausted(t *testing.T) {
 	}
 }
 
+func TestReplaceRestoresOldSessionAndCleansPartialStateWhenReplacementLaunchFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	logPath := filepath.Join(fakeBin, "tmux.log")
+	script := `#!/bin/sh
+echo "$@" >> "$TMUX_LOG"
+case "$1" in
+  has-session)
+    exit 0
+    ;;
+  list-windows)
+    printf '%s\n' master
+    exit 0
+    ;;
+  capture-pane)
+    printf 'pane output\n'
+    exit 0
+    ;;
+  new-window)
+    case " $* " in
+      *" -n session-2 "*)
+        exit 1
+        ;;
+    esac
+    exit 0
+    ;;
+  kill-window)
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("TMUX_LOG", logPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
+	session1WT := WorktreePath(runDir, runName, 1)
+	if err := os.RemoveAll(session1WT); err != nil {
+		t.Fatalf("remove placeholder session-1 worktree: %v", err)
+	}
+	if err := CreateWorktree(runWT, session1WT, "goalx/"+runName+"/1", "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree session-1: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(session1WT, "feature.txt"), []byte("from session 1\n"), 0o644); err != nil {
+		t.Fatalf("write feature.txt: %v", err)
+	}
+	runGit(t, session1WT, "add", "feature.txt")
+	runGit(t, session1WT, "commit", "-m", "session branch change")
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:         "session-1",
+		State:        "active",
+		Mode:         string(goalx.ModeDevelop),
+		Branch:       "goalx/" + runName + "/1",
+		WorktreePath: session1WT,
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-1: %v", err)
+	}
+	coord, err := EnsureCoordinationState(runDir, "fix pipeline")
+	if err != nil {
+		t.Fatalf("EnsureCoordinationState: %v", err)
+	}
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	cfg.Routing = goalx.BuiltinDefaults.Routing
+	if err := SaveRunSpec(runDir, cfg); err != nil {
+		t.Fatalf("SaveRunSpec: %v", err)
+	}
+	coord.Sessions["session-1"] = CoordinationSession{
+		State: "active",
+		Scope: "db race triage",
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), coord); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+
+	err = Replace(repo, []string{"--run", runName, "session-1", "--route-profile", "research_deep"})
+	if err == nil || !strings.Contains(err.Error(), "create tmux window") {
+		t.Fatalf("Replace error = %v, want replacement launch failure", err)
+	}
+
+	state, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadSessionsRuntimeState: %v", err)
+	}
+	if got := state.Sessions["session-1"].State; got != "active" {
+		t.Fatalf("session-1 state = %q, want active after rollback", got)
+	}
+	if _, ok := state.Sessions["session-2"]; ok {
+		t.Fatalf("session-2 runtime state should be removed after rollback: %#v", state.Sessions["session-2"])
+	}
+	coord, err = LoadCoordinationState(CoordinationPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadCoordinationState: %v", err)
+	}
+	if got := coord.Sessions["session-1"].State; got != "active" {
+		t.Fatalf("coordination session-1 state = %q, want active", got)
+	}
+	if _, ok := coord.Sessions["session-2"]; ok {
+		t.Fatalf("coordination should not retain session-2 after rollback: %+v", coord.Sessions["session-2"])
+	}
+	for _, path := range []string{
+		SessionIdentityPath(runDir, "session-2"),
+		filepath.Dir(SessionIdentityPath(runDir, "session-2")),
+		JournalPath(runDir, "session-2"),
+		ControlInboxPath(runDir, "session-2"),
+		SessionCursorPath(runDir, "session-2"),
+		filepath.Join(runDir, "program-2.md"),
+		WorktreePath(runDir, runName, 2),
+	} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("expected %s to be absent after replacement rollback, stat err = %v", path, statErr)
+		}
+	}
+	events, loadErr := LoadDurableLog(ExperimentsLogPath(runDir), DurableSurfaceExperiments)
+	if loadErr != nil {
+		t.Fatalf("LoadDurableLog: %v", loadErr)
+	}
+	for _, event := range events {
+		var body ExperimentCreatedBody
+		if event.Kind != "experiment.created" {
+			continue
+		}
+		if err := decodeStrictJSON(event.Body, &body); err == nil && body.Session == "session-2" {
+			t.Fatalf("unexpected experiment.created for rolled-back replacement: %+v", body)
+		}
+	}
+	logData, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatalf("read tmux log: %v", readErr)
+	}
+	logText := string(logData)
+	if !strings.Contains(logText, "new-window -t "+goalx.TmuxSessionName(repo, runName)+" -n session-1 -c "+session1WT+" env ") {
+		t.Fatalf("tmux log missing rollback resume launch for session-1:\n%s", logText)
+	}
+}
+
 func TestReplaceRejectsDirtyDedicatedWorktreeTakeover(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
