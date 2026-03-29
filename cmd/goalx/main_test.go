@@ -416,6 +416,35 @@ func TestRunCommandCanonicalizesRunWorktreeToSourceProjectRoot(t *testing.T) {
 	}
 }
 
+func TestRunCommandCanonicalizesProjectSubdirToRepoRoot(t *testing.T) {
+	projectRoot := t.TempDir()
+	init := exec.Command("git", "init")
+	init.Dir = projectRoot
+	if out, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, string(out))
+	}
+	subdir := filepath.Join(projectRoot, "pkg", "feature")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("mkdir subdir: %v", err)
+	}
+
+	oldContext := mainContext
+	defer func() { mainContext = oldContext }()
+
+	gotRoot := ""
+	mainContext = func(projectRoot string, args []string) error {
+		gotRoot = projectRoot
+		return nil
+	}
+
+	if err := runCommand(subdir, "context", nil); err != nil {
+		t.Fatalf("runCommand context: %v", err)
+	}
+	if gotRoot != projectRoot {
+		t.Fatalf("project root = %q, want %q", gotRoot, projectRoot)
+	}
+}
+
 func TestRunCommandDispatchesWait(t *testing.T) {
 	oldWait := mainWait
 	defer func() { mainWait = oldWait }()
