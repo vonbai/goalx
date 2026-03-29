@@ -1,6 +1,6 @@
 ---
 name: goalx
-description: Use when a human developer wants GoalX to autonomously research, build, verify, or keep iterating on a goal in the current project, or when they want to observe, redirect, save, or continue a GoalX run.
+description: Use when a human developer wants GoalX to autonomously research, build, verify, keep iterating on a goal in the current project, or when they want to observe, redirect, recover, save, or continue a GoalX run.
 ---
 
 # GoalX
@@ -18,6 +18,7 @@ Use GoalX when the user wants any of these:
 - a project audit with follow-through
 - continuous improvement over time
 - durable observation and redirection
+- a stopped or stranded run recovered in place
 - a saved run that can continue into the next phase
 
 Do not default to manual config or raw tmux operations. For machine-consumed durable surfaces, inspect the contract with `goalx schema <surface>` before writing with `goalx durable`.
@@ -61,6 +62,7 @@ goalx status
 goalx observe
 goalx schema status
 goalx tell "redirect"
+goalx recover --run NAME
 goalx verify
 goalx result
 goalx save
@@ -72,6 +74,7 @@ Use this by default unless the user explicitly asks for config-first control.
 - `goalx observe` = live transport view plus control summary
 - `goalx schema <surface>` = canonical contract view for machine-consumed durable surfaces
 - `goalx tell` = durable redirect to master or session
+- `goalx recover --run NAME` = relaunch the same stopped or stranded run in place
 - `goalx verify` = record acceptance facts, not completion verdict
 - `goalx result` = read the current result surfaces
 - `goalx save` = export a durable saved run for later continuation
@@ -160,7 +163,7 @@ Important facts:
 Saved runs are first-class inputs to later work. Do not improvise this flow.
 
 ```bash
-goalx save
+goalx save --run RUN
 goalx run --from RUN --intent debate
 goalx run --from RUN --intent implement
 goalx run --from RUN --intent explore
@@ -171,6 +174,20 @@ Rules:
 - phase continuation requires a saved run
 - the saved run must contain report or summary context
 - use `goalx save` before telling the user to continue from a prior run
+
+## Recovery vs Phase Continuation
+
+Keep these two paths separate:
+
+```bash
+goalx recover --run RUN
+goalx save --run RUN
+goalx run --from RUN --intent implement
+```
+
+- `goalx recover --run RUN` relaunches the same stopped or stranded run in place
+- `goalx save --run RUN` plus `goalx run --from RUN --intent ...` creates a new phase from saved artifacts
+- do not suggest `save + run --from` when the user wants to continue the same run after `stop`, tmux loss, or a stranded state
 
 ## Worktree And Merge Boundaries
 
@@ -235,6 +252,7 @@ Keep these truths straight:
 - Do not default to `goalx init` / `goalx start --config` unless the user wants config-first control.
 - Do not hand-edit GoalX machine-consumed runtime files.
 - Do not recommend raw tmux interaction as the primary control path.
+- Do not suggest `goalx save` plus `goalx run --from ...` as same-run recovery; use `goalx recover --run NAME`.
 - Do not suggest `goalx run --from ...` unless there is already a saved run with usable context.
 - Do not blur worktree merge boundaries: session keep and run keep are different operations.
 

@@ -68,6 +68,18 @@ goalx stop --run NAME
 goalx drop --run NAME
 ```
 
+## Recovery
+
+```bash
+goalx recover [--run RUN]
+```
+
+## Recovery Semantics
+
+- `goalx recover --run NAME` relaunches the same stopped or stranded run in place.
+- `goalx save NAME` plus `goalx run --from NAME --intent ...` starts a new phase from saved artifacts.
+- Do not use `goalx run --from ...` as a substitute for same-run recovery.
+
 ## Durable Surface Schemas
 
 ```bash

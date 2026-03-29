@@ -66,7 +66,18 @@ goalx tell --urgent "stop: production is down"
 
 Use durable GoalX commands. Do not type instructions directly into tmux as the normal control path.
 
-## 6. Get Results
+## 6. Recover Or Continue
+
+```bash
+goalx recover --run NAME
+goalx save --run NAME
+goalx run --from NAME --intent implement
+```
+
+- `recover` relaunches the same stopped or stranded run in place
+- `save` plus `run --from` starts a new phase from durable artifacts
+
+## 7. Get Results
 
 ```bash
 goalx verify
@@ -76,7 +87,7 @@ goalx keep
 goalx save
 ```
 
-## 7. Choose Intent Only When It Helps
+## 8. Choose Intent Only When It Helps
 
 ```bash
 goalx run "goal" --intent research
@@ -88,7 +99,7 @@ goalx run "goal" --intent evolve --budget 8h
 - `develop`: code and verification
 - `evolve`: open-ended iterative improvement
 
-## 8. Understand The Worktree Boundary
+## 9. Understand The Worktree Boundary
 
 - run root worktree = the integration boundary for the run
 - session worktree = an isolated worker boundary
@@ -96,7 +107,7 @@ goalx run "goal" --intent evolve --budget 8h
 - `goalx integrate --run NAME --method ... --from ...` records a manual run-root integration after master merged or cherry-picked work there
 - `goalx keep --run NAME` merges the run root back into your source root
 
-## 9. Keep The Mental Model Straight
+## 10. Keep The Mental Model Straight
 
 - GoalX framework = storage, execution, connectivity
 - master = judgment, orchestration, closeout

@@ -19,6 +19,7 @@ goalx run "goal"
 goalx run "goal" --intent research --effort high
 goalx run "goal" --intent develop --effort medium
 goalx run "goal" --intent evolve --budget 8h
+goalx recover --run RUN
 goalx run --from RUN --intent debate
 goalx run --from RUN --intent implement
 goalx run --from RUN --intent explore
@@ -117,6 +118,7 @@ Prefer durable GoalX commands over direct transport input:
 
 - `goalx tell --run NAME "direction"` to redirect the master or a session
 - `goalx tell --urgent --run NAME "message"` to send an urgent message through the durable inbox
+- `goalx recover --run NAME` to relaunch the same stopped or stranded run in place
 - `goalx add --run NAME --mode develop "direction"` to create a session manually in develop mode
 - `goalx add --run NAME --mode research --effort high "question"` to add a research session using the current selection policy
 - `goalx add --run NAME --mode research --engine ENGINE --model MODEL --effort LEVEL "task"` only when you intentionally want to bypass the current selection policy
@@ -139,6 +141,12 @@ Prefer durable GoalX commands over direct transport input:
 
 `--parallel` is not a permanent cap. Master may still add or resume more durable sessions later if the goal warrants it.
 
+Recovery boundary:
+
+- `goalx recover --run NAME` = same run, same run directory, runtime relaunch after `stop` or stranded failure
+- `goalx save --run NAME` plus `goalx run --from NAME --intent ...` = new phase from saved artifacts
+- do not substitute `run --from` for same-run recovery
+
 ## Effort, Selection, and Runtime Dimensions
 
 - Use `--dimension` at launch and `goalx dimension` at runtime.
@@ -151,6 +159,7 @@ Prefer durable GoalX commands over direct transport input:
 - `goalx tell --urgent` marks the inbox message as urgent instead of relying on raw transport nudges.
 - The sidecar handles the first escalation by sending tmux `Escape` plus a wake nudge so the master can interrupt its current action and read the durable inbox quickly.
 - If the urgent message stays unread for 3 sidecar ticks, the sidecar relaunches the master from durable state. The relaunched master re-reads the charter, inbox, goal, and runtime state before continuing.
+- If tmux or the master is gone, or the run was intentionally stopped, use `goalx recover --run NAME` to relaunch that same run in place.
 - Use this path when the direction must cut through a stuck or long-running master action; do not bypass the durable inbox with pane typing unless the user explicitly asks for pane-level control.
 
 ## Stop and Drop Cleanup

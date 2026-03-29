@@ -67,6 +67,7 @@ goalx archive --run NAME session-4
 ## Finish Or Clean Up
 
 ```bash
+goalx recover --run NAME
 goalx verify --run NAME
 goalx result --run NAME
 goalx save NAME
@@ -74,8 +75,11 @@ goalx stop --run NAME
 goalx drop --run NAME
 ```
 
+- `recover` relaunches the same run after `stop`, tmux loss, or a stranded state
+- `save` exports durable artifacts for a later phase
 - `stop` preserves the run directory
 - `drop` removes the run completely
+- `save` plus `goalx run --from NAME --intent ...` creates a new phase; it does not recover the same run
 
 ## What Not To Do
 

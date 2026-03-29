@@ -14,7 +14,7 @@ goalx run "this product is a working investor-ready demo someone can open and im
 
 - **Autonomous research and development**: one master agent reads the codebase, chooses the path, dispatches durable sessions, reviews results, and keeps moving.
 - **Continuous improvement, not one-shot output**: GoalX can stop at a result, or keep iterating with `--intent evolve` until the budget boundary is reached.
-- **Durable execution instead of chat-state luck**: runs, reports, journals, leases, and saved artifacts survive restarts and can continue into the next phase.
+- **Durable execution instead of chat-state luck**: runs, reports, journals, leases, and saved artifacts survive restarts; stopped or stranded runs can recover in place, and saved artifacts can continue into the next phase.
 - **Worktree-isolated parallelism**: GoalX can split work into isolated session worktrees, then merge cleanly back through explicit `keep` boundaries.
 
 ## Start Here
@@ -37,7 +37,7 @@ Use it like this:
 - **Claude Code**: ask Claude to use GoalX or the GoalX skill for this repo. Claude discovers it from `~/.claude/skills/goalx`.
 - **Codex**: tell the assistant to use `$goalx`. Codex discovers it from `~/.codex/skills/goalx`.
 
-This is the preferred path when you want the assistant to launch, observe, redirect, verify, save, and continue runs correctly instead of improvising raw tmux or ad-hoc command sequences.
+This is the preferred path when you want the assistant to launch, observe, redirect, recover, verify, save, and continue runs correctly instead of improvising raw tmux or ad-hoc command sequences.
 
 ### 2. Direct CLI Path
 
@@ -174,16 +174,30 @@ goalx run "this project keeps getting better until the budget runs out" --intent
 - GoalX records the iteration trail in `experiments.jsonl`
 - the run can continue, pivot, consolidate, or stop when budget or diminishing returns say so
 
-### Continue A Saved Run
+### Recover A Stopped Or Stranded Run
 
-Saved runs are first-class inputs to the next phase.
+Use this when you want to relaunch the same run in place.
 
 ```bash
+goalx recover --run auth-audit
+```
+
+- `recover` restarts tmux/master/sidecar for the existing run
+- it preserves the same run identity and run directory
+- use it after `goalx stop`, tmux loss, or a stranded run with no live master
+
+### Continue A Saved Run Into The Next Phase
+
+Saved runs are first-class inputs to the next phase. This is not the same thing as recovering a stopped run.
+
+```bash
+goalx save auth-audit
 goalx run --from auth-audit --intent debate
 goalx run --from auth-audit --intent implement
 goalx run --from auth-audit --intent explore
 ```
 
+- `save + run --from` creates a new phase run from saved artifacts
 - `debate`: challenge and refine prior findings
 - `implement`: build from prior research or debate output
 - `explore`: extend the evidence base and look for stronger paths
@@ -248,6 +262,7 @@ goalx observe
 goalx schema status
 goalx tell "focus on payments first"
 goalx tell --urgent "stop: production is down"
+goalx recover --run NAME
 goalx verify
 goalx result
 goalx save
@@ -257,9 +272,10 @@ goalx save
 - `goalx observe` shows live transport plus control summary
 - `goalx schema <surface>` shows the canonical contract for a machine-consumed durable surface
 - `goalx tell` redirects the master or a session durably
+- `goalx recover --run NAME` relaunches a stopped or stranded run in place
 - `goalx verify` records acceptance facts; it does not declare completion
 - `goalx result` reads the current saved result surfaces
-- `goalx save` exports the run into durable saved-run storage for later continuation
+- `goalx save` exports the run into durable saved-run storage for later phase continuation
 
 Active operator docs explain the workflow. `goalx schema` is the canonical place to inspect durable protocol shape.
 
