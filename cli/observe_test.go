@@ -43,6 +43,54 @@ func TestObserveShowsRunRuntimeStateAndRunStatusRecord(t *testing.T) {
 	}
 }
 
+func TestRefreshDisplayFactsWritesEvolveFactsOnlyForEvolveRun(t *testing.T) {
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	meta.Intent = runIntentEvolve
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
+	appendExperimentEventForTest(t, runDir, `{"version":1,"kind":"experiment.created","at":"2026-03-29T10:00:00Z","actor":"master","body":{"experiment_id":"exp-1","created_at":"2026-03-29T10:00:00Z"}}`)
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	rc := &RunContext{
+		Name:        cfg.Name,
+		RunDir:      runDir,
+		TmuxSession: goalx.TmuxSessionName(repo, cfg.Name),
+		ProjectRoot: repo,
+		Config:      cfg,
+	}
+	if err := refreshDisplayFacts(rc); err != nil {
+		t.Fatalf("refreshDisplayFacts: %v", err)
+	}
+	if _, err := os.Stat(EvolveFactsPath(runDir)); err != nil {
+		t.Fatalf("expected evolve facts file, stat err = %v", err)
+	}
+
+	repo2, runDir2, cfg2, _ := writeGuidanceRunFixture(t)
+	if err := os.WriteFile(filepath.Join(fakeBin, "tmux"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("rewrite fake tmux: %v", err)
+	}
+	rc2 := &RunContext{
+		Name:        cfg2.Name,
+		RunDir:      runDir2,
+		TmuxSession: goalx.TmuxSessionName(repo2, cfg2.Name),
+		ProjectRoot: repo2,
+		Config:      cfg2,
+	}
+	if err := refreshDisplayFacts(rc2); err != nil {
+		t.Fatalf("refreshDisplayFacts non-evolve: %v", err)
+	}
+	if _, err := os.Stat(EvolveFactsPath(runDir2)); !os.IsNotExist(err) {
+		t.Fatalf("expected no evolve facts for non-evolve run, stat err = %v", err)
+	}
+}
+
 func TestObserveShowsSessionQueueFacts(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "base.txt", "base", "base commit")

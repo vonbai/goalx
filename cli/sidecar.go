@@ -292,6 +292,9 @@ func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string
 	if err := refreshActivityFacts(runDir, projectRoot, runName); err != nil {
 		return err
 	}
+	if err := RefreshEvolveFacts(runDir); err != nil {
+		return err
+	}
 	if _, err := processTargetAttentionAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
 		return err
 	}

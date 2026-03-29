@@ -148,3 +148,30 @@ func LoadEvolveFacts(path string) (*EvolveFacts, error) {
 	}
 	return &facts, nil
 }
+
+func SaveEvolveFacts(runDir string, facts *EvolveFacts) error {
+	if facts == nil {
+		return os.Remove(EvolveFactsPath(runDir))
+	}
+	if facts.Version <= 0 {
+		facts.Version = 1
+	}
+	if strings.TrimSpace(facts.UpdatedAt) == "" {
+		facts.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	return writeJSONFile(EvolveFactsPath(runDir), facts)
+}
+
+func RefreshEvolveFacts(runDir string) error {
+	facts, err := BuildEvolveFacts(runDir)
+	if err != nil {
+		return err
+	}
+	if facts == nil {
+		if err := os.Remove(EvolveFactsPath(runDir)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return SaveEvolveFacts(runDir, facts)
+}

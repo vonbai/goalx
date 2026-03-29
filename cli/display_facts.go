@@ -53,6 +53,9 @@ func refreshDisplayFacts(rc *RunContext) error {
 			return err
 		}
 	}
+	if err := RefreshEvolveFacts(rc.RunDir); err != nil {
+		return err
+	}
 	return nil
 }
 

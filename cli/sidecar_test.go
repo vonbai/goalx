@@ -101,6 +101,85 @@ func TestRunSidecarTickRenewsLease(t *testing.T) {
 	}
 }
 
+func TestRunSidecarTickWritesEvolveFactsOnlyForEvolveRun(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "base", "base commit")
+	cfg := &goalx.Config{
+		Name:      "sidecar-run",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	runDir := writeRunSpecFixture(t, repo, cfg)
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	meta.Intent = runIntentEvolve
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
+	appendExperimentEventForTest(t, runDir, `{"version":1,"kind":"experiment.created","at":"2026-03-29T10:00:00Z","actor":"master","body":{"experiment_id":"exp-1","created_at":"2026-03-29T10:00:00Z"}}`)
+	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nif [ \"$1\" = \"has-session\" ]; then exit 1; fi\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runSidecarTick evolve: %v", err)
+	}
+	if _, err := os.Stat(EvolveFactsPath(runDir)); err != nil {
+		t.Fatalf("expected evolve facts file, stat err = %v", err)
+	}
+
+	runDir2 := writeRunSpecFixture(t, repo, &goalx.Config{
+		Name:      "sidecar-run-non-evolve",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	})
+	meta2, err := EnsureRunMetadata(runDir2, repo, "ship feature")
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata non-evolve: %v", err)
+	}
+	bootstrapSidecarIdentityFixture(t, runDir2, repo, &goalx.Config{
+		Name:      "sidecar-run-non-evolve",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}, meta2)
+	if _, err := EnsureRuntimeState(runDir2, &goalx.Config{
+		Name:      "sidecar-run-non-evolve",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}); err != nil {
+		t.Fatalf("EnsureRuntimeState non-evolve: %v", err)
+	}
+	if err := EnsureControlState(runDir2); err != nil {
+		t.Fatalf("EnsureControlState non-evolve: %v", err)
+	}
+	if err := runSidecarTick(repo, "sidecar-run-non-evolve", runDir2, meta2.RunID, meta2.Epoch, 2*time.Minute, 4343); err != nil {
+		t.Fatalf("runSidecarTick non-evolve: %v", err)
+	}
+	if _, err := os.Stat(EvolveFactsPath(runDir2)); !os.IsNotExist(err) {
+		t.Fatalf("expected no evolve facts for non-evolve run, stat err = %v", err)
+	}
+}
+
 func TestRunSidecarTickDeliversDueMasterWakeReminder(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
