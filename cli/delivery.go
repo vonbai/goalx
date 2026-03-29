@@ -104,14 +104,13 @@ func DeliverControlNudge(runDir, messageID, dedupeKey, target, engine string, de
 }
 
 func reconcileControlDeliveries(runDir string) error {
-	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
-	if err != nil || deliveries == nil {
-		return err
-	}
-	updated := false
 	if cursor, err := LoadMasterCursorState(MasterCursorPath(runDir)); err == nil {
-		if reconcileInboxDeliveryAcceptance(deliveries, "master", cursor) {
-			updated = true
+		if err := submitAndApplyControlOp(runDir, controlOpDeliveryReconcileTarget, controlDeliveryReconcileTargetBody{
+			Target:     "master",
+			LastSeenID: cursor.LastSeenID,
+			AcceptedAt: cursor.UpdatedAt,
+		}); err != nil {
+			return err
 		}
 	}
 	indexes, err := existingSessionIndexes(runDir)
@@ -124,25 +123,29 @@ func reconcileControlDeliveries(runDir string) error {
 		if err != nil {
 			continue
 		}
-		if reconcileInboxDeliveryAcceptance(deliveries, sessionName, cursor) {
-			updated = true
+		if err := submitAndApplyControlOp(runDir, controlOpDeliveryReconcileTarget, controlDeliveryReconcileTargetBody{
+			Target:     sessionName,
+			LastSeenID: cursor.LastSeenID,
+			AcceptedAt: cursor.UpdatedAt,
+		}); err != nil {
+			return err
 		}
 	}
-	if !updated {
-		return nil
-	}
-	return SaveControlDeliveries(ControlDeliveriesPath(runDir), deliveries)
+	return nil
 }
 
 func reconcileTargetDeliveries(runDir, target string, cursor *MasterCursorState) error {
-	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
-	if err != nil || deliveries == nil {
-		return err
-	}
-	if !reconcileInboxDeliveryAcceptance(deliveries, target, cursor) {
+	if cursor == nil {
 		return nil
 	}
-	return SaveControlDeliveries(ControlDeliveriesPath(runDir), deliveries)
+	if err := submitAndApplyControlOp(runDir, controlOpDeliveryReconcileTarget, controlDeliveryReconcileTargetBody{
+		Target:     target,
+		LastSeenID: cursor.LastSeenID,
+		AcceptedAt: cursor.UpdatedAt,
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func reconcileInboxDeliveryAcceptance(deliveries *ControlDeliveries, target string, cursor *MasterCursorState) bool {
@@ -220,50 +223,25 @@ func deliverControlNudge(runDir, messageID, dedupeKey, target, engine string, de
 		return nil, fmt.Errorf("delivery target is required")
 	}
 
-	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := submitAndApplyControlOp(runDir, controlOpDeliveryPrepare, controlDeliveryPrepareBody{
+		MessageID:       messageID,
+		DedupeKey:       dedupeKey,
+		Target:          target,
+		DedupeOnSuccess: dedupeOnSuccess,
+		AttemptedAt:     now,
+	}); err != nil {
+		return nil, err
+	}
+	item, err := findControlDeliveryByDedupeKey(runDir, dedupeKey)
 	if err != nil {
 		return nil, err
 	}
-
-	idx := -1
-	for i := range deliveries.Items {
-		if deliveries.Items[i].DedupeKey == dedupeKey {
-			idx = i
-			break
-		}
-	}
-	if idx == -1 {
-		deliveries.Items = append(deliveries.Items, ControlDelivery{
-			DeliveryID: newControlObjectID("delivery"),
-			DedupeKey:  dedupeKey,
-		})
-		idx = len(deliveries.Items) - 1
-	}
-
-	item := &deliveries.Items[idx]
-	item.MessageID = messageID
-	item.DedupeKey = dedupeKey
-	item.Target = target
-	item.Adapter = "tmux"
-	if item.DeliveryID == "" {
-		item.DeliveryID = newControlObjectID("delivery")
+	if item == nil {
+		return nil, fmt.Errorf("delivery %q missing after prepare", dedupeKey)
 	}
 	if dedupeOnSuccess && item.Status == "accepted" && item.AcceptedAt != "" {
-		if err := SaveControlDeliveries(ControlDeliveriesPath(runDir), deliveries); err != nil {
-			return nil, err
-		}
-		copy := *item
-		return &copy, nil
-	}
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	item.AttemptedAt = now
-	item.Status = "pending"
-	item.SubmitMode = ""
-	item.TransportState = ""
-	item.LastError = ""
-	if err := SaveControlDeliveries(ControlDeliveriesPath(runDir), deliveries); err != nil {
-		return nil, err
+		return item, nil
 	}
 
 	outcome := TransportDeliveryOutcome{}
@@ -271,38 +249,62 @@ func deliverControlNudge(runDir, messageID, dedupeKey, target, engine string, de
 		result, err := deliver(target, engine)
 		outcome = result
 		if err != nil {
-			item.Status = "failed"
-			item.SubmitMode = outcome.SubmitMode
-			item.TransportState = ""
-			item.LastError = err.Error()
-			item.AcceptedAt = ""
-			if saveErr := SaveControlDeliveries(ControlDeliveriesPath(runDir), deliveries); saveErr != nil {
+			if saveErr := submitAndApplyControlOp(runDir, controlOpDeliveryComplete, controlDeliveryCompleteBody{
+				DedupeKey:       dedupeKey,
+				SubmitMode:      outcome.SubmitMode,
+				TransportState:  "",
+				Status:          "failed",
+				LastError:       err.Error(),
+				AcceptedAt:      "",
+				LastAttemptedAt: now,
+			}); saveErr != nil {
 				return nil, saveErr
 			}
-			copy := *item
-			return &copy, err
+			copy, loadErr := findControlDeliveryByDedupeKey(runDir, dedupeKey)
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			return copy, err
 		}
 	}
 
-	item.SubmitMode = outcome.SubmitMode
-	item.TransportState = strings.TrimSpace(outcome.TransportState)
-	if item.TransportState == "" {
-		item.TransportState = string(TUIStateUnknown)
+	transportState := strings.TrimSpace(outcome.TransportState)
+	if transportState == "" {
+		transportState = string(TUIStateUnknown)
 	}
-	item.Status = item.TransportState
-	if isAcceptedTUITransportState(item.TransportState) {
-		item.Status = "accepted"
+	status := transportState
+	acceptedAt := ""
+	if isAcceptedTUITransportState(transportState) {
+		status = "accepted"
+		acceptedAt = now
 	}
-	item.LastError = ""
-	item.AcceptedAt = ""
-	if item.Status == "accepted" {
-		item.AcceptedAt = now
-	}
-	if err := SaveControlDeliveries(ControlDeliveriesPath(runDir), deliveries); err != nil {
+	if err := submitAndApplyControlOp(runDir, controlOpDeliveryComplete, controlDeliveryCompleteBody{
+		DedupeKey:       dedupeKey,
+		SubmitMode:      outcome.SubmitMode,
+		TransportState:  transportState,
+		Status:          status,
+		LastError:       "",
+		AcceptedAt:      acceptedAt,
+		LastAttemptedAt: now,
+	}); err != nil {
 		return nil, err
 	}
-	copy := *item
-	return &copy, nil
+	return findControlDeliveryByDedupeKey(runDir, dedupeKey)
+}
+
+func findControlDeliveryByDedupeKey(runDir, dedupeKey string) (*ControlDelivery, error) {
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		return nil, err
+	}
+	for i := range deliveries.Items {
+		if deliveries.Items[i].DedupeKey != dedupeKey {
+			continue
+		}
+		copy := deliveries.Items[i]
+		return &copy, nil
+	}
+	return nil, nil
 }
 
 func newControlObjectID(prefix string) string {

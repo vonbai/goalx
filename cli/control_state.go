@@ -132,8 +132,17 @@ func EnsureControlState(runDir string) error {
 	}
 	for _, path := range []string{
 		ControlInboxPath(runDir, "master"),
+		ControlOpsPath(runDir),
 	} {
 		if err := ensureEmptyFile(path); err != nil {
+			return err
+		}
+	}
+	if _, err := LoadControlOpsCursor(ControlOpsCursorPath(runDir)); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if err := SaveControlOpsCursor(ControlOpsCursorPath(runDir), &ControlOpsCursor{}); err != nil {
 			return err
 		}
 	}

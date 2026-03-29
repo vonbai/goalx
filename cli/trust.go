@@ -53,17 +53,35 @@ func ensureCodexTrusted(path string) error {
 		return fmt.Errorf("mkdir codex config dir: %w", err)
 	}
 
-	var text string
-	if data, err := os.ReadFile(cfgPath); err == nil {
-		text = string(data)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("read codex config: %w", err)
-	}
-
 	section := `[projects."` + escapeTOMLString(path) + `"]`
-	text = upsertTOMLKey(text, section, `trust_level = "trusted"`)
-	if err := writeFilePreserveMode(cfgPath, []byte(text), 0o600); err != nil {
+	if err := mutateStructuredFile(
+		cfgPath,
+		0o600,
+		func(data []byte) (*string, error) {
+			text := string(data)
+			return &text, nil
+		},
+		func() *string {
+			text := ""
+			return &text
+		},
+		func(text *string) error {
+			*text = upsertTOMLKey(*text, section, `trust_level = "trusted"`)
+			return nil
+		},
+		func(text *string) ([]byte, error) {
+			return []byte(*text), nil
+		},
+	); err != nil {
 		return fmt.Errorf("write codex config: %w", err)
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return fmt.Errorf("verify codex config: %w", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, section) || !strings.Contains(text, `trust_level = "trusted"`) {
+		return fmt.Errorf("verify codex config: missing trusted entry for %s", path)
 	}
 	return nil
 }
@@ -75,64 +93,76 @@ func ensureClaudeTrusted(path string) error {
 	}
 	cfgPath := filepath.Join(home, ".claude.json")
 
-	doc := map[string]any{}
-	if data, err := os.ReadFile(cfgPath); err == nil && len(data) > 0 {
-		if err := json.Unmarshal(data, &doc); err != nil {
-			return fmt.Errorf("parse %s: %w", cfgPath, err)
-		}
-	} else if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("read %s: %w", cfgPath, err)
-	}
+	if err := mutateStructuredFile(
+		cfgPath,
+		0o600,
+		func(data []byte) (*map[string]any, error) {
+			doc := map[string]any{}
+			if len(data) == 0 {
+				return &doc, nil
+			}
+			if err := json.Unmarshal(data, &doc); err != nil {
+				return nil, fmt.Errorf("parse %s: %w", cfgPath, err)
+			}
+			return &doc, nil
+		},
+		func() *map[string]any {
+			doc := map[string]any{}
+			return &doc
+		},
+		func(doc *map[string]any) error {
+			projects := coerceObject((*doc)["projects"])
+			entry := coerceObject(projects[path])
+			sourceEntry := claudeSourceProjectEntry(path, projects)
+			globalServers := coerceObject((*doc)["mcpServers"])
+			globalEnabled := coerceArray((*doc)["enabledMcpjsonServers"])
+			globalDisabled := coerceArray((*doc)["disabledMcpjsonServers"])
+			globalContextURIs := coerceArray((*doc)["mcpContextUris"])
 
-	projects := coerceObject(doc["projects"])
-	entry := coerceObject(projects[path])
-	sourceEntry := claudeSourceProjectEntry(path, projects)
-	globalServers := coerceObject(doc["mcpServers"])
-	globalEnabled := coerceArray(doc["enabledMcpjsonServers"])
-	globalDisabled := coerceArray(doc["disabledMcpjsonServers"])
-	globalContextURIs := coerceArray(doc["mcpContextUris"])
-
-	entry["mcpContextUris"] = mergeUniqueStrings(
-		globalContextURIs,
-		coerceArray(sourceEntry["mcpContextUris"]),
-		coerceArray(entry["mcpContextUris"]),
-	)
-	entry["mcpServers"] = mergeObjects(
-		mergeObjects(globalServers, coerceObject(sourceEntry["mcpServers"])),
-		coerceObject(entry["mcpServers"]),
-	)
-	entry["enabledMcpjsonServers"] = mergeUniqueStrings(
-		globalEnabled,
-		coerceArray(sourceEntry["enabledMcpjsonServers"]),
-		coerceArray(entry["enabledMcpjsonServers"]),
-	)
-	entry["disabledMcpjsonServers"] = mergeUniqueStrings(
-		globalDisabled,
-		coerceArray(sourceEntry["disabledMcpjsonServers"]),
-		coerceArray(entry["disabledMcpjsonServers"]),
-	)
-	requiredTools := append([]string(nil), claudeAllowedTools...)
-	if _, ok := coerceObject(entry["mcpServers"])["context7"]; ok {
-		requiredTools = append(requiredTools, claudeContext7Tools...)
-	}
-	entry["allowedTools"] = mergeAllowedTools(
-		mergeUniqueStrings(coerceArray(sourceEntry["allowedTools"]), coerceArray(entry["allowedTools"])),
-		requiredTools,
-	)
-	entry["hasTrustDialogAccepted"] = true
-	entry["projectOnboardingSeenCount"] = 1
-	entry["hasClaudeMdExternalIncludesApproved"] = true
-	entry["hasClaudeMdExternalIncludesWarningShown"] = false
-	entry["hasCompletedProjectOnboarding"] = true
-	projects[path] = entry
-	doc["projects"] = projects
-
-	out, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", cfgPath, err)
-	}
-	out = append(out, '\n')
-	if err := writeFilePreserveMode(cfgPath, out, 0o600); err != nil {
+			entry["mcpContextUris"] = mergeUniqueStrings(
+				globalContextURIs,
+				coerceArray(sourceEntry["mcpContextUris"]),
+				coerceArray(entry["mcpContextUris"]),
+			)
+			entry["mcpServers"] = mergeObjects(
+				mergeObjects(globalServers, coerceObject(sourceEntry["mcpServers"])),
+				coerceObject(entry["mcpServers"]),
+			)
+			entry["enabledMcpjsonServers"] = mergeUniqueStrings(
+				globalEnabled,
+				coerceArray(sourceEntry["enabledMcpjsonServers"]),
+				coerceArray(entry["enabledMcpjsonServers"]),
+			)
+			entry["disabledMcpjsonServers"] = mergeUniqueStrings(
+				globalDisabled,
+				coerceArray(sourceEntry["disabledMcpjsonServers"]),
+				coerceArray(entry["disabledMcpjsonServers"]),
+			)
+			requiredTools := append([]string(nil), claudeAllowedTools...)
+			if _, ok := coerceObject(entry["mcpServers"])["context7"]; ok {
+				requiredTools = append(requiredTools, claudeContext7Tools...)
+			}
+			entry["allowedTools"] = mergeAllowedTools(
+				mergeUniqueStrings(coerceArray(sourceEntry["allowedTools"]), coerceArray(entry["allowedTools"])),
+				requiredTools,
+			)
+			entry["hasTrustDialogAccepted"] = true
+			entry["projectOnboardingSeenCount"] = 1
+			entry["hasClaudeMdExternalIncludesApproved"] = true
+			entry["hasClaudeMdExternalIncludesWarningShown"] = false
+			entry["hasCompletedProjectOnboarding"] = true
+			projects[path] = entry
+			(*doc)["projects"] = projects
+			return nil
+		},
+		func(doc *map[string]any) ([]byte, error) {
+			out, err := json.MarshalIndent(doc, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("marshal %s: %w", cfgPath, err)
+			}
+			return append(out, '\n'), nil
+		},
+	); err != nil {
 		return fmt.Errorf("write %s: %w", cfgPath, err)
 	}
 	if err := ensureClaudeProjectLocalHooks(path); err != nil {
@@ -151,47 +181,59 @@ func ensureClaudeProjectLocalHooks(path string) error {
 		return fmt.Errorf("mkdir claude local settings dir: %w", err)
 	}
 
-	doc := map[string]any{}
-	if data, err := os.ReadFile(settingsPath); err == nil && len(data) > 0 {
-		if err := json.Unmarshal(data, &doc); err != nil {
-			return fmt.Errorf("parse %s: %w", settingsPath, err)
-		}
-	} else if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("read %s: %w", settingsPath, err)
-	}
-
-	hooks := coerceObject(doc["hooks"])
 	permissionCommand := shellQuote(goalxBin) + " claude-hook permission-request"
 	elicitationCommand := shellQuote(goalxBin) + " claude-hook elicitation"
 	notificationCommand := shellQuote(goalxBin) + " claude-hook notification"
-	hooks["PermissionRequest"] = appendClaudeHookEntry(
-		coerceArray(hooks["PermissionRequest"]),
-		claudeMCPPermissionHookMatcher,
-		permissionCommand,
-	)
-	hooks["Elicitation"] = appendClaudeHookEntry(
-		coerceArray(hooks["Elicitation"]),
-		claudeMCPElicitationHookMatcher,
-		elicitationCommand,
-	)
-	hooks["Notification"] = appendClaudeHookEntry(
-		coerceArray(hooks["Notification"]),
-		claudePermissionNotificationMatcher,
-		notificationCommand,
-	)
-	hooks["Notification"] = appendClaudeHookEntry(
-		coerceArray(hooks["Notification"]),
-		claudeElicitationNotificationMatcher,
-		notificationCommand,
-	)
-	doc["hooks"] = hooks
-
-	out, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", settingsPath, err)
-	}
-	out = append(out, '\n')
-	if err := writeFilePreserveMode(settingsPath, out, 0o644); err != nil {
+	if err := mutateStructuredFile(
+		settingsPath,
+		0o644,
+		func(data []byte) (*map[string]any, error) {
+			doc := map[string]any{}
+			if len(data) == 0 {
+				return &doc, nil
+			}
+			if err := json.Unmarshal(data, &doc); err != nil {
+				return nil, fmt.Errorf("parse %s: %w", settingsPath, err)
+			}
+			return &doc, nil
+		},
+		func() *map[string]any {
+			doc := map[string]any{}
+			return &doc
+		},
+		func(doc *map[string]any) error {
+			hooks := coerceObject((*doc)["hooks"])
+			hooks["PermissionRequest"] = appendClaudeHookEntry(
+				coerceArray(hooks["PermissionRequest"]),
+				claudeMCPPermissionHookMatcher,
+				permissionCommand,
+			)
+			hooks["Elicitation"] = appendClaudeHookEntry(
+				coerceArray(hooks["Elicitation"]),
+				claudeMCPElicitationHookMatcher,
+				elicitationCommand,
+			)
+			hooks["Notification"] = appendClaudeHookEntry(
+				coerceArray(hooks["Notification"]),
+				claudePermissionNotificationMatcher,
+				notificationCommand,
+			)
+			hooks["Notification"] = appendClaudeHookEntry(
+				coerceArray(hooks["Notification"]),
+				claudeElicitationNotificationMatcher,
+				notificationCommand,
+			)
+			(*doc)["hooks"] = hooks
+			return nil
+		},
+		func(doc *map[string]any) ([]byte, error) {
+			out, err := json.MarshalIndent(doc, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("marshal %s: %w", settingsPath, err)
+			}
+			return append(out, '\n'), nil
+		},
+	); err != nil {
 		return fmt.Errorf("write %s: %w", settingsPath, err)
 	}
 	if err := verifyClaudeProjectLocalHooks(path); err != nil {

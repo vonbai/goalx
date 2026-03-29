@@ -88,10 +88,54 @@ func SaveGlobalRunRegistry(reg *GlobalRunRegistry) error {
 	if err := os.MkdirAll(filepath.Dir(GlobalRunRegistryPath()), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(GlobalRunRegistryPath(), data, 0o644); err != nil {
+	if err := writeFileAtomic(GlobalRunRegistryPath(), data, 0o644); err != nil {
 		return fmt.Errorf("write global run registry: %w", err)
 	}
 	return nil
+}
+
+func mutateGlobalRunRegistry(mutate func(*GlobalRunRegistry) error) error {
+	return mutateStructuredFile(
+		GlobalRunRegistryPath(),
+		0o644,
+		func(data []byte) (*GlobalRunRegistry, error) {
+			reg, err := LoadGlobalRunRegistry()
+			if err != nil {
+				return nil, err
+			}
+			return reg, nil
+		},
+		func() *GlobalRunRegistry {
+			return &GlobalRunRegistry{
+				Version: 1,
+				Runs:    map[string]GlobalRunRef{},
+			}
+		},
+		func(reg *GlobalRunRegistry) error {
+			return mutate(reg)
+		},
+		func(reg *GlobalRunRegistry) ([]byte, error) {
+			if reg == nil {
+				return nil, fmt.Errorf("global run registry is nil")
+			}
+			if reg.Version == 0 {
+				reg.Version = 1
+			}
+			if reg.Runs == nil {
+				reg.Runs = map[string]GlobalRunRef{}
+			}
+			for key, ref := range reg.Runs {
+				ref.Objective = ""
+				reg.Runs[key] = ref
+			}
+			reg.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			data, err := json.MarshalIndent(reg, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("marshal global run registry: %w", err)
+			}
+			return data, nil
+		},
+	)
 }
 
 func globalRunKey(projectRoot, runName string) string {
@@ -102,59 +146,53 @@ func UpsertGlobalRun(projectRoot string, cfg *goalx.Config, state string) error 
 	if cfg == nil {
 		return fmt.Errorf("config is nil")
 	}
-	reg, err := LoadGlobalRunRegistry()
-	if err != nil {
-		return err
-	}
 	key := globalRunKey(projectRoot, cfg.Name)
-	reg.Runs[key] = GlobalRunRef{
-		Key:         key,
-		Name:        cfg.Name,
-		ProjectID:   goalx.ProjectID(projectRoot),
-		ProjectRoot: projectRoot,
-		RunDir:      goalx.RunDir(projectRoot, cfg.Name),
-		TmuxSession: goalx.TmuxSessionName(projectRoot, cfg.Name),
-		Mode:        string(cfg.Mode),
-		State:       state,
-		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
-	}
-	reg.Runs[key] = hydrateGlobalRunIdentity(reg.Runs[key])
-	return SaveGlobalRunRegistry(reg)
+	return mutateGlobalRunRegistry(func(reg *GlobalRunRegistry) error {
+		reg.Runs[key] = GlobalRunRef{
+			Key:         key,
+			Name:        cfg.Name,
+			ProjectID:   goalx.ProjectID(projectRoot),
+			ProjectRoot: projectRoot,
+			RunDir:      goalx.RunDir(projectRoot, cfg.Name),
+			TmuxSession: goalx.TmuxSessionName(projectRoot, cfg.Name),
+			Mode:        string(cfg.Mode),
+			State:       state,
+			UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
+		}
+		reg.Runs[key] = hydrateGlobalRunIdentity(reg.Runs[key])
+		return nil
+	})
 }
 
 func UpdateGlobalRunState(projectRoot, runName, state string) error {
-	reg, err := LoadGlobalRunRegistry()
-	if err != nil {
-		return err
-	}
 	key := globalRunKey(projectRoot, runName)
-	ref, ok := reg.Runs[key]
-	if !ok {
-		ref = GlobalRunRef{
-			Key:         key,
-			Name:        runName,
-			ProjectID:   goalx.ProjectID(projectRoot),
-			ProjectRoot: projectRoot,
-			RunDir:      goalx.RunDir(projectRoot, runName),
-			TmuxSession: goalx.TmuxSessionName(projectRoot, runName),
+	return mutateGlobalRunRegistry(func(reg *GlobalRunRegistry) error {
+		ref, ok := reg.Runs[key]
+		if !ok {
+			ref = GlobalRunRef{
+				Key:         key,
+				Name:        runName,
+				ProjectID:   goalx.ProjectID(projectRoot),
+				ProjectRoot: projectRoot,
+				RunDir:      goalx.RunDir(projectRoot, runName),
+				TmuxSession: goalx.TmuxSessionName(projectRoot, runName),
+			}
+			if cfg, err := LoadRunSpec(ref.RunDir); err == nil && cfg != nil {
+				ref.Mode = string(cfg.Mode)
+			}
 		}
-		if cfg, err := LoadRunSpec(ref.RunDir); err == nil && cfg != nil {
-			ref.Mode = string(cfg.Mode)
-		}
-	}
-	ref.State = state
-	ref.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	reg.Runs[key] = hydrateGlobalRunIdentity(ref)
-	return SaveGlobalRunRegistry(reg)
+		ref.State = state
+		ref.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		reg.Runs[key] = hydrateGlobalRunIdentity(ref)
+		return nil
+	})
 }
 
 func RemoveGlobalRun(projectRoot, runName string) error {
-	reg, err := LoadGlobalRunRegistry()
-	if err != nil {
-		return err
-	}
-	delete(reg.Runs, globalRunKey(projectRoot, runName))
-	return SaveGlobalRunRegistry(reg)
+	return mutateGlobalRunRegistry(func(reg *GlobalRunRegistry) error {
+		delete(reg.Runs, globalRunKey(projectRoot, runName))
+		return nil
+	})
 }
 
 func LookupGlobalRuns(selector string) ([]GlobalRunRef, error) {

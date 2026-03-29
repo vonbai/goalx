@@ -94,6 +94,10 @@ func LoadRunRuntimeState(path string) (*RunRuntimeState, error) {
 		}
 		return nil, err
 	}
+	return parseRunRuntimeState(data)
+}
+
+func parseRunRuntimeState(data []byte) (*RunRuntimeState, error) {
 	state := &RunRuntimeState{}
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return state, nil
@@ -124,28 +128,55 @@ func SaveRunRuntimeState(path string, state *RunRuntimeState) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return writeFileAtomic(path, data, 0o644)
+}
+
+func putRunRuntimeStateDirect(runDir string, next RunRuntimeState) error {
+	if err := os.MkdirAll(StateDir(runDir), 0o755); err != nil {
+		return err
+	}
+	state := next
+	return SaveRunRuntimeState(RunRuntimeStatePath(runDir), &state)
+}
+
+func UpsertRunRuntimeState(runDir string, next RunRuntimeState) error {
+	return submitAndApplyControlOp(runDir, controlOpRunRuntimeUpsert, controlRunRuntimeUpsertBody{State: next})
 }
 
 func EnsureSessionsRuntimeState(runDir string) (*SessionsRuntimeState, error) {
 	if err := os.MkdirAll(StateDir(runDir), 0o755); err != nil {
 		return nil, err
 	}
-	state, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
-	if err != nil {
+	path := SessionsRuntimeStatePath(runDir)
+	var ensured *SessionsRuntimeState
+	if err := mutateStructuredFile(
+		path,
+		0o644,
+		func(data []byte) (*SessionsRuntimeState, error) {
+			return parseSessionsRuntimeState(data)
+		},
+		func() *SessionsRuntimeState {
+			return &SessionsRuntimeState{
+				Version:   1,
+				Sessions:  map[string]SessionRuntimeState{},
+				UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+			}
+		},
+		func(state *SessionsRuntimeState) error {
+			ensured = cloneSessionsRuntimeState(state)
+			return nil
+		},
+		func(state *SessionsRuntimeState) ([]byte, error) {
+			normalizeSessionsRuntimeState(state)
+			if state.UpdatedAt == "" {
+				state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			}
+			return json.MarshalIndent(state, "", "  ")
+		},
+	); err != nil {
 		return nil, err
 	}
-	if state == nil {
-		state = &SessionsRuntimeState{
-			Version:   1,
-			Sessions:  map[string]SessionRuntimeState{},
-			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
-		}
-		if err := SaveSessionsRuntimeState(SessionsRuntimeStatePath(runDir), state); err != nil {
-			return nil, err
-		}
-	}
-	return state, nil
+	return ensured, nil
 }
 
 func LoadSessionsRuntimeState(path string) (*SessionsRuntimeState, error) {
@@ -156,6 +187,10 @@ func LoadSessionsRuntimeState(path string) (*SessionsRuntimeState, error) {
 		}
 		return nil, err
 	}
+	return parseSessionsRuntimeState(data)
+}
+
+func parseSessionsRuntimeState(data []byte) (*SessionsRuntimeState, error) {
 	state := &SessionsRuntimeState{}
 	if len(strings.TrimSpace(string(data))) == 0 {
 		state.Version = 1
@@ -168,9 +203,7 @@ func LoadSessionsRuntimeState(path string) (*SessionsRuntimeState, error) {
 	if state.Version == 0 {
 		state.Version = 1
 	}
-	if state.Sessions == nil {
-		state.Sessions = map[string]SessionRuntimeState{}
-	}
+	normalizeSessionsRuntimeState(state)
 	return state, nil
 }
 
@@ -181,9 +214,7 @@ func SaveSessionsRuntimeState(path string, state *SessionsRuntimeState) error {
 	if state.Version == 0 {
 		state.Version = 1
 	}
-	if state.Sessions == nil {
-		state.Sessions = map[string]SessionRuntimeState{}
-	}
+	normalizeSessionsRuntimeState(state)
 	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -192,20 +223,95 @@ func SaveSessionsRuntimeState(path string, state *SessionsRuntimeState) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return writeFileAtomic(path, data, 0o644)
+}
+
+func upsertSessionRuntimeStateDirect(runDir string, next SessionRuntimeState) error {
+	return mutateStructuredFile(
+		SessionsRuntimeStatePath(runDir),
+		0o644,
+		func(data []byte) (*SessionsRuntimeState, error) {
+			return parseSessionsRuntimeState(data)
+		},
+		func() *SessionsRuntimeState {
+			return &SessionsRuntimeState{
+				Version:  1,
+				Sessions: map[string]SessionRuntimeState{},
+			}
+		},
+		func(state *SessionsRuntimeState) error {
+			normalizeSessionsRuntimeState(state)
+			current := state.Sessions[next.Name]
+			mergeSessionRuntimeState(&current, next)
+			current.Name = next.Name
+			current.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			state.Sessions[next.Name] = current
+			return nil
+		},
+		func(state *SessionsRuntimeState) ([]byte, error) {
+			normalizeSessionsRuntimeState(state)
+			state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			return json.MarshalIndent(state, "", "  ")
+		},
+	)
 }
 
 func UpsertSessionRuntimeState(runDir string, next SessionRuntimeState) error {
-	state, err := EnsureSessionsRuntimeState(runDir)
-	if err != nil {
-		return err
+	return submitAndApplyControlOp(runDir, controlOpSessionRuntimeUpsert, controlSessionRuntimeUpsertBody{State: next})
+}
+
+func removeSessionRuntimeStateDirect(runDir, sessionName string) error {
+	return mutateStructuredFile(
+		SessionsRuntimeStatePath(runDir),
+		0o644,
+		func(data []byte) (*SessionsRuntimeState, error) {
+			return parseSessionsRuntimeState(data)
+		},
+		func() *SessionsRuntimeState {
+			return &SessionsRuntimeState{
+				Version:  1,
+				Sessions: map[string]SessionRuntimeState{},
+			}
+		},
+		func(state *SessionsRuntimeState) error {
+			normalizeSessionsRuntimeState(state)
+			delete(state.Sessions, sessionName)
+			return nil
+		},
+		func(state *SessionsRuntimeState) ([]byte, error) {
+			normalizeSessionsRuntimeState(state)
+			state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			return json.MarshalIndent(state, "", "  ")
+		},
+	)
+}
+
+func RemoveSessionRuntimeState(runDir, sessionName string) error {
+	return submitAndApplyControlOp(runDir, controlOpSessionRuntimeRemove, controlSessionRuntimeRemoveBody{Name: sessionName})
+}
+
+func normalizeSessionsRuntimeState(state *SessionsRuntimeState) {
+	if state == nil {
+		return
 	}
-	current := state.Sessions[next.Name]
-	mergeSessionRuntimeState(&current, next)
-	current.Name = next.Name
-	current.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	state.Sessions[next.Name] = current
-	return SaveSessionsRuntimeState(SessionsRuntimeStatePath(runDir), state)
+	if state.Sessions == nil {
+		state.Sessions = map[string]SessionRuntimeState{}
+	}
+}
+
+func cloneSessionsRuntimeState(state *SessionsRuntimeState) *SessionsRuntimeState {
+	if state == nil {
+		return nil
+	}
+	cloned := &SessionsRuntimeState{
+		Version:   state.Version,
+		Sessions:  make(map[string]SessionRuntimeState, len(state.Sessions)),
+		UpdatedAt: state.UpdatedAt,
+	}
+	for name, session := range state.Sessions {
+		cloned.Sessions[name] = session
+	}
+	return cloned
 }
 
 func mergeSessionRuntimeState(dst *SessionRuntimeState, src SessionRuntimeState) {
@@ -237,6 +343,35 @@ func mergeSessionRuntimeState(dst *SessionRuntimeState, src SessionRuntimeState)
 	if src.LastJournalState != "" {
 		dst.LastJournalState = src.LastJournalState
 	}
+}
+
+func finalizeSessionRuntimeStatesDirect(runDir, lifecycle, now string) error {
+	state, err := EnsureSessionsRuntimeState(runDir)
+	if err != nil {
+		return err
+	}
+	if state.Sessions == nil {
+		state.Sessions = map[string]SessionRuntimeState{}
+	}
+	if len(state.Sessions) == 0 {
+		indexes, err := existingSessionIndexes(runDir)
+		if err != nil {
+			return err
+		}
+		for _, num := range indexes {
+			name := SessionName(num)
+			state.Sessions[name] = SessionRuntimeState{Name: name}
+		}
+	}
+	if strings.TrimSpace(now) == "" {
+		now = time.Now().UTC().Format(time.RFC3339)
+	}
+	for name, session := range state.Sessions {
+		session.State = lifecycle
+		session.UpdatedAt = now
+		state.Sessions[name] = session
+	}
+	return SaveSessionsRuntimeState(SessionsRuntimeStatePath(runDir), state)
 }
 
 func SnapshotSessionRuntime(runDir, sessionName, worktreePath string) (SessionRuntimeState, error) {

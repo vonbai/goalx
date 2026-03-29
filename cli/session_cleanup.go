@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type cleanupStack struct {
@@ -67,40 +66,13 @@ func cleanupSessionJournal(runDir, sessionName string) error {
 }
 
 func cleanupSessionRuntimeEntry(runDir, sessionName string) error {
-	state, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
-	if err != nil {
+	if _, err := os.Stat(SessionsRuntimeStatePath(runDir)); err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	if state == nil || state.Sessions == nil {
-		return nil
-	}
-	if _, ok := state.Sessions[sessionName]; !ok {
-		return nil
-	}
-	delete(state.Sessions, sessionName)
-	return SaveSessionsRuntimeState(SessionsRuntimeStatePath(runDir), state)
-}
-
-func cleanupCoordinationSession(runDir, sessionName string) error {
-	state, err := LoadCoordinationState(CoordinationPath(runDir))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if state == nil || state.Sessions == nil {
-		return nil
-	}
-	if _, ok := state.Sessions[sessionName]; !ok {
-		return nil
-	}
-	delete(state.Sessions, sessionName)
-	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	return SaveCoordinationState(CoordinationPath(runDir), state)
+	return RemoveSessionRuntimeState(runDir, sessionName)
 }
 
 func cleanupSessionWorktreeBoundary(repoRoot, worktreePath, branch string) error {
@@ -160,26 +132,11 @@ func restoreParkedSession(projectRoot, runName, runDir, sessionName, scope strin
 		return err
 	}
 
-	coord, loadErr := EnsureCoordinationState(runDir, "")
-	if loadErr != nil {
-		return loadErr
-	}
-	current := coord.Sessions[sessionName]
-	current.State = "active"
-	current.Scope = scopeOrFallback(scope, current.Scope, sessionName)
-	current.BlockedBy = ""
-	current.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	coord.Sessions[sessionName] = current
-	coord.Version++
-	coord.UpdatedAt = current.UpdatedAt
-	if saveErr := SaveCoordinationState(CoordinationPath(runDir), coord); saveErr != nil {
-		return saveErr
-	}
-
 	sessionState, stateErr := EnsureSessionsRuntimeState(runDir)
 	if stateErr != nil {
 		return stateErr
 	}
+	current := sessionState.Sessions[sessionName]
 	identity, identityErr := RequireSessionIdentity(runDir, sessionName)
 	if identityErr != nil {
 		return identityErr
@@ -190,7 +147,7 @@ func restoreParkedSession(projectRoot, runName, runDir, sessionName, scope strin
 		Mode:         identity.Mode,
 		Branch:       resolvedSessionBranch(runDir, runName, sessionName, sessionState),
 		WorktreePath: resolvedSessionWorktreePath(runDir, runName, sessionName, sessionState),
-		OwnerScope:   current.Scope,
+		OwnerScope:   scopeOrFallback(scope, current.OwnerScope, sessionName),
 	})
 }
 

@@ -352,7 +352,7 @@ func SubmitWakeTransport(target, engine string) (TransportDeliveryOutcome, error
 	switch normalizeTUITransportState(before.TransportState) {
 	case TUIStateQueued:
 		return TransportDeliveryOutcome{SubmitMode: "accepted_existing_queue", TransportState: before.TransportState}, nil
-	case TUIStateProviderDialog, TUIStateInterrupted, TUIStateUnknown:
+	case TUIStateProviderDialog, TUIStateInterrupted, TUIStateBlank, TUIStateUnknown:
 		return TransportDeliveryOutcome{SubmitMode: "blocked_no_submit", TransportState: before.TransportState}, nil
 	}
 	switch strings.TrimSpace(engine) {
@@ -429,7 +429,7 @@ func EscalateInterruptTransport(target, engine, reason string) (TransportDeliver
 	switch normalizeTUITransportState(afterInterrupt.TransportState) {
 	case TUIStateQueued:
 		return result, nil
-	case TUIStateProviderDialog, TUIStateInterrupted, TUIStateUnknown:
+	case TUIStateProviderDialog, TUIStateInterrupted, TUIStateBlank, TUIStateUnknown:
 		return result, nil
 	default:
 		follow, err := SubmitWakeTransport(target, engine)

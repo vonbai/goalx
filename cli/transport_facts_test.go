@@ -122,6 +122,22 @@ func TestInspectTransportTargetRejectsMixedWakeInputAsBuffered(t *testing.T) {
 	}
 }
 
+func TestInspectTransportTargetClassifiesBlankPaneExplicitly(t *testing.T) {
+	origCapture := captureAgentPane
+	defer func() { captureAgentPane = origCapture }()
+
+	captureAgentPane = func(target string) (string, error) {
+		return "   \n\t", nil
+	}
+	got := inspectTransportTarget("gx-demo:master", "master", "master", "codex")
+	if got.TransportState != "blank" {
+		t.Fatalf("transport_state = %q, want blank: %+v", got.TransportState, got)
+	}
+	if got.ProviderDialogVisible {
+		t.Fatalf("provider_dialog_visible = true, want false: %+v", got)
+	}
+}
+
 func TestBuildTransportFactsMarksCodexBufferedWake(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 
@@ -271,6 +287,27 @@ func TestBuildTransportFactsDetectsProviderDialog(t *testing.T) {
 	}
 }
 
+func TestBuildTransportFactsClassifiesBlankPaneExplicitly(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("  \n\t"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+
+	facts, err := BuildTransportFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name), "codex")
+	if err != nil {
+		t.Fatalf("BuildTransportFacts: %v", err)
+	}
+	got := facts.Targets["master"]
+	if got.TransportState != "blank" {
+		t.Fatalf("transport_state = %q, want blank", got.TransportState)
+	}
+}
+
 func TestBuildTransportFactsDetectsCodexSkillChooserDialog(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 
@@ -407,5 +444,22 @@ func TestTransportTargetFactsSummaryFormatsBufferedQueuedAndDialog(t *testing.T)
 		if !strings.Contains(got, want) {
 			t.Fatalf("summary missing %q: %s", want, got)
 		}
+	}
+}
+
+func TestTransportTargetFactsSummaryFormatsBlank(t *testing.T) {
+	runDir := t.TempDir()
+	if err := SaveTransportFacts(runDir, &TransportFacts{
+		Version: 1,
+		Targets: map[string]TransportTargetFacts{
+			"session-1": {
+				TransportState: "blank",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveTransportFacts: %v", err)
+	}
+	if got := transportTargetFactsSummary(runDir, "session-1"); got != "transport=blank" {
+		t.Fatalf("summary = %q, want transport=blank", got)
 	}
 }

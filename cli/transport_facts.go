@@ -165,6 +165,10 @@ func inspectTransportTarget(target, logicalTarget, window, engine string) Transp
 	if err != nil {
 		return facts
 	}
+	if strings.TrimSpace(out) == "" {
+		facts.TransportState = string(TUIStateBlank)
+		return facts
+	}
 	recent := tailRecentNonEmptyLines(out, 8)
 	facts.PromptVisible = targetPromptVisible(recent)
 	facts.WorkingVisible = targetWorkingVisible(facts.Engine, recent)

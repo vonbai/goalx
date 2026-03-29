@@ -12,6 +12,7 @@ const (
 	TUIStateCompacting     TUITransportState = "compacting"
 	TUIStateInterrupted    TUITransportState = "interrupted"
 	TUIStateProviderDialog TUITransportState = "provider_dialog"
+	TUIStateBlank          TUITransportState = "blank"
 	TUIStateUnknown        TUITransportState = "unknown"
 )
 
@@ -24,6 +25,7 @@ func normalizeTUITransportState(raw string) TUITransportState {
 		TUIStateCompacting,
 		TUIStateInterrupted,
 		TUIStateProviderDialog,
+		TUIStateBlank,
 		TUIStateUnknown:
 		return TUITransportState(strings.TrimSpace(raw))
 	default:

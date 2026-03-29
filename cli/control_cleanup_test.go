@@ -40,6 +40,55 @@ func TestFinalizeControlRunKillsLeasedProcesses(t *testing.T) {
 	}
 }
 
+func TestFinalizeControlRunRecordsControlSurfaceFinalizeOp(t *testing.T) {
+	runDir := t.TempDir()
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:        1,
+		LifecycleState: "active",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
+		Version: 1,
+		Items: []ControlReminder{
+			{ReminderID: "rem-1", DedupeKey: "master-wake", Reason: "control-cycle", Target: "gx-demo:master"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlReminders: %v", err)
+	}
+	if err := SaveControlDeliveries(ControlDeliveriesPath(runDir), &ControlDeliveries{
+		Version: 1,
+		Items: []ControlDelivery{
+			{DeliveryID: "del-1", DedupeKey: "master-wake", Status: "failed", Target: "gx-demo:master"},
+			{DeliveryID: "del-2", DedupeKey: "tell:1", Status: "sent", Target: "gx-demo:master"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlDeliveries: %v", err)
+	}
+
+	if err := FinalizeControlRun(runDir, "stopped"); err != nil {
+		t.Fatalf("FinalizeControlRun: %v", err)
+	}
+
+	ops, err := loadControlOps(ControlOpsPath(runDir))
+	if err != nil {
+		t.Fatalf("loadControlOps: %v", err)
+	}
+	if len(ops) == 0 || ops[len(ops)-1].Kind != "control.finalize_surfaces" {
+		t.Fatalf("finalize should record control-surface finalize op, ops=%+v", ops)
+	}
+	cursor, err := LoadControlOpsCursor(ControlOpsCursorPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlOpsCursor: %v", err)
+	}
+	if cursor.LastAppliedID != ops[len(ops)-1].ID {
+		t.Fatalf("control ops cursor = %d, want %d", cursor.LastAppliedID, ops[len(ops)-1].ID)
+	}
+}
+
 func TestStopKillsLeasedProcessesBeforeTmuxSession(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

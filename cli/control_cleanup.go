@@ -42,7 +42,7 @@ func repairCompletedRunFinalization(rc *RunContext) error {
 			state.StoppedAt = now
 		}
 		state.UpdatedAt = now
-		if err := SaveRunRuntimeState(RunRuntimeStatePath(rc.RunDir), state); err != nil {
+		if err := UpsertRunRuntimeState(rc.RunDir, *state); err != nil {
 			return err
 		}
 	}
@@ -70,50 +70,16 @@ func finalizeControlRun(runDir, lifecycle string, opts finalizeControlRunOptions
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-
-	runState, err := LoadControlRunState(ControlRunStatePath(runDir))
-	if err != nil {
-		return err
-	}
-	runState.LifecycleState = lifecycle
-	runState.UpdatedAt = now
-	if err := SaveControlRunState(ControlRunStatePath(runDir), runState); err != nil {
-		return err
-	}
-
 	if err := expireControlLeases(runDir, opts.skipExpireHolders); err != nil {
 		return err
 	}
 	if err := finalizeSessionRuntimeStates(runDir, lifecycle, now); err != nil {
 		return err
 	}
-
-	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
-	if err != nil {
-		return err
-	}
-	for i := range reminders.Items {
-		reminders.Items[i].Suppressed = true
-		reminders.Items[i].ResolvedAt = now
-		reminders.Items[i].CooldownUntil = now
-	}
-	if err := SaveControlReminders(ControlRemindersPath(runDir), reminders); err != nil {
-		return err
-	}
-
-	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
-	if err != nil {
-		return err
-	}
-	for i := range deliveries.Items {
-		if deliveries.Items[i].Status != "sent" {
-			deliveries.Items[i].Status = "cancelled"
-		}
-		if deliveries.Items[i].Status == "sent" && deliveries.Items[i].AcceptedAt == "" {
-			deliveries.Items[i].AcceptedAt = now
-		}
-	}
-	return SaveControlDeliveries(ControlDeliveriesPath(runDir), deliveries)
+	return submitAndApplyControlOp(runDir, controlOpFinalizeControlSurfaces, controlFinalizeControlSurfacesBody{
+		Lifecycle: lifecycle,
+		UpdatedAt: now,
+	})
 }
 
 func killAllLeasedProcesses(runDir string) {
@@ -141,29 +107,10 @@ func killLeasedProcesses(runDir string, skipHolders map[string]bool) {
 }
 
 func finalizeSessionRuntimeStates(runDir, lifecycle, now string) error {
-	state, err := EnsureSessionsRuntimeState(runDir)
-	if err != nil {
-		return err
-	}
-	if state.Sessions == nil {
-		state.Sessions = map[string]SessionRuntimeState{}
-	}
-	if len(state.Sessions) == 0 {
-		indexes, err := existingSessionIndexes(runDir)
-		if err != nil {
-			return err
-		}
-		for _, num := range indexes {
-			name := SessionName(num)
-			state.Sessions[name] = SessionRuntimeState{Name: name}
-		}
-	}
-	for name, session := range state.Sessions {
-		session.State = lifecycle
-		session.UpdatedAt = now
-		state.Sessions[name] = session
-	}
-	return SaveSessionsRuntimeState(SessionsRuntimeStatePath(runDir), state)
+	return submitAndApplyControlOp(runDir, controlOpSessionsRuntimeFinalize, controlSessionsRuntimeFinalizeBody{
+		Lifecycle: lifecycle,
+		UpdatedAt: now,
+	})
 }
 
 func expireAllControlLeases(runDir string) error {
@@ -216,7 +163,7 @@ func finalizeCompletedRunFromSidecar(projectRoot, runName, runDir, tmuxSession s
 		runState.Active = false
 		runState.Phase = "complete"
 		runState.UpdatedAt = now
-		if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), runState); err != nil {
+		if err := UpsertRunRuntimeState(runDir, *runState); err != nil {
 			return err
 		}
 	}

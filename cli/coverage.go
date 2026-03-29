@@ -127,16 +127,16 @@ func coverageSessionRoster(runDir string, sessionState *SessionsRuntimeState) ma
 }
 
 func coverageSessionLifecycleState(sessionName string, sessionState *SessionsRuntimeState, coord *CoordinationState) string {
-	if coord != nil && coord.Sessions != nil {
-		if state := strings.TrimSpace(coord.Sessions[sessionName].State); state != "" {
-			return state
-		}
-	}
 	if sessionState != nil {
 		if sess, ok := sessionState.Sessions[sessionName]; ok {
 			if state := strings.TrimSpace(sess.State); state != "" {
 				return state
 			}
+		}
+	}
+	if coord != nil && coord.Sessions != nil {
+		if state := strings.TrimSpace(coord.Sessions[sessionName].State); state != "" {
+			return state
 		}
 	}
 	return ""
@@ -186,18 +186,11 @@ func attentionStateForOwner(attention map[string]TargetAttentionFacts, owner str
 			return facts.AttentionState
 		}
 	}
-	coordState := ""
-	if coord != nil && coord.Sessions != nil {
-		coordState = strings.TrimSpace(coord.Sessions[owner].State)
-	}
-	if coordState == "parked" || coordState == "kept" {
-		return ""
-	}
 	runtimeState := coverageSessionLifecycleState(owner, sessionState, coord)
 	switch {
-	case (coordState == "active" || coordState == "progress") && (runtimeState == "parked" || runtimeState == "done" || runtimeState == "blocked"):
+	case runtimeState == "parked" || runtimeState == "done" || runtimeState == "blocked" || runtimeState == "stopped" || runtimeState == "completed":
 		return TargetAttentionOwnershipRisky
-	case (coordState == "active" || coordState == "progress") && runtimeState == "idle":
+	case runtimeState == "idle":
 		return TargetAttentionActiveIdle
 	}
 	return ""

@@ -301,6 +301,9 @@ func bootstrapStartDurables(projectRoot string, state *startRunState, cfg *goalx
 	if err := EnsureMasterControl(state.runDir); err != nil {
 		return "", "", nil, 0, "", fmt.Errorf("init master control: %w", err)
 	}
+	if _, err := EnsureDimensionsState(state.runDir); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("init dimensions state: %w", err)
+	}
 	if err := GenerateAdapter(cfg.Master.Engine, state.runWorktree, MasterInboxPath(state.runDir), MasterCursorPath(state.runDir)); err != nil {
 		return "", "", nil, 0, "", fmt.Errorf("generate master adapter: %w", err)
 	}

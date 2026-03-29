@@ -276,7 +276,7 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 	if len(snapshot.Sessions) == 0 {
 		snapshot.Sessions = nil
 	}
-	attention, err := buildTargetAttentionFacts(runDir, snapshot, sessionState, coordinationState, liveness)
+	attention, err := buildTargetAttentionFacts(runDir, snapshot, sessionState, liveness)
 	if err != nil {
 		return nil, err
 	}

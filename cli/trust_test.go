@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -44,6 +46,58 @@ func TestEnsureEngineTrustedCodexExactPathIdempotent(t *testing.T) {
 	}
 	if !strings.Contains(text, `trust_level = "trusted"`) {
 		t.Fatalf("trust level missing:\n%s", text)
+	}
+}
+
+func TestEnsureEngineTrustedCodexPreservesConcurrentEntries(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfgDir := filepath.Join(home, ".codex")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir codex dir: %v", err)
+	}
+	cfgPath := filepath.Join(cfgDir, "config.toml")
+	initial := "model = \"gpt-5.4\"\n"
+	if err := os.WriteFile(cfgPath, []byte(initial), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	worktrees := make([]string, 0, 12)
+	root := t.TempDir()
+	for i := 0; i < 12; i++ {
+		worktrees = append(worktrees, filepath.Join(root, "wt-"+strconv.Itoa(i)))
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for _, worktree := range worktrees {
+		worktree := worktree
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if err := EnsureEngineTrusted("codex", worktree); err != nil {
+				t.Errorf("EnsureEngineTrusted(%s): %v", worktree, err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	out, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	text := string(out)
+	if !strings.Contains(text, initial) {
+		t.Fatalf("original config lost:\n%s", text)
+	}
+	for _, worktree := range worktrees {
+		header := `[projects."` + escapeTOMLString(worktree) + `"]`
+		if strings.Count(text, header) != 1 {
+			t.Fatalf("expected one trust section for %s, got:\n%s", worktree, text)
+		}
 	}
 }
 

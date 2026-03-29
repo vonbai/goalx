@@ -101,6 +101,66 @@ func TestRunSidecarTickRenewsLease(t *testing.T) {
 	}
 }
 
+func TestRunSidecarTickAppliesPendingControlOpsBeforeMaintenance(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "base", "base commit")
+	cfg := &goalx.Config{
+		Name:      "sidecar-run",
+		Mode:      goalx.ModeDevelop,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	runDir := writeRunSpecFixture(t, repo, cfg)
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if _, err := appendControlOp(runDir, controlOpReminderQueue, controlReminderQueueBody{
+		DedupeKey: "pending-op",
+		Reason:    "queued-before-sidecar",
+		Target:    "gx-demo:master",
+		Engine:    "codex",
+	}); err != nil {
+		t.Fatalf("appendControlOp: %v", err)
+	}
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nif [ \"$1\" = \"has-session\" ]; then exit 1; fi\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runSidecarTick: %v", err)
+	}
+
+	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlReminders: %v", err)
+	}
+	found := false
+	for _, item := range reminders.Items {
+		if item.DedupeKey == "pending-op" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("pending control op not applied into reminders: %+v", reminders.Items)
+	}
+}
+
 func TestRunSidecarTickWritesEvolveFactsOnlyForEvolveRun(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

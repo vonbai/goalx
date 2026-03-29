@@ -1320,6 +1320,41 @@ func TestStatusShowsActiveIdleSessionAttention(t *testing.T) {
 	}
 }
 
+func TestStatusPrefersRuntimeStateOverStaleCoordinationState(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	seedGuidanceSessionFixture(t, runDir, cfg)
+
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version: 1,
+		Sessions: map[string]CoordinationSession{
+			"session-1": {State: "parked", Scope: "stale parked scope"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:       "session-1",
+		State:      "active",
+		Mode:       string(goalx.ModeDevelop),
+		OwnerScope: "live active scope",
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	if strings.Contains(out, "parked: stale parked scope") {
+		t.Fatalf("status should ignore stale coordination lifecycle summary:\n%s", out)
+	}
+	if !strings.Contains(out, "session-1  1           active") {
+		t.Fatalf("status output should keep runtime-owned active lifecycle:\n%s", out)
+	}
+}
+
 func TestStatusShowsSharedRunRootWorktreeSummary(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 

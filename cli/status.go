@@ -66,6 +66,14 @@ func Status(projectRoot string, args []string) error {
 		if sessionFilter != "" && sName != sessionFilter {
 			continue
 		}
+		coordSess := CoordinationSession{}
+		if coord != nil && coord.Sessions != nil {
+			coordSess = coord.Sessions[sName]
+		}
+		runtimeKnown := false
+		if sessionState != nil && sessionState.Sessions != nil {
+			_, runtimeKnown = sessionState.Sessions[sName]
+		}
 		jPath := JournalPath(rc.RunDir, sName)
 		entries, _ := goalx.LoadJournal(jPath)
 
@@ -87,31 +95,28 @@ func Status(projectRoot string, args []string) error {
 		summary := goalx.Summary(entries)
 		if sess.LastRound > 0 {
 			lastRound = fmt.Sprintf("%d", sess.LastRound)
+		} else if !runtimeKnown && coordSess.LastRound > 0 {
+			lastRound = fmt.Sprintf("%d", coordSess.LastRound)
 		}
-		if coord != nil {
-			if sess, ok := coord.Sessions[sName]; ok {
-				if sess.LastRound > 0 {
-					lastRound = fmt.Sprintf("%d", sess.LastRound)
-				}
-				if status == "pending" && sess.State != "" {
-					status = sess.State
-				}
-				switch sess.State {
-				case "parked":
-					if sess.Scope != "" {
-						summary = "parked: " + sess.Scope
-					} else {
-						summary = "parked"
-					}
-				case "blocked":
-					if sess.BlockedBy != "" {
-						summary = "blocked: " + sess.BlockedBy
-					}
-				case "active":
-					if summary == "no entries" && sess.Scope != "" {
-						summary = "active: " + sess.Scope
-					}
-				}
+		if !runtimeKnown && status == "pending" && coordSess.State != "" {
+			status = coordSess.State
+		}
+		scope := scopeOrFallback(sess.OwnerScope, coordSess.Scope)
+		blockedBy := scopeOrFallback(sess.BlockedBy, coordSess.BlockedBy)
+		switch status {
+		case "parked":
+			if scope != "" {
+				summary = "parked: " + scope
+			} else {
+				summary = "parked"
+			}
+		case "blocked":
+			if blockedBy != "" {
+				summary = "blocked: " + blockedBy
+			}
+		case "active":
+			if summary == "no entries" && scope != "" {
+				summary = "active: " + scope
 			}
 		}
 		inboxState := readControlInboxState(ControlInboxPath(rc.RunDir, sName), SessionCursorPath(rc.RunDir, sName))

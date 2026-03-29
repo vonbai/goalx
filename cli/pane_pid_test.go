@@ -410,6 +410,10 @@ case "$1" in
     fi
     exit 0
     ;;
+  capture-pane)
+    printf '❯ ready\n'
+    exit 0
+    ;;
   kill-session)
     if [ -n "${TMUX_EXPECT_DEAD_PID:-}" ] && kill -0 "$TMUX_EXPECT_DEAD_PID" 2>/dev/null; then
       exit 23

@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	goalx "github.com/vonbai/goalx"
@@ -131,5 +133,44 @@ func TestRefreshSessionRuntimeProjectionPreservesActiveStateWhenJournalHasNotAdv
 	}
 	if got := sess.OwnerScope; got != "ui slice" {
 		t.Fatalf("session-1 owner_scope = %q, want ui slice", got)
+	}
+}
+
+func TestUpsertSessionRuntimeStatePreservesConcurrentEntries(t *testing.T) {
+	runDir := t.TempDir()
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		name := fmt.Sprintf("session-%d", i+1)
+		wg.Add(1)
+		go func(sessionName string) {
+			defer wg.Done()
+			<-start
+			if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+				Name:       sessionName,
+				State:      "active",
+				Mode:       string(goalx.ModeDevelop),
+				OwnerScope: "concurrent slice",
+			}); err != nil {
+				t.Errorf("UpsertSessionRuntimeState(%s): %v", sessionName, err)
+			}
+		}(name)
+	}
+	close(start)
+	wg.Wait()
+
+	state, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadSessionsRuntimeState: %v", err)
+	}
+	if state == nil {
+		t.Fatal("sessions runtime state missing")
+	}
+	for i := 0; i < 8; i++ {
+		name := fmt.Sprintf("session-%d", i+1)
+		if _, ok := state.Sessions[name]; !ok {
+			t.Fatalf("missing %s in %#v", name, state.Sessions)
+		}
 	}
 }

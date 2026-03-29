@@ -58,7 +58,18 @@ func resolveExplicitRun(projectRoot, selector string) (*RunContext, error) {
 			return nil, err
 		}
 	}
-	return resolveLocalRun(projectRoot, selector)
+	rc, err := resolveLocalRun(projectRoot, selector)
+	if err == nil || !isNotFoundRunError(err) {
+		return rc, err
+	}
+	hint, hintErr := crossProjectRunHint(projectRoot, selector)
+	if hintErr != nil {
+		return nil, hintErr
+	}
+	if hint != "" {
+		return nil, fmt.Errorf("%w; %s", errRunNotFound, hint)
+	}
+	return nil, err
 }
 
 func resolveRunFromGlobalRegistry(selector string) (*RunContext, error) {
@@ -122,4 +133,19 @@ func joinRunCandidates(candidates []string) string {
 		out += ", " + candidates[i]
 	}
 	return out
+}
+
+func crossProjectRunHint(projectRoot, selector string) (string, error) {
+	matches, err := LookupGlobalRuns(selector)
+	if err != nil {
+		return "", err
+	}
+	if len(matches) == 0 {
+		return "", nil
+	}
+	candidates := make([]string, 0, len(matches))
+	for _, match := range matches {
+		candidates = append(candidates, match.ProjectID+"/"+match.Name)
+	}
+	return fmt.Sprintf("run %q not found in current project %q; use --run <project-id>/<run> (%s)", selector, goalx.ProjectID(projectRoot), joinRunCandidates(candidates)), nil
 }

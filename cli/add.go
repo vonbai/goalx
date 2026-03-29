@@ -306,6 +306,9 @@ func Add(projectRoot string, args []string) (err error) {
 	if err := EnsureEngineTrusted(engine, workdir); err != nil {
 		return fmt.Errorf("trust bootstrap: %w", err)
 	}
+	if _, err := EnsureDimensionsState(rc.RunDir); err != nil {
+		return fmt.Errorf("init dimensions state: %w", err)
+	}
 	sessionDataList, err := buildSessionDataList(rc.RunDir, &renderCfg, engines, dimensionsCatalog)
 	if err != nil {
 		return fmt.Errorf("build session roster: %w", err)
@@ -358,23 +361,10 @@ func Add(projectRoot string, args []string) (err error) {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
 	cleanup.Add(func() error { return cleanupSessionWindow(rc.TmuxSession, windowName) })
-
-	if coord, err := EnsureCoordinationState(rc.RunDir, rc.Config.Objective); err == nil {
-		now := time.Now().UTC().Format(time.RFC3339)
-		coord.Sessions[sName] = CoordinationSession{
-			State:     "active",
-			Scope:     hint,
-			UpdatedAt: now,
-		}
-		coord.Version++
-		coord.UpdatedAt = now
-		if err := SaveCoordinationState(CoordinationPath(rc.RunDir), coord); err != nil {
-			return fmt.Errorf("update coordination state: %w", err)
-		}
-		cleanup.Add(func() error { return cleanupCoordinationSession(rc.RunDir, sName) })
-	} else {
-		return fmt.Errorf("load coordination state: %w", err)
+	if err := waitForSessionLaunchReady(rc.TmuxSession, sName, windowName, sessionIdentity.Engine); err != nil {
+		return err
 	}
+
 	if err := UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
 		Name:         sName,
 		State:        "active",

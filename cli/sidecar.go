@@ -179,6 +179,9 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 	if err := RenewControlLease(runDir, "sidecar", runID, epoch, ttl, "process", pid); err != nil {
 		return err
 	}
+	if err := ApplyPendingControlOps(runDir); err != nil {
+		return err
+	}
 	_, changed, err := RefreshIdentityFence(runDir, meta)
 	if err != nil {
 		return err
@@ -350,13 +353,9 @@ func reconcileProviderDialogAlerts(runDir, tmuxSession, masterEngine string, con
 	if mapsEqual(controlState.ProviderDialogAlerts, current) {
 		return nil
 	}
-	if len(current) == 0 {
-		controlState.ProviderDialogAlerts = nil
-	} else {
-		controlState.ProviderDialogAlerts = current
-	}
-	controlState.UpdatedAt = ""
-	return SaveControlRunState(ControlRunStatePath(runDir), controlState)
+	return submitAndApplyControlOp(runDir, controlOpRunStateProviderDialogAlerts, controlRunStateProviderDialogAlertsBody{
+		Alerts: current,
+	})
 }
 
 func providerDialogAlertFingerprint(facts TransportTargetFacts) string {
@@ -568,7 +567,7 @@ func processUrgentTransportTargets(runDir, runName, tmuxSession string, cfg *goa
 		}
 		facts := loadTransportTargetFacts(runDir, target.name)
 		switch normalizeTUITransportState(facts.TransportState) {
-		case TUIStateProviderDialog:
+		case TUIStateProviderDialog, TUIStateBlank:
 			continue
 		case TUIStateInterrupted:
 			outcome, err := EscalateInterruptTransport(target.tmux, target.engine, "urgent_unread")

@@ -39,15 +39,11 @@ func BuildTargetAttentionFacts(runDir string, snapshot *ActivitySnapshot) (map[s
 	if err != nil {
 		return nil, err
 	}
-	coordinationState, err := LoadCoordinationState(CoordinationPath(runDir))
-	if err != nil {
-		return nil, err
-	}
 	liveness, err := LoadLivenessState(LivenessPath(runDir))
 	if err != nil {
 		return nil, err
 	}
-	return buildTargetAttentionFacts(runDir, snapshot, sessionState, coordinationState, liveness)
+	return buildTargetAttentionFacts(runDir, snapshot, sessionState, liveness)
 }
 
 func loadTargetAttentionFacts(runDir string) (map[string]TargetAttentionFacts, error) {
@@ -62,7 +58,7 @@ func loadTargetAttentionFacts(runDir string) (map[string]TargetAttentionFacts, e
 	return attention, nil
 }
 
-func buildTargetAttentionFacts(runDir string, snapshot *ActivitySnapshot, sessionState *SessionsRuntimeState, coordinationState *CoordinationState, liveness *LivenessState) (map[string]TargetAttentionFacts, error) {
+func buildTargetAttentionFacts(runDir string, snapshot *ActivitySnapshot, sessionState *SessionsRuntimeState, liveness *LivenessState) (map[string]TargetAttentionFacts, error) {
 	now := time.Now().UTC()
 	if snapshot != nil {
 		if checkedAt, err := time.Parse(time.RFC3339, strings.TrimSpace(snapshot.CheckedAt)); err == nil {
@@ -80,7 +76,7 @@ func buildTargetAttentionFacts(runDir string, snapshot *ActivitySnapshot, sessio
 	}
 	for _, idx := range indexes {
 		name := SessionName(idx)
-		facts[name] = buildSessionAttentionFacts(runDir, name, snapshot, sessionState, coordinationState, liveness, transportFacts, now)
+		facts[name] = buildSessionAttentionFacts(runDir, name, snapshot, sessionState, liveness, transportFacts, now)
 	}
 	if len(facts) == 0 {
 		return nil, nil
@@ -108,14 +104,13 @@ func buildMasterAttentionFacts(runDir string, snapshot *ActivitySnapshot, sessio
 	if liveness != nil {
 		facts.JournalStaleMinutes = liveness.Master.JournalStaleMinutes
 	}
-	facts.AttentionState = deriveTargetAttentionState(facts, "")
+	facts.AttentionState = deriveTargetAttentionState(facts)
 	return facts
 }
 
-func buildSessionAttentionFacts(runDir, sessionName string, snapshot *ActivitySnapshot, sessionState *SessionsRuntimeState, coordinationState *CoordinationState, liveness *LivenessState, transportFacts *TransportFacts, now time.Time) TargetAttentionFacts {
+func buildSessionAttentionFacts(runDir, sessionName string, snapshot *ActivitySnapshot, sessionState *SessionsRuntimeState, liveness *LivenessState, transportFacts *TransportFacts, now time.Time) TargetAttentionFacts {
 	inbox := readControlInboxState(ControlInboxPath(runDir, sessionName), SessionCursorPath(runDir, sessionName))
 	transport := latestAttentionTransportFacts(transportFacts, sessionName)
-	coordinationSessionState := attentionCoordinationState(coordinationState, sessionName)
 	facts := TargetAttentionFacts{
 		Target:                sessionName,
 		InboxLastID:           inbox.LastID,
@@ -137,7 +132,7 @@ func buildSessionAttentionFacts(runDir, sessionName string, snapshot *ActivitySn
 			facts.JournalStaleMinutes = live.JournalStaleMinutes
 		}
 	}
-	facts.AttentionState = deriveTargetAttentionState(facts, coordinationSessionState)
+	facts.AttentionState = deriveTargetAttentionState(facts)
 	return facts
 }
 
@@ -160,13 +155,6 @@ func attentionRuntimeState(sessionState *SessionsRuntimeState, target string) st
 		return ""
 	}
 	return strings.TrimSpace(sessionState.Sessions[target].State)
-}
-
-func attentionCoordinationState(coordinationState *CoordinationState, target string) string {
-	if coordinationState == nil || coordinationState.Sessions == nil {
-		return ""
-	}
-	return strings.TrimSpace(coordinationState.Sessions[target].State)
 }
 
 func attentionLastOutputChangeAt(snapshot *ActivitySnapshot, target string) string {
@@ -215,13 +203,10 @@ func transportAcceptExpired(ts string, now time.Time) bool {
 	return strings.TrimSpace(ts) != ""
 }
 
-func deriveTargetAttentionState(facts TargetAttentionFacts, coordinationState string) string {
+func deriveTargetAttentionState(facts TargetAttentionFacts) string {
 	presence := strings.TrimSpace(facts.PresenceState)
 	runtimeState := strings.TrimSpace(facts.RuntimeState)
-	coordState := strings.TrimSpace(coordinationState)
 	transportState := normalizeTUITransportState(facts.TransportState)
-	activeOwner := coordState == "active" || coordState == "progress"
-	inactiveSession := coordState == "parked" || coordState == "kept"
 	staleJournal := facts.JournalStaleMinutes >= targetAttentionStaleMinutes
 	staleOutput := facts.OutputStaleMinutes >= targetAttentionStaleMinutes
 	staleWorktree := facts.WorktreeStaleMinutes >= targetAttentionStaleMinutes
@@ -231,23 +216,21 @@ func deriveTargetAttentionState(facts TargetAttentionFacts, coordinationState st
 	freshWorktree := hasWorktreeSignal && !staleWorktree
 
 	switch {
-	case inactiveSession:
-		return TargetAttentionHealthy
 	case presence == TargetPresenceParked:
 		return TargetAttentionHealthy
-	case activeOwner && presence != "" && presence != TargetPresencePresent && presence != TargetPresenceUnknown:
-		return TargetAttentionOwnershipRisky
-	case activeOwner && (runtimeState == "parked" || runtimeState == "done" || runtimeState == "blocked"):
+	case runtimeState == "parked" || runtimeState == "kept":
+		return TargetAttentionHealthy
+	case (runtimeState == "active" || runtimeState == "progress" || runtimeState == "working" || runtimeState == "idle") && presence != "" && presence != TargetPresencePresent && presence != TargetPresenceUnknown:
 		return TargetAttentionOwnershipRisky
 	case facts.Unread > 0 && facts.CursorLag > 0:
-		if facts.DeliveryGraceExpired || facts.JournalStaleMinutes >= targetAttentionStaleMinutes || transportState == TUIStateInterrupted || transportState == TUIStateProviderDialog || transportState == TUIStateBufferedInput {
+		if facts.DeliveryGraceExpired || facts.JournalStaleMinutes >= targetAttentionStaleMinutes || transportState == TUIStateInterrupted || transportState == TUIStateProviderDialog || transportState == TUIStateBlank || transportState == TUIStateBufferedInput {
 			return TargetAttentionTransportBlocked
 		}
 		return TargetAttentionNeedsAttention
-	case activeOwner && runtimeState == "idle" && !isAcceptedTUITransportState(string(transportState)) && facts.Unread == 0 && facts.CursorLag == 0 && presence == TargetPresencePresent:
+	case runtimeState == "idle" && !isAcceptedTUITransportState(string(transportState)) && facts.Unread == 0 && facts.CursorLag == 0 && presence == TargetPresencePresent:
 		return TargetAttentionActiveIdle
 	case staleJournal || staleOutput || staleWorktree:
-		if runtimeState == "" || runtimeState == "active" || runtimeState == "progress" || runtimeState == "working" {
+		if runtimeState == "" || runtimeState == "active" || runtimeState == "progress" || runtimeState == "working" || runtimeState == "idle" {
 			if freshOutput || freshWorktree {
 				return TargetAttentionHealthy
 			}

@@ -45,30 +45,17 @@ func Park(projectRoot string, args []string) error {
 		return fmt.Errorf("load session identity: %w", err)
 	}
 
-	coord, err := EnsureCoordinationState(rc.RunDir, rc.Config.Objective)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	digest := inferSessionCoordination(JournalPath(rc.RunDir, sessionName))
-	current := coord.Sessions[sessionName]
-	if digest.Scope == "" {
-		digest.Scope = current.Scope
-	}
-	if digest.BlockedBy == "" {
-		digest.BlockedBy = current.BlockedBy
-	}
-	if digest.LastRound == 0 {
-		digest.LastRound = current.LastRound
-	}
-	digest.State = "parked"
-	digest.UpdatedAt = now
-	coord.Sessions[sessionName] = digest
-	coord.Version++
-	coord.UpdatedAt = now
 	sessionState, err := EnsureSessionsRuntimeState(rc.RunDir)
 	if err != nil {
 		return fmt.Errorf("load session runtime state: %w", err)
+	}
+	current := sessionState.Sessions[sessionName]
+	digest := inferSessionCoordination(JournalPath(rc.RunDir, sessionName))
+	scope := scopeOrFallback(digest.Scope, current.OwnerScope)
+	blockedBy := scopeOrFallback(digest.BlockedBy, current.BlockedBy)
+	lastRound := digest.LastRound
+	if lastRound == 0 {
+		lastRound = current.LastRound
 	}
 	worktreePath := resolvedSessionWorktreePath(rc.RunDir, rc.Config.Name, sessionName, sessionState)
 	snapshot, err := SnapshotSessionRuntime(rc.RunDir, sessionName, worktreePath)
@@ -78,10 +65,10 @@ func Park(projectRoot string, args []string) error {
 	snapshot.State = "parked"
 	snapshot.Mode = sessionIdentity.Mode
 	snapshot.Branch = resolvedSessionBranch(rc.RunDir, rc.Config.Name, sessionName, sessionState)
-	snapshot.OwnerScope = digest.Scope
-	snapshot.BlockedBy = digest.BlockedBy
-	if err := SaveCoordinationState(CoordinationPath(rc.RunDir), coord); err != nil {
-		return err
+	snapshot.OwnerScope = scope
+	snapshot.BlockedBy = blockedBy
+	if lastRound > 0 {
+		snapshot.LastRound = lastRound
 	}
 
 	if SessionExists(rc.TmuxSession) {
@@ -191,11 +178,9 @@ func Resume(projectRoot string, args []string) error {
 		return fmt.Errorf("resolve engine: %w", err)
 	}
 	engineCmd := spec.Command
-	coord, err := EnsureCoordinationState(rc.RunDir, rc.Config.Objective)
-	if err != nil {
-		return err
+	if _, err := EnsureDimensionsState(rc.RunDir); err != nil {
+		return fmt.Errorf("init dimensions state: %w", err)
 	}
-	current := coord.Sessions[sessionName]
 
 	sessionDataList, err := buildSessionDataList(rc.RunDir, rc.Config, engines, dimensionsCatalog)
 	if err != nil {
@@ -255,27 +240,20 @@ func Resume(projectRoot string, args []string) error {
 	if err := NewWindowWithCommand(rc.TmuxSession, windowName, workdir, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	current.State = "active"
-	current.BlockedBy = ""
-	if current.LastRound == 0 {
-		current.LastRound = inferSessionCoordination(JournalPath(rc.RunDir, sessionName)).LastRound
-	}
-	current.UpdatedAt = now
-	coord.Sessions[sessionName] = current
-	coord.Version++
-	coord.UpdatedAt = now
-	if err := SaveCoordinationState(CoordinationPath(rc.RunDir), coord); err != nil {
+	if err := waitForSessionLaunchReady(rc.TmuxSession, sessionName, windowName, sessionIdentity.Engine); err != nil {
+		_ = cleanupSessionWindow(rc.TmuxSession, windowName)
 		return err
 	}
+
+	current := sessionState.Sessions[sessionName]
+	ownerScope := scopeOrFallback(current.OwnerScope, inferSessionCoordination(JournalPath(rc.RunDir, sessionName)).Scope, sessionName)
 	if err := UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
 		Name:         sessionName,
 		State:        "active",
 		Mode:         sessionIdentity.Mode,
 		Branch:       resolvedSessionBranch(rc.RunDir, rc.Config.Name, sessionName, sessionState),
 		WorktreePath: wtPath,
-		OwnerScope:   current.Scope,
+		OwnerScope:   ownerScope,
 	}); err != nil {
 		return fmt.Errorf("update session runtime state: %w", err)
 	}
@@ -378,23 +356,13 @@ func Replace(projectRoot string, args []string) (err error) {
 		return fmt.Errorf("load session identity: %w", err)
 	}
 
-	coord, err := EnsureCoordinationState(rc.RunDir, rc.Config.Objective)
-	if err != nil {
-		return err
-	}
-	current := coord.Sessions[oldSessionName]
 	digest := inferSessionCoordination(JournalPath(rc.RunDir, oldSessionName))
-	scope := digest.Scope
-	if scope == "" {
-		scope = current.Scope
-	}
-	if scope == "" {
-		scope = oldSessionName
-	}
 	sessionState, err := EnsureSessionsRuntimeState(rc.RunDir)
 	if err != nil {
 		return fmt.Errorf("load session runtime state: %w", err)
 	}
+	current := sessionState.Sessions[oldSessionName]
+	scope := scopeOrFallback(digest.Scope, current.OwnerScope, oldSessionName)
 	oldWorktreePath := resolvedSessionWorktreePath(rc.RunDir, rc.Config.Name, oldSessionName, sessionState)
 	oldBranch := resolvedSessionBranch(rc.RunDir, rc.Config.Name, oldSessionName, sessionState)
 	workdir := sessionWorkdir(rc.RunDir, rc.Config.Name, oldSessionName, sessionState)
@@ -581,6 +549,9 @@ func Replace(projectRoot string, args []string) (err error) {
 	if err := EnsureEngineTrusted(sessionIdentity.Engine, replacementWorkdir); err != nil {
 		return fmt.Errorf("trust bootstrap: %w", err)
 	}
+	if _, err := EnsureDimensionsState(rc.RunDir); err != nil {
+		return fmt.Errorf("init dimensions state: %w", err)
+	}
 
 	dimensionsCatalog, err := loadDimensionCatalog(rc.ProjectRoot)
 	if err != nil {
@@ -644,23 +615,10 @@ func Replace(projectRoot string, args []string) (err error) {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
 	cleanup.Add(func() error { return cleanupSessionWindow(rc.TmuxSession, windowName) })
+	if err := waitForSessionLaunchReady(rc.TmuxSession, newSessionName, windowName, sessionIdentity.Engine); err != nil {
+		return err
+	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	coord, err = EnsureCoordinationState(rc.RunDir, rc.Config.Objective)
-	if err != nil {
-		return err
-	}
-	coord.Sessions[newSessionName] = CoordinationSession{
-		State:     "active",
-		Scope:     scope,
-		UpdatedAt: now,
-	}
-	coord.Version++
-	coord.UpdatedAt = now
-	if err := SaveCoordinationState(CoordinationPath(rc.RunDir), coord); err != nil {
-		return err
-	}
-	cleanup.Add(func() error { return cleanupCoordinationSession(rc.RunDir, newSessionName) })
 	if err := UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
 		Name:         newSessionName,
 		State:        "active",

@@ -10,81 +10,24 @@ func QueueControlReminderWithEngine(runDir, dedupeKey, reason, target, engine st
 	if err := EnsureControlState(runDir); err != nil {
 		return nil, err
 	}
-	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
-	if err != nil {
+	if err := submitAndApplyControlOp(runDir, controlOpReminderQueue, controlReminderQueueBody{
+		DedupeKey: dedupeKey,
+		Reason:    reason,
+		Target:    target,
+		Engine:    engine,
+	}); err != nil {
 		return nil, err
 	}
-	for i := range reminders.Items {
-		item := &reminders.Items[i]
-		if item.DedupeKey != dedupeKey {
-			continue
-		}
-		changed := false
-		if item.Reason != reason {
-			item.Reason = reason
-			changed = true
-		}
-		if item.Target != target {
-			item.Target = target
-			changed = true
-		}
-		if item.Engine != engine {
-			item.Engine = engine
-			changed = true
-		}
-		if item.Suppressed || item.ResolvedAt != "" {
-			item.Suppressed = false
-			item.ResolvedAt = ""
-			item.CooldownUntil = ""
-			item.Attempts = 0
-			changed = true
-		}
-		if changed {
-			if err := SaveControlReminders(ControlRemindersPath(runDir), reminders); err != nil {
-				return nil, err
-			}
-		}
-		if !item.Suppressed && item.ResolvedAt == "" {
-			copy := *item
-			return &copy, nil
-		}
-	}
-	item := ControlReminder{
-		ReminderID: newControlObjectID("reminder"),
-		DedupeKey:  dedupeKey,
-		Reason:     reason,
-		Target:     target,
-		Engine:     engine,
-	}
-	reminders.Items = append(reminders.Items, item)
-	if err := SaveControlReminders(ControlRemindersPath(runDir), reminders); err != nil {
-		return nil, err
-	}
-	copy := item
-	return &copy, nil
+	return findControlReminderByDedupeKey(runDir, dedupeKey)
 }
 
 func SuppressControlReminder(runDir, dedupeKey string) error {
 	if err := EnsureControlState(runDir); err != nil {
 		return err
 	}
-	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
-	if err != nil {
-		return err
-	}
-	changed := false
-	for i := range reminders.Items {
-		item := &reminders.Items[i]
-		if item.DedupeKey != dedupeKey || item.Suppressed {
-			continue
-		}
-		item.Suppressed = true
-		changed = true
-	}
-	if !changed {
-		return nil
-	}
-	return SaveControlReminders(ControlRemindersPath(runDir), reminders)
+	return submitAndApplyControlOp(runDir, controlOpReminderSuppress, controlReminderSuppressBody{
+		DedupeKey: dedupeKey,
+	})
 }
 
 func DeliverDueControlReminders(runDir, engine string, interval time.Duration, deliver TransportDeliverFunc) error {
@@ -113,14 +56,21 @@ func DeliverDueControlReminders(runDir, engine string, interval time.Duration, d
 			deliveryEngine = engine
 		}
 		delivery, _ := deliverControlNudge(runDir, item.ReminderID, item.DedupeKey, item.Target, deliveryEngine, false, deliver)
-		item.Attempts++
-		item.CooldownUntil = now.Add(controlReminderCooldown(interval, item.Attempts, delivery)).Format(time.RFC3339)
+		nextAttempts := item.Attempts + 1
+		nextCooldown := now.Add(controlReminderCooldown(interval, nextAttempts, delivery)).Format(time.RFC3339)
+		if err := submitAndApplyControlOp(runDir, controlOpReminderRecordAttempt, controlReminderRecordAttemptBody{
+			DedupeKey:     item.DedupeKey,
+			AttemptDelta:  1,
+			CooldownUntil: nextCooldown,
+		}); err != nil {
+			return err
+		}
 		changed = true
 	}
 	if !changed {
 		return nil
 	}
-	return SaveControlReminders(ControlRemindersPath(runDir), reminders)
+	return nil
 }
 
 func controlReminderCooldown(interval time.Duration, attempts int, delivery *ControlDelivery) time.Duration {
@@ -154,4 +104,19 @@ func controlReminderCooldown(interval time.Duration, attempts int, delivery *Con
 		return time.Duration(multiplier) * base
 	}
 	return base
+}
+
+func findControlReminderByDedupeKey(runDir, dedupeKey string) (*ControlReminder, error) {
+	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
+	if err != nil {
+		return nil, err
+	}
+	for i := range reminders.Items {
+		if reminders.Items[i].DedupeKey != dedupeKey {
+			continue
+		}
+		copy := reminders.Items[i]
+		return &copy, nil
+	}
+	return nil, nil
 }

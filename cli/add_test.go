@@ -19,9 +19,7 @@ func TestAddExtendsExplicitSessionsSnapshot(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -92,9 +90,7 @@ func TestAddAttachesDimensionsWithoutReplacingDirection(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -149,6 +145,123 @@ local_validation:
 	}
 }
 
+func TestAddCreatesDimensionsStateEvenWithoutDimensionOverrides(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	writeReadyTmuxScript(t, tmuxPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+roles:
+  develop:
+    engine: codex
+    model: fast
+parallel: 1
+sessions:
+  - hint: first
+    mode: develop
+target:
+  files: ["."]
+local_validation:
+  command: "go test ./..."
+`)
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
+	}
+	if _, err := os.Stat(ControlDimensionsPath(runDir)); !os.IsNotExist(err) {
+		t.Fatalf("dimensions state should start missing, stat err = %v", err)
+	}
+
+	if err := Add(repo, []string{"audit root cause", "--mode", "develop", "--run", runName}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	state, err := LoadDimensionsState(ControlDimensionsPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadDimensionsState: %v", err)
+	}
+	if state == nil {
+		t.Fatal("dimensions state missing after add")
+	}
+	if state.Version != 1 {
+		t.Fatalf("dimensions version = %d, want 1", state.Version)
+	}
+}
+
+func TestAddDoesNotPublishSessionRuntimeStateToCoordination(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	writeReadyTmuxScript(t, tmuxPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+roles:
+  develop:
+    engine: codex
+    model: fast
+parallel: 1
+sessions:
+  - hint: first
+    mode: develop
+target:
+  files: ["."]
+local_validation:
+  command: "go test ./..."
+`)
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
+	}
+	coord, err := EnsureCoordinationState(runDir, "implement audit fixes")
+	if err != nil {
+		t.Fatalf("EnsureCoordinationState: %v", err)
+	}
+	coord.Sessions["session-1"] = CoordinationSession{Scope: "existing semantic scope"}
+	if err := SaveCoordinationState(CoordinationPath(runDir), coord); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+
+	if err := Add(repo, []string{"audit root cause", "--mode", "develop", "--run", runName}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	coord, err = LoadCoordinationState(CoordinationPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadCoordinationState: %v", err)
+	}
+	if _, ok := coord.Sessions["session-2"]; ok {
+		t.Fatalf("coordination should not publish session runtime state: %+v", coord.Sessions["session-2"])
+	}
+	if got := coord.Sessions["session-1"].Scope; got != "existing semantic scope" {
+		t.Fatalf("session-1 scope = %q, want existing semantic scope", got)
+	}
+}
+
 func TestAddFailsWhenRunBudgetIsExhausted(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -158,9 +271,7 @@ func TestAddFailsWhenRunBudgetIsExhausted(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -222,9 +333,7 @@ func TestAddPropagatesEngineToRenderedProtocol(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -277,9 +386,7 @@ func TestAddRendersSessionLocalValidationOverride(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -336,9 +443,7 @@ func TestAddWorktreeUsesSessionBaseBranch(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -436,9 +541,7 @@ func TestAddWorktreeBaseBranchFailsForSharedSession(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -485,9 +588,7 @@ func TestAddWorktreeWithoutExplicitBaseRecordsRunRootParent(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -537,9 +638,7 @@ func TestAddRendersAcceptanceContractAndTeamContext(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -611,6 +710,10 @@ func TestAddLaunchesSessionWithCurrentProcessEnvInExplicitWorktree(t *testing.T)
 echo "$@" >> "$TMUX_LOG"
 case "$1" in
   has-session)
+    exit 0
+    ;;
+  capture-pane)
+    printf '❯ ready\n'
     exit 0
     ;;
   *)
@@ -708,6 +811,10 @@ case "$1" in
   has-session)
     exit 0
     ;;
+  capture-pane)
+    printf '❯ ready\n'
+    exit 0
+    ;;
   *)
     exit 0
     ;;
@@ -785,9 +892,7 @@ func TestAddWithWorktreeCopiesGitignoredFiles(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -838,9 +943,7 @@ func TestAddNotifiesMasterViaInbox(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -900,7 +1003,7 @@ local_validation:
 	if err != nil {
 		t.Fatalf("LoadControlDeliveries: %v", err)
 	}
-	if len(deliveries.Items) != 1 || deliveries.Items[0].Status != "unknown" {
+	if len(deliveries.Items) != 1 || deliveries.Items[0].Status != "idle_prompt" {
 		t.Fatalf("unexpected deliveries: %+v", deliveries.Items)
 	}
 }
@@ -914,9 +1017,7 @@ func TestAddStartsNumberingFromExistingRunArtifacts(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -970,9 +1071,7 @@ func TestAddSupportsResearchModeOverride(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -1051,9 +1150,7 @@ func TestAddRoutesByModeAndEffortWhenEngineModelNotExplicit(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -1115,9 +1212,7 @@ func TestAddExplicitEngineModelBypassesRoleDefaults(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -1169,9 +1264,7 @@ func TestAddRejectsUnknownFlag(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -1221,9 +1314,7 @@ func TestAddRejectsExplicitEngineModelWithoutMode(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -1256,9 +1347,7 @@ func TestAddRequiresDurableIdentityForExistingSessions(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -1377,6 +1466,110 @@ local_validation:
 	}
 }
 
+func TestAddRollsBackWhenLaunchHandshakeStaysBlank(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := `#!/bin/sh
+case "$1" in
+  has-session)
+    exit 0
+    ;;
+  new-window)
+    exit 0
+    ;;
+  capture-pane)
+    case "$3" in
+      *:session-2)
+        exit 0
+        ;;
+      *)
+        printf '❯ ready\n'
+        exit 0
+        ;;
+    esac
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+roles:
+  develop:
+    engine: codex
+    model: codex
+parallel: 1
+sessions:
+  - hint: first
+    mode: develop
+target:
+  files: ["src/"]
+local_validation:
+  command: "go test ./..."
+`)
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
+	}
+
+	err := Add(repo, []string{"blank launch", "--mode", "develop", "--run", runName})
+	if err == nil || !strings.Contains(err.Error(), "launch handshake") {
+		t.Fatalf("Add error = %v, want launch handshake failure", err)
+	}
+	for _, path := range []string{
+		SessionIdentityPath(runDir, "session-2"),
+		filepath.Dir(SessionIdentityPath(runDir, "session-2")),
+		JournalPath(runDir, "session-2"),
+		ControlInboxPath(runDir, "session-2"),
+		SessionCursorPath(runDir, "session-2"),
+		filepath.Join(runDir, "program-2.md"),
+	} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("expected %s to be absent after failed add handshake, stat err = %v", path, statErr)
+		}
+	}
+	state, stateErr := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+	if stateErr != nil {
+		t.Fatalf("LoadSessionsRuntimeState: %v", stateErr)
+	}
+	if _, ok := state.Sessions["session-2"]; ok {
+		t.Fatalf("session-2 runtime state should be removed after failed add handshake: %#v", state.Sessions["session-2"])
+	}
+	coord, coordErr := LoadCoordinationState(CoordinationPath(runDir))
+	if coordErr != nil {
+		t.Fatalf("LoadCoordinationState: %v", coordErr)
+	}
+	if _, ok := coord.Sessions["session-2"]; ok {
+		t.Fatalf("coordination should not retain session-2 after failed add handshake: %+v", coord.Sessions["session-2"])
+	}
+	events, loadErr := LoadDurableLog(ExperimentsLogPath(runDir), DurableSurfaceExperiments)
+	if loadErr != nil {
+		t.Fatalf("LoadDurableLog: %v", loadErr)
+	}
+	for _, event := range events {
+		var body ExperimentCreatedBody
+		if event.Kind != "experiment.created" {
+			continue
+		}
+		if err := decodeStrictJSON(event.Body, &body); err == nil && body.Session == "session-2" {
+			t.Fatalf("unexpected experiment.created for failed add handshake: %+v", body)
+		}
+	}
+}
+
 func TestAddResearchModeOverrideUsesResearchRoleWithoutExplicitSessions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -1386,9 +1579,7 @@ func TestAddResearchModeOverrideUsesResearchRoleWithoutExplicitSessions(t *testi
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -1498,9 +1689,7 @@ func TestAddHelpDoesNotCreateSession(t *testing.T) {
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	writeReadyTmuxScript(t, tmuxPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	snapshot := []byte(`name: add-run
@@ -1668,4 +1857,26 @@ func writeAddRunFixture(t *testing.T, repo, snapshot string) (string, string) {
 		}
 	}
 	return runName, runDir
+}
+
+func writeReadyTmuxScript(t *testing.T, tmuxPath string) {
+	t.Helper()
+
+	script := `#!/bin/sh
+case "$1" in
+  has-session)
+    exit 0
+    ;;
+  capture-pane)
+    printf '❯ ready\n'
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
 }

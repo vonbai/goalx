@@ -95,63 +95,109 @@ func SaveProjectRegistry(projectRoot string, reg *ProjectRegistry) error {
 	if err := os.MkdirAll(filepath.Dir(ProjectRegistryPath(projectRoot)), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(ProjectRegistryPath(projectRoot), data, 0o644); err != nil {
+	if err := writeFileAtomic(ProjectRegistryPath(projectRoot), data, 0o644); err != nil {
 		return fmt.Errorf("write project registry: %w", err)
 	}
 	return nil
+}
+
+func mutateProjectRegistry(projectRoot string, mutate func(*ProjectRegistry) error) error {
+	return mutateStructuredFile(
+		ProjectRegistryPath(projectRoot),
+		0o644,
+		func(data []byte) (*ProjectRegistry, error) {
+			reg, err := LoadProjectRegistry(projectRoot)
+			if err != nil {
+				return nil, err
+			}
+			return reg, nil
+		},
+		func() *ProjectRegistry {
+			return &ProjectRegistry{
+				Version:    1,
+				ActiveRuns: map[string]ProjectRunRef{},
+				SavedRuns:  map[string]ProjectRunRef{},
+			}
+		},
+		func(reg *ProjectRegistry) error {
+			return mutate(reg)
+		},
+		func(reg *ProjectRegistry) ([]byte, error) {
+			if reg == nil {
+				return nil, fmt.Errorf("project registry is nil")
+			}
+			if reg.Version == 0 {
+				reg.Version = 1
+			}
+			if reg.ActiveRuns == nil {
+				reg.ActiveRuns = map[string]ProjectRunRef{}
+			}
+			if reg.SavedRuns == nil {
+				reg.SavedRuns = map[string]ProjectRunRef{}
+			}
+			for name, ref := range reg.ActiveRuns {
+				ref.Objective = ""
+				reg.ActiveRuns[name] = ref
+			}
+			for name, ref := range reg.SavedRuns {
+				ref.Objective = ""
+				reg.SavedRuns[name] = ref
+			}
+			reg.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			data, err := json.MarshalIndent(reg, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("marshal project registry: %w", err)
+			}
+			return data, nil
+		},
+	)
 }
 
 func RegisterActiveRun(projectRoot string, cfg *goalx.Config) error {
 	if cfg == nil {
 		return fmt.Errorf("config is nil")
 	}
-	reg, err := LoadProjectRegistry(projectRoot)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	reg.ActiveRuns[cfg.Name] = ProjectRunRef{
-		Name:      cfg.Name,
-		Mode:      string(cfg.Mode),
-		State:     "active",
-		UpdatedAt: now,
-	}
-	if reg.FocusedRun == "" {
-		reg.FocusedRun = cfg.Name
-	}
-	if err := SaveProjectRegistry(projectRoot, reg); err != nil {
+	if err := mutateProjectRegistry(projectRoot, func(reg *ProjectRegistry) error {
+		now := time.Now().UTC().Format(time.RFC3339)
+		reg.ActiveRuns[cfg.Name] = ProjectRunRef{
+			Name:      cfg.Name,
+			Mode:      string(cfg.Mode),
+			State:     "active",
+			UpdatedAt: now,
+		}
+		if reg.FocusedRun == "" {
+			reg.FocusedRun = cfg.Name
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return UpsertGlobalRun(projectRoot, cfg, "active")
 }
 
 func setFocusedRun(projectRoot, runName string) error {
-	reg, err := LoadProjectRegistry(projectRoot)
-	if err != nil {
-		return err
-	}
-	if _, ok := reg.ActiveRuns[runName]; !ok {
-		return fmt.Errorf("run %q is not active", runName)
-	}
-	reg.FocusedRun = runName
-	return SaveProjectRegistry(projectRoot, reg)
+	return mutateProjectRegistry(projectRoot, func(reg *ProjectRegistry) error {
+		if _, ok := reg.ActiveRuns[runName]; !ok {
+			return fmt.Errorf("run %q is not active", runName)
+		}
+		reg.FocusedRun = runName
+		return nil
+	})
 }
 
 func MarkRunInactive(projectRoot, runName string) error {
-	reg, err := LoadProjectRegistry(projectRoot)
-	if err != nil {
-		return err
-	}
-	delete(reg.ActiveRuns, runName)
-	if reg.FocusedRun == runName {
-		reg.FocusedRun = ""
-		if len(reg.ActiveRuns) == 1 {
-			for name := range reg.ActiveRuns {
-				reg.FocusedRun = name
+	if err := mutateProjectRegistry(projectRoot, func(reg *ProjectRegistry) error {
+		delete(reg.ActiveRuns, runName)
+		if reg.FocusedRun == runName {
+			reg.FocusedRun = ""
+			if len(reg.ActiveRuns) == 1 {
+				for name := range reg.ActiveRuns {
+					reg.FocusedRun = name
+				}
 			}
 		}
-	}
-	if err := SaveProjectRegistry(projectRoot, reg); err != nil {
+		return nil
+	}); err != nil {
 		return err
 	}
 	return UpdateGlobalRunState(projectRoot, runName, "inactive")
@@ -161,33 +207,29 @@ func RegisterSavedRun(projectRoot string, cfg *goalx.Config) error {
 	if cfg == nil {
 		return fmt.Errorf("config is nil")
 	}
-	reg, err := LoadProjectRegistry(projectRoot)
-	if err != nil {
-		return err
-	}
-	reg.SavedRuns[cfg.Name] = ProjectRunRef{
-		Name:      cfg.Name,
-		Mode:      string(cfg.Mode),
-		State:     "saved",
-		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-	if err := SaveProjectRegistry(projectRoot, reg); err != nil {
+	if err := mutateProjectRegistry(projectRoot, func(reg *ProjectRegistry) error {
+		reg.SavedRuns[cfg.Name] = ProjectRunRef{
+			Name:      cfg.Name,
+			Mode:      string(cfg.Mode),
+			State:     "saved",
+			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return UpsertGlobalRun(projectRoot, cfg, "saved")
 }
 
 func RemoveRunRegistration(projectRoot, runName string) error {
-	reg, err := LoadProjectRegistry(projectRoot)
-	if err != nil {
-		return err
-	}
-	delete(reg.ActiveRuns, runName)
-	delete(reg.SavedRuns, runName)
-	if reg.FocusedRun == runName {
-		reg.FocusedRun = ""
-	}
-	if err := SaveProjectRegistry(projectRoot, reg); err != nil {
+	if err := mutateProjectRegistry(projectRoot, func(reg *ProjectRegistry) error {
+		delete(reg.ActiveRuns, runName)
+		delete(reg.SavedRuns, runName)
+		if reg.FocusedRun == runName {
+			reg.FocusedRun = ""
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return RemoveGlobalRun(projectRoot, runName)

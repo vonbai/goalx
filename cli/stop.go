@@ -41,7 +41,7 @@ func Stop(projectRoot string, args []string) error {
 				state.Phase = "complete"
 			}
 			state.UpdatedAt = state.StoppedAt
-			_ = SaveRunRuntimeState(RunRuntimeStatePath(rc.RunDir), state)
+			_ = UpsertRunRuntimeState(rc.RunDir, *state)
 		}
 		_ = FinalizeControlRun(rc.RunDir, finalLifecycle)
 		if finalLifecycle == "completed" {
@@ -65,7 +65,7 @@ func Stop(projectRoot string, args []string) error {
 			state.Phase = "complete"
 		}
 		state.UpdatedAt = state.StoppedAt
-		_ = SaveRunRuntimeState(RunRuntimeStatePath(rc.RunDir), state)
+		_ = UpsertRunRuntimeState(rc.RunDir, *state)
 	}
 	_ = MarkRunInactive(rc.ProjectRoot, rc.Name)
 	_ = FinalizeControlRun(rc.RunDir, finalLifecycle)

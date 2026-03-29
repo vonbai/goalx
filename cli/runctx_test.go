@@ -124,8 +124,14 @@ func TestResolveRunDoesNotUseBareGlobalLookup(t *testing.T) {
 	if err == nil {
 		t.Fatal("ResolveRun succeeded, want not found error")
 	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("ResolveRun error = %v, want not found message", err)
+	for _, want := range []string{
+		"not found in current project",
+		goalx.ProjectID(projectA) + "/" + cfg.Name,
+		goalx.ProjectID(projectB) + "/" + cfg.Name,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("ResolveRun error = %v, want substring %q", err, want)
+		}
 	}
 }
 
