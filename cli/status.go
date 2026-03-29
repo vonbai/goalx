@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -40,6 +41,11 @@ func Status(projectRoot string, args []string) error {
 	fmt.Fprintln(w, "SESSION\tLAST_ROUND\tSTATUS\tLEASE\tSUMMARY")
 	coord, _ := LoadCoordinationState(CoordinationPath(rc.RunDir))
 	sessionState, _ := EnsureSessionsRuntimeState(rc.RunDir)
+	activity, _ := LoadActivitySnapshot(ActivityPath(rc.RunDir))
+	operations := map[string]ControlOperationTarget{}
+	if activity != nil && activity.Operations != nil {
+		operations = activity.Operations
+	}
 
 	sessionList := sortedSessionStates(sessionState)
 	if len(sessionList) == 0 {
@@ -61,6 +67,19 @@ func Status(projectRoot string, args []string) error {
 			})
 		}
 	}
+	seenSessions := make(map[string]struct{}, len(sessionList))
+	for _, sess := range sessionList {
+		seenSessions[sess.Name] = struct{}{}
+	}
+	for _, sName := range operationSessionNames(operations) {
+		if _, ok := seenSessions[sName]; ok {
+			continue
+		}
+		sessionList = append(sessionList, SessionRuntimeState{Name: sName, State: "pending"})
+	}
+	sort.Slice(sessionList, func(i, j int) bool {
+		return sessionList[i].Name < sessionList[j].Name
+	})
 	for _, sess := range sessionList {
 		sName := sess.Name
 		if sessionFilter != "" && sName != sessionFilter {
@@ -159,6 +178,22 @@ func Status(projectRoot string, args []string) error {
 				summary += " | " + transport
 			}
 		}
+		if op, ok := operations[sName]; ok && op.Kind == ControlOperationKindSessionDispatch {
+			switch op.State {
+			case ControlOperationStatePreparing, ControlOperationStateHandshaking:
+				status = "dispatching"
+				summary = op.Summary
+			case ControlOperationStateReconciling:
+				status = "reconciling"
+				summary = op.Summary
+			case ControlOperationStateFailed:
+				status = "failed"
+				summary = op.Summary
+				if op.LastError != "" {
+					summary += " | error=" + op.LastError
+				}
+			}
+		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", sName, lastRound, status, actorLeaseSummary(rc.RunDir, sName, "-"), summary)
 	}
 
@@ -226,6 +261,9 @@ func printStatusControlSummary(rc *RunContext) {
 		}
 		if coverage := formatCoverageSummary(activity.Coverage); coverage != "" {
 			fmt.Printf("Coverage: %s\n", coverage)
+		}
+		if operations := formatOperationSummary(activity.Operations); operations != "" {
+			fmt.Printf("Operations: %s\n", operations)
 		}
 		if attention := formatTargetAttentionAdvisory(activity.Attention); attention != "" {
 			fmt.Printf("Attention: %s\n", strings.TrimPrefix(attention, "Target attention: "))

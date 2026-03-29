@@ -832,6 +832,51 @@ func TestObserveShowsBlockedRequiredFrontierDetailAdvisory(t *testing.T) {
 	}
 }
 
+func TestObserveShowsOperationsBeforeMasterSection(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	seedDraftObjectiveContractFixture(t, runDir)
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n❯\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+	if err := SaveControlOperationsState(ControlOperationsPath(runDir), &ControlOperationsState{
+		Version: 1,
+		Targets: map[string]ControlOperationTarget{
+			SessionDispatchOperationKey("session-2"): {
+				Kind:              ControlOperationKindSessionDispatch,
+				State:             ControlOperationStateHandshaking,
+				Summary:           "waiting for first transport frame before publish",
+				PendingConditions: []string{"transport_first_frame"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlOperationsState: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Observe(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"Operations:",
+		"### operations",
+		"run.boundary state=awaiting_agent",
+		"session-2 state=handshaking",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("observe output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Index(out, "### operations") > strings.Index(out, "### master") {
+		t.Fatalf("operations section should appear before master section:\n%s", out)
+	}
+}
+
 func TestObserveWarnsAboutMasterOrphanedAndPrematureBlockedFrontierFacts(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	if err := os.WriteFile(RunStatusPath(runDir), []byte(`{"version":1,"phase":"working","required_remaining":2,"active_sessions":[],"updated_at":"2026-03-28T10:00:00Z"}`), 0o644); err != nil {

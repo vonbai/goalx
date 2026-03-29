@@ -1225,6 +1225,43 @@ func TestStatusShowsBlockedRequiredFrontierFacts(t *testing.T) {
 	}
 }
 
+func TestStatusShowsOperationSummaryAndDispatchingSession(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	seedDraftObjectiveContractFixture(t, runDir)
+	if err := SaveControlOperationsState(ControlOperationsPath(runDir), &ControlOperationsState{
+		Version: 1,
+		Targets: map[string]ControlOperationTarget{
+			SessionDispatchOperationKey("session-2"): {
+				Kind:              ControlOperationKindSessionDispatch,
+				State:             ControlOperationStateHandshaking,
+				Summary:           "waiting for first transport frame before publish",
+				PendingConditions: []string{"transport_first_frame"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlOperationsState: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"Operations:",
+		"run.boundary=awaiting_agent",
+		"session-2=handshaking",
+		"session-2",
+		"dispatching",
+		"waiting for first transport frame before publish",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestStatusShowsForkedSessionWorktreeLineage(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	seedForkedWorktreeLineageFixture(t, repo, runDir, cfg)

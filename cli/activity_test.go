@@ -338,6 +338,55 @@ func TestBuildActivitySnapshotIncludesCoverageFacts(t *testing.T) {
 	}
 }
 
+func TestBuildActivitySnapshotIncludesOperationFacts(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	t.Setenv("TMUX_SESSION1_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+
+	if err := SaveControlOperationsState(ControlOperationsPath(runDir), &ControlOperationsState{
+		Version: 1,
+		Targets: map[string]ControlOperationTarget{
+			RunBootstrapOperationKey(): {
+				Kind:  ControlOperationKindRunBootstrap,
+				State: ControlOperationStateCommitted,
+			},
+			BoundaryEstablishmentOperationKey(): {
+				Kind:              ControlOperationKindBoundaryEstablishment,
+				State:             ControlOperationStateAwaitingAgent,
+				Summary:           "objective contract still draft",
+				PendingConditions: []string{"objective_contract_locked"},
+			},
+			SessionDispatchOperationKey("session-2"): {
+				Kind:              ControlOperationKindSessionDispatch,
+				State:             ControlOperationStateHandshaking,
+				PendingConditions: []string{"transport_first_frame"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveControlOperationsState: %v", err)
+	}
+
+	snapshot, err := BuildActivitySnapshot(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildActivitySnapshot: %v", err)
+	}
+
+	if got := snapshot.Operations[RunBootstrapOperationKey()].State; got != ControlOperationStateCommitted {
+		t.Fatalf("bootstrap operation state = %q, want %q", got, ControlOperationStateCommitted)
+	}
+	if got := snapshot.Operations[BoundaryEstablishmentOperationKey()].State; got != ControlOperationStateAwaitingAgent {
+		t.Fatalf("boundary operation state = %q, want %q", got, ControlOperationStateAwaitingAgent)
+	}
+	if got := snapshot.Operations[SessionDispatchOperationKey("session-2")].State; got != ControlOperationStateHandshaking {
+		t.Fatalf("session-2 operation state = %q, want %q", got, ControlOperationStateHandshaking)
+	}
+}
+
 func writeWorktreeSnapshotFixture(t *testing.T, runDir, fingerprint string, insertions int) {
 	t.Helper()
 

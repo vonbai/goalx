@@ -199,6 +199,9 @@ func EnsureControlState(runDir string) error {
 			return err
 		}
 	}
+	if _, err := EnsureControlOperationsState(runDir); err != nil {
+		return err
+	}
 	if err := ensureTransportRecovery(runDir); err != nil {
 		return err
 	}

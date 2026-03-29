@@ -20,6 +20,8 @@ const (
 	controlOpRunStateProviderDialogAlerts   = "run_state.provider_dialog_alerts"
 	controlOpRunStateRequiredFrontierAlerts = "run_state.required_frontier_alerts"
 	controlOpFinalizeControlSurfaces        = "control.finalize_surfaces"
+	controlOpOperationUpsertTarget          = "operation.upsert_target"
+	controlOpOperationClearTarget           = "operation.clear_target"
 	controlOpRunRuntimeUpsert               = "runtime.run.upsert"
 	controlOpSessionRuntimeUpsert           = "runtime.session.upsert"
 	controlOpSessionRuntimeRemove           = "runtime.session.remove"
@@ -90,6 +92,15 @@ type controlRunStateRequiredFrontierAlertsBody struct {
 type controlFinalizeControlSurfacesBody struct {
 	Lifecycle string `json:"lifecycle"`
 	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+type controlOperationUpsertTargetBody struct {
+	Target    string                 `json:"target"`
+	Operation ControlOperationTarget `json:"operation"`
+}
+
+type controlOperationClearTargetBody struct {
+	Target string `json:"target"`
 }
 
 type controlRunRuntimeUpsertBody struct {
@@ -350,6 +361,18 @@ func applyControlOp(runDir string, op ControlOp) error {
 			return err
 		}
 		return applyFinalizeControlSurfacesOp(runDir, body)
+	case controlOpOperationUpsertTarget:
+		var body controlOperationUpsertTargetBody
+		if err := json.Unmarshal(op.Body, &body); err != nil {
+			return err
+		}
+		return applyOperationUpsertTargetOp(runDir, body)
+	case controlOpOperationClearTarget:
+		var body controlOperationClearTargetBody
+		if err := json.Unmarshal(op.Body, &body); err != nil {
+			return err
+		}
+		return applyOperationClearTargetOp(runDir, body)
 	case controlOpRunRuntimeUpsert:
 		var body controlRunRuntimeUpsertBody
 		if err := json.Unmarshal(op.Body, &body); err != nil {
@@ -605,6 +628,74 @@ func applyFinalizeControlSurfacesOp(runDir string, body controlFinalizeControlSu
 		}
 	}
 	return SaveControlDeliveries(ControlDeliveriesPath(runDir), deliveries)
+}
+
+func submitControlOperationTarget(runDir, target string, operation ControlOperationTarget) error {
+	return submitAndApplyControlOp(runDir, controlOpOperationUpsertTarget, controlOperationUpsertTargetBody{
+		Target:    target,
+		Operation: operation,
+	})
+}
+
+func clearControlOperationTarget(runDir, target string) error {
+	return submitAndApplyControlOp(runDir, controlOpOperationClearTarget, controlOperationClearTargetBody{
+		Target: target,
+	})
+}
+
+func applyOperationUpsertTargetOp(runDir string, body controlOperationUpsertTargetBody) error {
+	state, err := EnsureControlOperationsState(runDir)
+	if err != nil {
+		return err
+	}
+	target := strings.TrimSpace(body.Target)
+	if target == "" {
+		return fmt.Errorf("operation target is required")
+	}
+	if state.Targets == nil {
+		state.Targets = map[string]ControlOperationTarget{}
+	}
+	op := body.Operation
+	normalizeControlOperationTarget(&op)
+	if err := validateControlOperationTarget(op); err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if existing, ok := state.Targets[target]; ok {
+		if strings.TrimSpace(op.StartedAt) == "" {
+			op.StartedAt = existing.StartedAt
+		}
+	}
+	if strings.TrimSpace(op.StartedAt) == "" {
+		op.StartedAt = now
+	}
+	op.UpdatedAt = now
+	if op.State == ControlOperationStateCommitted && op.CommittedAt == "" {
+		op.CommittedAt = now
+	}
+	if op.State == ControlOperationStateFailed && op.FailedAt == "" {
+		op.FailedAt = now
+	}
+	state.Targets[target] = op
+	state.UpdatedAt = now
+	return SaveControlOperationsState(ControlOperationsPath(runDir), state)
+}
+
+func applyOperationClearTargetOp(runDir string, body controlOperationClearTargetBody) error {
+	state, err := EnsureControlOperationsState(runDir)
+	if err != nil {
+		return err
+	}
+	target := strings.TrimSpace(body.Target)
+	if target == "" {
+		return fmt.Errorf("operation target is required")
+	}
+	if _, ok := state.Targets[target]; !ok {
+		return nil
+	}
+	delete(state.Targets, target)
+	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	return SaveControlOperationsState(ControlOperationsPath(runDir), state)
 }
 
 func applyRunRuntimeUpsertOp(runDir string, body controlRunRuntimeUpsertBody) error {

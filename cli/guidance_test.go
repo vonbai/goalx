@@ -51,6 +51,19 @@ func writeGuidanceRunFixture(t *testing.T) (string, string, *goalx.Config, *RunM
 	return repo, runDir, cfg, meta
 }
 
+func seedDraftObjectiveContractFixture(t *testing.T, runDir string) {
+	t.Helper()
+
+	if err := SaveObjectiveContract(ObjectiveContractPath(runDir), &ObjectiveContract{
+		Version:       1,
+		ObjectiveHash: "sha256:test",
+		State:         objectiveContractStateDraft,
+		Clauses:       []ObjectiveClause{},
+	}); err != nil {
+		t.Fatalf("SaveObjectiveContract: %v", err)
+	}
+}
+
 func seedGuidanceSessionFixture(t *testing.T, runDir string, cfg *goalx.Config) {
 	t.Helper()
 

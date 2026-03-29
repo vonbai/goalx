@@ -157,8 +157,26 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 	if warning != "" {
 		fmt.Fprint(os.Stderr, warning)
 	}
+	if err := submitControlOperationTarget(state.runDir, RunBootstrapOperationKey(), ControlOperationTarget{
+		Kind:              ControlOperationKindRunBootstrap,
+		State:             ControlOperationStatePreparing,
+		Summary:           "launching master runtime",
+		PendingConditions: []string{"master_window_ready", "master_pane_pid_persisted"},
+	}); err != nil {
+		return err
+	}
+	if err := refreshBoundaryEstablishmentOperation(state.runDir); err != nil {
+		return err
+	}
 
-	return launchStartRuntime(state, cfg, meta, masterCmd, masterPrompt, checkSec)
+	if err := launchStartRuntime(state, cfg, meta, masterCmd, masterPrompt, checkSec); err != nil {
+		return err
+	}
+	return submitControlOperationTarget(state.runDir, RunBootstrapOperationKey(), ControlOperationTarget{
+		Kind:    ControlOperationKindRunBootstrap,
+		State:   ControlOperationStateCommitted,
+		Summary: "run bootstrap committed",
+	})
 }
 
 func ensureStartAvailable(state *startRunState) error {

@@ -417,6 +417,30 @@ esac
 	if gotSidecarInterval <= 0 {
 		t.Fatalf("launchRunSidecar interval = %v, want > 0", gotSidecarInterval)
 	}
+	operations, err := LoadControlOperationsState(ControlOperationsPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlOperationsState: %v", err)
+	}
+	if operations == nil {
+		t.Fatal("control operations missing")
+	}
+	bootstrapTarget, ok := operations.Targets[RunBootstrapOperationKey()]
+	if !ok {
+		t.Fatalf("missing %s target: %+v", RunBootstrapOperationKey(), operations.Targets)
+	}
+	if bootstrapTarget.Kind != ControlOperationKindRunBootstrap || bootstrapTarget.State != ControlOperationStateCommitted {
+		t.Fatalf("bootstrap target = %+v, want committed run_bootstrap", bootstrapTarget)
+	}
+	boundaryTarget, ok := operations.Targets[BoundaryEstablishmentOperationKey()]
+	if !ok {
+		t.Fatalf("missing %s target: %+v", BoundaryEstablishmentOperationKey(), operations.Targets)
+	}
+	if boundaryTarget.Kind != ControlOperationKindBoundaryEstablishment || boundaryTarget.State != ControlOperationStateAwaitingAgent {
+		t.Fatalf("boundary target = %+v, want awaiting_agent boundary_establishment", boundaryTarget)
+	}
+	if len(boundaryTarget.PendingConditions) == 0 {
+		t.Fatalf("boundary pending_conditions empty: %+v", boundaryTarget)
+	}
 
 	stateData, err := os.ReadFile(filepath.Join(runDir, "acceptance.json"))
 	if err != nil {

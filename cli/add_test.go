@@ -1012,6 +1012,85 @@ local_validation:
 	if len(deliveries.Items) != 1 || deliveries.Items[0].Status != "idle_prompt" {
 		t.Fatalf("unexpected deliveries: %+v", deliveries.Items)
 	}
+	operations, err := LoadControlOperationsState(ControlOperationsPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlOperationsState: %v", err)
+	}
+	if got := operations.Targets[SessionDispatchOperationKey("session-2")].State; got != ControlOperationStateCommitted {
+		t.Fatalf("session dispatch state = %q, want %q", got, ControlOperationStateCommitted)
+	}
+}
+
+func TestAddRollsBackWhenMasterInboxWriteFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	writeReadyTmuxScript(t, tmuxPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	snapshot := []byte(`name: add-run
+mode: develop
+objective: implement audit fixes
+roles:
+  develop:
+    engine: codex
+    model: codex
+parallel: 1
+sessions:
+  - hint: first
+    mode: develop
+target:
+  files: ["src/"]
+local_validation:
+  command: "go test ./..."
+`)
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
+	}
+
+	origAppendMasterInboxMessage := appendMasterInboxMessage
+	defer func() { appendMasterInboxMessage = origAppendMasterInboxMessage }()
+	appendMasterInboxMessage = func(runDir, typ, source, body string) (MasterInboxMessage, error) {
+		return MasterInboxMessage{}, os.ErrPermission
+	}
+
+	err := Add(repo, []string{"second direction", "--mode", "develop", "--run", runName})
+	if err == nil || !strings.Contains(err.Error(), "notify master inbox") {
+		t.Fatalf("Add error = %v, want notify master inbox failure", err)
+	}
+	state, stateErr := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+	if stateErr != nil {
+		t.Fatalf("LoadSessionsRuntimeState: %v", stateErr)
+	}
+	if _, ok := state.Sessions["session-2"]; ok {
+		t.Fatalf("session-2 runtime state should be absent after inbox failure: %#v", state.Sessions["session-2"])
+	}
+	events, loadErr := LoadDurableLog(ExperimentsLogPath(runDir), DurableSurfaceExperiments)
+	if loadErr != nil {
+		t.Fatalf("LoadDurableLog: %v", loadErr)
+	}
+	for _, event := range events {
+		var body ExperimentCreatedBody
+		if event.Kind != "experiment.created" {
+			continue
+		}
+		if err := decodeStrictJSON(event.Body, &body); err == nil && body.Session == "session-2" {
+			t.Fatalf("unexpected experiment.created for inbox failure: %+v", body)
+		}
+	}
+	operations, opErr := LoadControlOperationsState(ControlOperationsPath(runDir))
+	if opErr != nil {
+		t.Fatalf("LoadControlOperationsState: %v", opErr)
+	}
+	if got := operations.Targets[SessionDispatchOperationKey("session-2")].State; got != ControlOperationStateFailed {
+		t.Fatalf("session dispatch state = %q, want %q", got, ControlOperationStateFailed)
+	}
 }
 
 func TestAddStartsNumberingFromExistingRunArtifacts(t *testing.T) {
@@ -1470,6 +1549,13 @@ local_validation:
 			t.Fatalf("unexpected experiment.created for failed add: %+v", body)
 		}
 	}
+	operations, opErr := LoadControlOperationsState(ControlOperationsPath(runDir))
+	if opErr != nil {
+		t.Fatalf("LoadControlOperationsState: %v", opErr)
+	}
+	if got := operations.Targets[SessionDispatchOperationKey("session-2")].State; got != ControlOperationStateFailed {
+		t.Fatalf("session dispatch state = %q, want %q", got, ControlOperationStateFailed)
+	}
 }
 
 func TestAddRollsBackWhenLaunchHandshakeStaysBlank(t *testing.T) {
@@ -1573,6 +1659,13 @@ local_validation:
 		if err := decodeStrictJSON(event.Body, &body); err == nil && body.Session == "session-2" {
 			t.Fatalf("unexpected experiment.created for failed add handshake: %+v", body)
 		}
+	}
+	operations, opErr := LoadControlOperationsState(ControlOperationsPath(runDir))
+	if opErr != nil {
+		t.Fatalf("LoadControlOperationsState: %v", opErr)
+	}
+	if got := operations.Targets[SessionDispatchOperationKey("session-2")].State; got != ControlOperationStateFailed {
+		t.Fatalf("session dispatch state = %q, want %q", got, ControlOperationStateFailed)
 	}
 }
 

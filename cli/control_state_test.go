@@ -99,6 +99,9 @@ func TestEnsureControlStateMapsRunMetadataIntoRunIdentity(t *testing.T) {
 	if runState.LifecycleState != "active" {
 		t.Fatalf("run state lifecycle = %q, want active", runState.LifecycleState)
 	}
+	if _, err := os.Stat(ControlOperationsPath(runDir)); err != nil {
+		t.Fatalf("stat control operations: %v", err)
+	}
 }
 
 func TestLoadControlStateLeavesFilesUntouched(t *testing.T) {

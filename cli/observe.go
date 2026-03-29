@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	goalx "github.com/vonbai/goalx"
@@ -47,6 +48,7 @@ func Observe(projectRoot string, args []string) error {
 	if err := printRunAdvisories(rc); err != nil {
 		return err
 	}
+	printObserveOperationsSection(rc.RunDir)
 	printObserveEvolveSection(rc.RunDir)
 
 	if !SessionExists(rc.TmuxSession) {
@@ -183,6 +185,11 @@ func printObserveSessionQueue(runDir, runName, sessionName string, sessionState 
 	if launch := sessionLaunchFacts(runDir, sessionName); launch != "" {
 		fmt.Printf("Launch: %s\n", launch)
 	}
+	if operations, err := LoadControlOperationsState(ControlOperationsPath(runDir)); err == nil && operations != nil {
+		if op, ok := operations.Targets[sessionName]; ok && op.Kind == ControlOperationKindSessionDispatch {
+			fmt.Printf("Operation: %s\n", formatOperationDetailLine(sessionName, op))
+		}
+	}
 	printObserveTransportFacts(transport)
 }
 
@@ -238,6 +245,23 @@ func printObserveTransportFacts(transport TransportTargetFacts) {
 	}
 	if transport.LastTransportError != "" {
 		fmt.Printf(" last_transport_error=%q", transport.LastTransportError)
+	}
+	fmt.Println()
+}
+
+func printObserveOperationsSection(runDir string) {
+	operations, err := LoadControlOperationsState(ControlOperationsPath(runDir))
+	if err != nil || operations == nil || len(operations.Targets) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(operations.Targets))
+	for key := range operations.Targets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	fmt.Println("### operations")
+	for _, key := range keys {
+		fmt.Println(formatOperationDetailLine(key, operations.Targets[key]))
 	}
 	fmt.Println()
 }

@@ -71,6 +71,45 @@ func BuildObjectiveIntegritySummary(runDir string) (ObjectiveIntegritySummary, e
 	return summary, nil
 }
 
+func refreshBoundaryEstablishmentOperation(runDir string) error {
+	summary, err := BuildObjectiveIntegritySummary(runDir)
+	if err != nil {
+		return err
+	}
+	if !summary.ContractPresent {
+		return clearControlOperationTarget(runDir, BoundaryEstablishmentOperationKey())
+	}
+	pendingConditions := make([]string, 0, 3)
+	if !summary.ContractLocked {
+		pendingConditions = append(pendingConditions, "objective_contract_locked")
+	}
+	if len(summary.MissingGoalClauseIDs) > 0 {
+		pendingConditions = append(pendingConditions, "goal_required_coverage_ready")
+	}
+	if len(summary.MissingAcceptanceClauseIDs) > 0 {
+		pendingConditions = append(pendingConditions, "acceptance_required_coverage_ready")
+	}
+	target := ControlOperationTarget{
+		Kind:              ControlOperationKindBoundaryEstablishment,
+		PendingConditions: pendingConditions,
+	}
+	if len(pendingConditions) == 0 {
+		target.State = ControlOperationStateCommitted
+		target.Summary = "boundary establishment committed"
+	} else {
+		target.State = ControlOperationStateAwaitingAgent
+		switch {
+		case !summary.ContractLocked:
+			target.Summary = "objective contract still draft"
+		case len(summary.MissingGoalClauseIDs) > 0 || len(summary.MissingAcceptanceClauseIDs) > 0:
+			target.Summary = "required boundary coverage still incomplete"
+		default:
+			target.Summary = "boundary establishment still in progress"
+		}
+	}
+	return submitControlOperationTarget(runDir, BoundaryEstablishmentOperationKey(), target)
+}
+
 func (summary ObjectiveIntegritySummary) ReadyForNoShrinkEnforcement() bool {
 	if !summary.ContractPresent {
 		return false

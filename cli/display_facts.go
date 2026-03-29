@@ -22,6 +22,9 @@ func refreshDisplayFacts(rc *RunContext) error {
 	if err := RefreshWorktreeSnapshot(rc.RunDir); err != nil {
 		return err
 	}
+	if err := refreshControlOperationFacts(rc.RunDir); err != nil {
+		return err
+	}
 	masterEngine := ""
 	if rc.Config != nil {
 		masterEngine = rc.Config.Master.Engine
@@ -127,6 +130,9 @@ func collectRunAdvisories(rc *RunContext) ([]string, error) {
 		if frontier := formatRequiredFrontierAdvisory(rc.RunDir, coverage, activity.Attention); frontier != "" {
 			advisories = append(advisories, frontier)
 		}
+		if operations := formatOperationAdvisory(activity.Operations); operations != "" {
+			advisories = append(advisories, operations)
+		}
 	}
 	evolveFacts, err := LoadCurrentEvolveFacts(rc.RunDir)
 	if err != nil {
@@ -211,6 +217,66 @@ func formatCoverageSummary(coverage RequiredCoverage) string {
 	appendCoverageSummaryPart(&parts, "premature_blocked", coverage.PrematureBlockedRequiredIDs)
 	appendCoverageSummaryPart(&parts, "idle_reusable", coverage.IdleReusableSessions)
 	appendCoverageSummaryPart(&parts, "parked_reusable", coverage.ParkedReusableSessions)
+	return strings.Join(parts, " ")
+}
+
+func formatOperationSummary(operations map[string]ControlOperationTarget) string {
+	if len(operations) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(operations))
+	for key := range operations {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+blankAsUnknown(operations[key].State))
+	}
+	return strings.Join(parts, " ")
+}
+
+func formatOperationAdvisory(operations map[string]ControlOperationTarget) string {
+	if len(operations) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(operations))
+	for key, op := range operations {
+		if op.State == ControlOperationStateCommitted {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		op := operations[key]
+		part := key + "=" + blankAsUnknown(op.State)
+		if op.Summary != "" {
+			part += " summary=" + op.Summary
+		}
+		parts = append(parts, part)
+	}
+	return "Operations: " + strings.Join(parts, " ")
+}
+
+func formatOperationDetailLine(key string, op ControlOperationTarget) string {
+	parts := []string{key, "state=" + blankAsUnknown(op.State)}
+	if op.Kind != "" {
+		parts = append(parts, "kind="+op.Kind)
+	}
+	if op.Summary != "" {
+		parts = append(parts, "summary="+op.Summary)
+	}
+	if len(op.PendingConditions) > 0 {
+		parts = append(parts, "pending="+strings.Join(op.PendingConditions, ","))
+	}
+	if op.LastError != "" {
+		parts = append(parts, "error="+op.LastError)
+	}
 	return strings.Join(parts, " ")
 }
 

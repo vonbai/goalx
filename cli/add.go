@@ -13,6 +13,8 @@ import (
 
 const addUsage = `usage: goalx add "research direction" [--run NAME] --mode MODE [--engine ENGINE] [--model MODEL] [--effort LEVEL] [--dimension SPEC]... [--worktree] [--base-branch BRANCH|session-N]`
 
+var appendMasterInboxMessage = AppendMasterInboxMessage
+
 // Add creates a new subagent session in a running run.
 func Add(projectRoot string, args []string) (err error) {
 	// Parse: goalx add "hint/direction" [--run NAME] [--engine ENGINE] [--model MODEL] [--mode MODE] [--dimension NAME]
@@ -127,6 +129,7 @@ func Add(projectRoot string, args []string) (err error) {
 		return err
 	}
 	sName := SessionName(newNum)
+	operationTarget := SessionDispatchOperationKey(sName)
 	sessionIdentityPath := SessionIdentityPath(rc.RunDir, sName)
 	journalPath := JournalPath(rc.RunDir, sName)
 	windowName := sessionWindowName(rc.Config.Name, newNum)
@@ -136,6 +139,12 @@ func Add(projectRoot string, args []string) (err error) {
 		if err == nil || sessionCommitted {
 			return
 		}
+		_ = submitControlOperationTarget(rc.RunDir, operationTarget, ControlOperationTarget{
+			Kind:      ControlOperationKindSessionDispatch,
+			State:     ControlOperationStateFailed,
+			Summary:   "session dispatch failed",
+			LastError: err.Error(),
+		})
 		if cleanupErr := cleanup.Run(); cleanupErr != nil {
 			err = errors.Join(err, fmt.Errorf("rollback add %s: %w", sName, cleanupErr))
 		}
@@ -207,6 +216,14 @@ func Add(projectRoot string, args []string) (err error) {
 	meta, err := EnsureRunMetadata(rc.RunDir, rc.ProjectRoot, rc.Config.Objective)
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
+	}
+	if err := submitControlOperationTarget(rc.RunDir, operationTarget, ControlOperationTarget{
+		Kind:              ControlOperationKindSessionDispatch,
+		State:             ControlOperationStatePreparing,
+		Summary:           "preparing session dispatch surfaces",
+		PendingConditions: []string{"tmux_window_ready", "transport_first_frame", "master_inbox_recorded", "runtime_state_published"},
+	}); err != nil {
+		return err
 	}
 	runWT := RunWorktreePath(rc.RunDir)
 	goalxBin, err := os.Executable()
@@ -361,10 +378,28 @@ func Add(projectRoot string, args []string) (err error) {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
 	cleanup.Add(func() error { return cleanupSessionWindow(rc.TmuxSession, windowName) })
+	if err := submitControlOperationTarget(rc.RunDir, operationTarget, ControlOperationTarget{
+		Kind:              ControlOperationKindSessionDispatch,
+		State:             ControlOperationStateHandshaking,
+		Summary:           "waiting for first transport frame before publish",
+		PendingConditions: []string{"transport_first_frame", "master_inbox_recorded", "runtime_state_published"},
+	}); err != nil {
+		return err
+	}
 	if err := waitForSessionLaunchReady(rc.TmuxSession, sName, windowName, sessionIdentity.Engine); err != nil {
 		return err
 	}
-
+	masterMsg := fmt.Sprintf(
+		"New %s added to your run. Window: %s, Workdir: %s, Journal: %s, Inbox: %s. Direction: %s. Add it to your check cycle.",
+		sName, windowName, workdir, journalPath, ControlInboxPath(rc.RunDir, sName), hint,
+	)
+	masterNotified := false
+	if err := PersistPanePIDsFromTmux(rc.RunDir, sName, rc.TmuxSession+":"+windowName); err != nil {
+		return fmt.Errorf("persist %s pane pid: %w", sName, err)
+	}
+	if _, err := appendMasterInboxMessage(rc.RunDir, "session_added", "goalx add", masterMsg); err != nil {
+		return fmt.Errorf("notify master inbox: %w", err)
+	}
 	if err := UpsertSessionRuntimeState(rc.RunDir, SessionRuntimeState{
 		Name:         sName,
 		State:        "active",
@@ -388,20 +423,16 @@ func Add(projectRoot string, args []string) (err error) {
 	}); err != nil {
 		return fmt.Errorf("append experiment.created for %s: %w", sName, err)
 	}
+	if err := submitControlOperationTarget(rc.RunDir, operationTarget, ControlOperationTarget{
+		Kind:    ControlOperationKindSessionDispatch,
+		State:   ControlOperationStateCommitted,
+		Summary: "session dispatch committed",
+	}); err != nil {
+		return fmt.Errorf("record session dispatch commit: %w", err)
+	}
 	sessionCommitted = true
 	cleanup.Commit()
-	// Notify master through durable inbox, then best-effort tmux nudge.
-	masterMsg := fmt.Sprintf(
-		"New %s added to your run. Window: %s, Workdir: %s, Journal: %s, Inbox: %s. Direction: %s. Add it to your check cycle.",
-		sName, windowName, workdir, journalPath, ControlInboxPath(rc.RunDir, sName), hint,
-	)
-	masterNotified := false
-	if err := PersistPanePIDsFromTmux(rc.RunDir, sName, rc.TmuxSession+":"+windowName); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: persist %s pane pid: %v\n", sName, err)
-	}
-	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_added", "goalx add", masterMsg); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: notify master inbox: %v\n", err)
-	} else if _, err := DeliverControlNudge(rc.RunDir, "session-added:"+sName, "session-added:"+sName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed); err != nil {
+	if _, err := DeliverControlNudge(rc.RunDir, "session-added:"+sName, "session-added:"+sName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: nudge master: %v\n", err)
 		masterNotified = true
 	} else {

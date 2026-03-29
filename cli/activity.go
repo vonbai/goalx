@@ -21,6 +21,7 @@ type ActivitySnapshot struct {
 	Queue     ActivityQueue                   `json:"queue"`
 	Budget    ActivityBudget                  `json:"budget,omitempty"`
 	Coverage  RequiredCoverage                `json:"coverage,omitempty"`
+	Operations map[string]ControlOperationTarget `json:"operations,omitempty"`
 	Attention map[string]TargetAttentionFacts `json:"attention,omitempty"`
 	Root      WorktreeDiffStat                `json:"root"`
 	Targets   map[string]TargetPresenceFacts  `json:"targets,omitempty"`
@@ -197,6 +198,13 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 		if snapshot.Lifecycle.ControlState == "" {
 			snapshot.Lifecycle.ControlState = controlState.Phase
 		}
+	}
+	operationsState, err := LoadControlOperationsState(ControlOperationsPath(runDir))
+	if err != nil {
+		return nil, err
+	}
+	if operationsState != nil && len(operationsState.Targets) > 0 {
+		snapshot.Operations = cloneControlOperationsState(operationsState).Targets
 	}
 	if runtimeState != nil {
 		snapshot.Lifecycle.RuntimePhase = runtimeState.Phase
