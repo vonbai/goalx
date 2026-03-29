@@ -1607,7 +1607,7 @@ func TestRenderMasterProtocolIncludesNoChangeFastPathGuidance(t *testing.T) {
 	}
 }
 
-func TestRenderMasterProtocolBindsBlockedOwnersToImmediateIntervention(t *testing.T) {
+func TestRenderMasterProtocolBindsRequiredFrontierFactsToImmediateIntervention(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
 		RunName:     "demo",
@@ -1627,8 +1627,10 @@ func TestRenderMasterProtocolBindsBlockedOwnersToImmediateIntervention(t *testin
 	}
 	text := string(out)
 	for _, want := range []string{
-		"A required item with blocking or risk facts such as `owner_attention`, `owner_blocked`, or `owner_risky` is **not** a no-change fast path.",
-		"If a required item owner is blocked or risky, resolve it in the current control cycle: inspect directly (including shell/tmux if needed), redirect, park+replace, or take the work over yourself.",
+		"A required item with frontier facts such as `unmapped_required`, `session_owner_missing`, `master_orphaned`, or `premature_blocked` is **not** a no-change fast path.",
+		"If `premature_blocked` appears, the required item is not durably blocked yet. Keep probing reachable machine surfaces or dispatch or take over the next concrete lane now.",
+		"If `master_orphaned` appears, resolve it in the current control cycle: dispatch or resume a worker, take the work over directly, or durably update the required frontier before you wait.",
+		"If a required item's execution lane is blocked or risky, resolve it in the current control cycle: inspect directly (including shell/tmux if needed), redirect, park+replace, or take the work over yourself.",
 		"If an active session becomes `active_idle`, treat that as \"worker result or next-step handoff is waiting on you\" and review, redirect, keep, or take over in the current control cycle.",
 	} {
 		if !strings.Contains(text, want) {

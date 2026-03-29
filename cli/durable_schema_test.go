@@ -72,10 +72,24 @@ func TestRenderDurableContractIncludesSummaryNotesAndExample(t *testing.T) {
 		"Surface: `coordination`",
 		"Write mode: `replace`",
 		"Unknown fields are fatal.",
-		`"owners": {`,
+		`"required": {`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered contract missing %q:\n%s", want, text)
 		}
+	}
+}
+
+func TestLookupDurableContractCoordinationExampleSatisfiesValidator(t *testing.T) {
+	contract, err := LookupDurableContract("coordination")
+	if err != nil {
+		t.Fatalf("LookupDurableContract(coordination): %v", err)
+	}
+	var record CoordinationState
+	if err := json.Unmarshal([]byte(contract.Example), &record); err != nil {
+		t.Fatalf("json.Unmarshal(coordination example): %v\n%s", err, contract.Example)
+	}
+	if err := validateCoordinationState(&record); err != nil {
+		t.Fatalf("coordination example must satisfy validator: %v\n%s", err, contract.Example)
 	}
 }

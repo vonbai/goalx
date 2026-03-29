@@ -102,7 +102,7 @@ func Status(projectRoot string, args []string) error {
 			status = coordSess.State
 		}
 		scope := scopeOrFallback(sess.OwnerScope, coordSess.Scope)
-		blockedBy := scopeOrFallback(sess.BlockedBy, coordSess.BlockedBy)
+		blockedBy := strings.TrimSpace(sess.BlockedBy)
 		switch status {
 		case "parked":
 			if scope != "" {

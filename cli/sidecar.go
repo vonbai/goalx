@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -298,6 +299,9 @@ func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string
 	if err := RefreshEvolveFacts(runDir); err != nil {
 		return err
 	}
+	if _, err := processRequiredFrontierAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
+		return err
+	}
 	if _, err := processTargetAttentionAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
 		return err
 	}
@@ -516,6 +520,183 @@ func formatBlockedTargetReason(facts TargetAttentionFacts) string {
 		parts = append(parts, "runtime="+facts.RuntimeState)
 	}
 	return strings.Join(parts, " ")
+}
+
+type requiredFrontierAlert struct {
+	Key         string
+	Fingerprint string
+	Body        string
+}
+
+func processRequiredFrontierAlerts(runDir, tmuxSession, masterEngine string, presence map[string]TargetPresenceFacts) (bool, error) {
+	activity, err := LoadActivitySnapshot(ActivityPath(runDir))
+	if err != nil {
+		return false, err
+	}
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		return false, err
+	}
+	alerts, current, err := buildRequiredFrontierAlerts(runDir, activity)
+	if err != nil {
+		return false, err
+	}
+	if len(current) == 0 {
+		if len(controlState.RequiredFrontierAlerts) == 0 {
+			return false, nil
+		}
+		if err := submitAndApplyControlOp(runDir, controlOpRunStateRequiredFrontierAlerts, controlRunStateRequiredFrontierAlertsBody{}); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	masterPresence := presence["master"]
+	masterAvailable := !targetPresenceMissing(masterPresence) && targetPresenceAvailableForTransport(masterPresence)
+	if !masterAvailable {
+		return false, nil
+	}
+	alerted := false
+	for _, alert := range alerts {
+		if controlState.RequiredFrontierAlerts[alert.Key] == alert.Fingerprint {
+			continue
+		}
+		appendAuditLog(runDir, "required_frontier_alert key=%s fingerprint=%s", alert.Key, alert.Fingerprint)
+		if _, err := appendControlInboxMessage(runDir, "master", "required-frontier", "goalx sidecar", alert.Body, true); err != nil {
+			return false, err
+		}
+		dedupeKey := "master-required-frontier:" + alert.Key + ":" + alert.Fingerprint
+		if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, sendAgentNudgeDetailed); err != nil {
+			return false, err
+		}
+		alerted = true
+	}
+	if mapsEqual(controlState.RequiredFrontierAlerts, current) {
+		return alerted, nil
+	}
+	if err := submitAndApplyControlOp(runDir, controlOpRunStateRequiredFrontierAlerts, controlRunStateRequiredFrontierAlertsBody{
+		Alerts: current,
+	}); err != nil {
+		return false, err
+	}
+	return alerted, nil
+}
+
+func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]requiredFrontierAlert, map[string]string, error) {
+	if activity == nil || !activity.Coverage.RequiredPresent {
+		return nil, nil, nil
+	}
+	coord, err := LoadCoordinationState(CoordinationPath(runDir))
+	if err != nil {
+		return nil, nil, err
+	}
+	coverage := activity.Coverage
+	alerts := make([]requiredFrontierAlert, 0, len(coverage.UnmappedRequiredIDs)+len(coverage.MasterOrphanedRequiredIDs)+len(coverage.PrematureBlockedRequiredIDs))
+	current := map[string]string{}
+
+	for _, id := range coverage.UnmappedRequiredIDs {
+		key := "unmapped_required:" + id
+		fingerprint := key
+		alerts = append(alerts, requiredFrontierAlert{
+			Key:         key,
+			Fingerprint: fingerprint,
+			Body:        fmt.Sprintf("Required frontier gap in active GoalX run; required=%s fact=unmapped_required", id),
+		})
+		current[key] = fingerprint
+	}
+	for _, id := range coverage.MasterOrphanedRequiredIDs {
+		required, ok := coordinationRequiredByID(coord, id)
+		if !ok {
+			continue
+		}
+		reusable := append([]string{}, coverage.IdleReusableSessions...)
+		reusable = append(reusable, coverage.ParkedReusableSessions...)
+		sort.Strings(reusable)
+		fingerprint := strings.Join([]string{
+			"master_orphaned",
+			id,
+			"owner=" + strings.TrimSpace(required.Owner),
+			"execution_state=" + strings.TrimSpace(required.ExecutionState),
+			"reusable_sessions=" + strings.Join(reusable, ","),
+		}, "|")
+		key := "master_orphaned:" + id
+		body := fmt.Sprintf("Required frontier gap in active GoalX run; required=%s fact=master_orphaned owner=%s execution_state=%s", id, blankAsUnknown(required.Owner), blankAsUnknown(required.ExecutionState))
+		if len(reusable) > 0 {
+			body += " reusable_sessions=" + strings.Join(reusable, ",")
+		}
+		alerts = append(alerts, requiredFrontierAlert{
+			Key:         key,
+			Fingerprint: fingerprint,
+			Body:        body,
+		})
+		current[key] = fingerprint
+	}
+	for _, id := range coverage.PrematureBlockedRequiredIDs {
+		required, ok := coordinationRequiredByID(coord, id)
+		if !ok {
+			continue
+		}
+		nonTerminal := requiredFrontierNonTerminalSurfaces(required.Surfaces)
+		fingerprint := strings.Join([]string{
+			"premature_blocked",
+			id,
+			"owner=" + strings.TrimSpace(required.Owner),
+			"execution_state=" + strings.TrimSpace(required.ExecutionState),
+			"blocked_by=" + strings.TrimSpace(required.BlockedBy),
+			"non_terminal_surfaces=" + strings.Join(nonTerminal, ","),
+		}, "|")
+		key := "premature_blocked:" + id
+		body := fmt.Sprintf("Required frontier gap in active GoalX run; required=%s fact=premature_blocked owner=%s execution_state=%s", id, blankAsUnknown(required.Owner), blankAsUnknown(required.ExecutionState))
+		if blockedBy := strings.TrimSpace(required.BlockedBy); blockedBy != "" {
+			body += " blocked_by=" + blockedBy
+		}
+		if len(nonTerminal) > 0 {
+			body += " non_terminal_surfaces=" + strings.Join(nonTerminal, ",")
+		}
+		alerts = append(alerts, requiredFrontierAlert{
+			Key:         key,
+			Fingerprint: fingerprint,
+			Body:        body,
+		})
+		current[key] = fingerprint
+	}
+	sort.Slice(alerts, func(i, j int) bool {
+		return alerts[i].Key < alerts[j].Key
+	})
+	if len(alerts) == 0 {
+		return nil, nil, nil
+	}
+	return alerts, current, nil
+}
+
+func coordinationRequiredByID(coord *CoordinationState, id string) (CoordinationRequiredItem, bool) {
+	if coord == nil || coord.Required == nil {
+		return CoordinationRequiredItem{}, false
+	}
+	required, ok := coord.Required[strings.TrimSpace(id)]
+	return required, ok
+}
+
+func requiredFrontierNonTerminalSurfaces(surfaces CoordinationRequiredSurfaces) []string {
+	parts := []struct {
+		name  string
+		value string
+	}{
+		{name: "repo", value: surfaces.Repo},
+		{name: "runtime", value: surfaces.Runtime},
+		{name: "run_artifacts", value: surfaces.RunArtifacts},
+		{name: "web_research", value: surfaces.WebResearch},
+		{name: "external_system", value: surfaces.ExternalSystem},
+	}
+	names := make([]string, 0, len(parts))
+	for _, part := range parts {
+		switch strings.TrimSpace(part.value) {
+		case coordinationRequiredSurfaceExhausted, coordinationRequiredSurfaceUnreachable, coordinationRequiredSurfaceNotApplicable:
+			continue
+		default:
+			names = append(names, part.name)
+		}
+	}
+	return names
 }
 
 func processUrgentTransportTargets(runDir, runName, tmuxSession string, cfg *goalx.Config, presence map[string]TargetPresenceFacts) error {

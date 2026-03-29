@@ -1706,6 +1706,208 @@ func TestRunSidecarTickAlertsBlockedSessionAttentionOnce(t *testing.T) {
 	}
 }
 
+func TestRunSidecarTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "finish integration", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+			{ID: "req-2", Text: "verify remote system", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+			{ID: "req-3", Text: "ship remaining slice", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version: 1,
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "master",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+			"req-2": {
+				Owner:          "master",
+				ExecutionState: coordinationRequiredExecutionStateBlocked,
+				BlockedBy:      "claimed blocker before runtime exhausted",
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceExhausted,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfaceExhausted,
+					WebResearch:    coordinationRequiredSurfaceExhausted,
+					ExternalSystem: coordinationRequiredSurfaceUnreachable,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-4",
+		State: "idle",
+		Mode:  string(goalx.ModeDevelop),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
+	}
+
+	orig := sendAgentNudgeDetailed
+	defer func() { sendAgentNudgeDetailed = orig }()
+	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
+	}
+
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick first: %v", err)
+	}
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick second: %v", err)
+	}
+
+	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	if got := strings.Count(string(inboxData), `"type":"required-frontier"`); got != 3 {
+		t.Fatalf("master inbox required-frontier count = %d, want 3\n%s", got, string(inboxData))
+	}
+	for _, want := range []string{
+		"required=req-1 fact=master_orphaned",
+		"required=req-2 fact=premature_blocked",
+		"required=req-3 fact=unmapped_required",
+	} {
+		if !strings.Contains(string(inboxData), want) {
+			t.Fatalf("master inbox missing %q:\n%s", want, string(inboxData))
+		}
+	}
+
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if len(controlState.RequiredFrontierAlerts) != 3 {
+		t.Fatalf("required frontier alerts = %+v, want 3 entries", controlState.RequiredFrontierAlerts)
+	}
+
+	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlDeliveries: %v", err)
+	}
+	count := 0
+	for _, item := range deliveries.Items {
+		if strings.HasPrefix(item.DedupeKey, "master-required-frontier:") {
+			count++
+		}
+	}
+	if count != 3 {
+		t.Fatalf("required frontier deliveries = %d, want 3: %+v", count, deliveries.Items)
+	}
+}
+
+func TestRunSidecarTickRealertsRequiredFrontierWhenStateChanges(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "finish integration", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	writeCoordination := func(state string) {
+		t.Helper()
+		if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+			Version: 1,
+			Required: map[string]CoordinationRequiredItem{
+				"req-1": {
+					Owner:          "master",
+					ExecutionState: state,
+					Surfaces: CoordinationRequiredSurfaces{
+						Repo:           coordinationRequiredSurfaceActive,
+						Runtime:        coordinationRequiredSurfacePending,
+						RunArtifacts:   coordinationRequiredSurfacePending,
+						WebResearch:    coordinationRequiredSurfacePending,
+						ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+					},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("SaveCoordinationState: %v", err)
+		}
+	}
+	writeCoordination(coordinationRequiredExecutionStateProbing)
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-4",
+		State: "idle",
+		Mode:  string(goalx.ModeDevelop),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
+	}
+
+	orig := sendAgentNudgeDetailed
+	defer func() { sendAgentNudgeDetailed = orig }()
+	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
+	}
+
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick probing: %v", err)
+	}
+	writeCoordination(coordinationRequiredExecutionStateWaiting)
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick waiting: %v", err)
+	}
+
+	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	if got := strings.Count(string(inboxData), `"type":"required-frontier"`); got != 2 {
+		t.Fatalf("master inbox required-frontier count = %d, want 2\n%s", got, string(inboxData))
+	}
+	if !strings.Contains(string(inboxData), "execution_state=probing") || !strings.Contains(string(inboxData), "execution_state=waiting") {
+		t.Fatalf("master inbox missing frontier state change:\n%s", string(inboxData))
+	}
+
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if len(controlState.RequiredFrontierAlerts) != 1 {
+		t.Fatalf("required frontier alerts = %+v, want 1 entry", controlState.RequiredFrontierAlerts)
+	}
+	for _, fingerprint := range controlState.RequiredFrontierAlerts {
+		if !strings.Contains(fingerprint, "execution_state=waiting") {
+			t.Fatalf("required frontier fingerprint = %q, want waiting state", fingerprint)
+		}
+	}
+}
+
 func TestRunSidecarTickQueuesSessionWakeForUnreadSessionInbox(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

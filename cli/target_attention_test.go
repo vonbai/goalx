@@ -384,7 +384,7 @@ func TestBuildTargetAttentionFactsTreatsFreshWorktreeProgressAsHealthy(t *testin
 	}
 }
 
-func TestBuildRequiredCoverageMarksBlockedAndRiskyOwners(t *testing.T) {
+func TestBuildRequiredCoverageDoesNotCollapseTargetAttentionIntoFrontierFacts(t *testing.T) {
 	_, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)
 	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-2", State: "done", Mode: string(goalx.ModeDevelop)}); err != nil {
@@ -401,9 +401,29 @@ func TestBuildRequiredCoverageMarksBlockedAndRiskyOwners(t *testing.T) {
 	}
 	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
 		Version: 1,
-		Owners: map[string]string{
-			"req-1": "session-1",
-			"req-2": "session-2",
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-1",
+				ExecutionState: coordinationRequiredExecutionStateActive,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceAvailable,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+			"req-2": {
+				Owner:          "session-2",
+				ExecutionState: coordinationRequiredExecutionStateActive,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceAvailable,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
 		},
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
@@ -423,10 +443,10 @@ func TestBuildRequiredCoverageMarksBlockedAndRiskyOwners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildRequiredCoverage: %v", err)
 	}
-	if len(coverage.OwnerBlockedIDs) != 1 || coverage.OwnerBlockedIDs[0] != "req-1" {
-		t.Fatalf("owner_blocked = %v, want [req-1]", coverage.OwnerBlockedIDs)
+	if len(coverage.MappedRequiredIDs) != 2 {
+		t.Fatalf("mapped_required_ids = %v, want [req-1 req-2]", coverage.MappedRequiredIDs)
 	}
-	if len(coverage.OwnerRiskyIDs) != 1 || coverage.OwnerRiskyIDs[0] != "req-2" {
-		t.Fatalf("owner_risky = %v, want [req-2]", coverage.OwnerRiskyIDs)
+	if len(coverage.BlockedRequiredIDs) != 0 || len(coverage.PrematureBlockedRequiredIDs) != 0 || len(coverage.MasterOrphanedRequiredIDs) != 0 || len(coverage.SessionOwnerMissingIDs) != 0 {
+		t.Fatalf("unexpected frontier gaps in coverage: %+v", coverage)
 	}
 }

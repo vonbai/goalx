@@ -97,6 +97,13 @@ func Park(projectRoot string, args []string) error {
 	return nil
 }
 
+type sessionCoordinationDigest struct {
+	State     string
+	Scope     string
+	BlockedBy string
+	LastRound int
+}
+
 func Resume(projectRoot string, args []string) error {
 	if printUsageIfHelp(args, "usage: goalx resume [--run NAME] <session-name>") {
 		return nil
@@ -662,10 +669,10 @@ func Replace(projectRoot string, args []string) (err error) {
 	return nil
 }
 
-func inferSessionCoordination(journalPath string) CoordinationSession {
+func inferSessionCoordination(journalPath string) sessionCoordinationDigest {
 	entries, err := goalx.LoadJournal(journalPath)
 	if err != nil || len(entries) == 0 {
-		return CoordinationSession{}
+		return sessionCoordinationDigest{}
 	}
 	last := entries[len(entries)-1]
 	state := "active"
@@ -677,7 +684,7 @@ func inferSessionCoordination(journalPath string) CoordinationSession {
 	case "done":
 		state = "done"
 	}
-	return CoordinationSession{
+	return sessionCoordinationDigest{
 		State:     state,
 		Scope:     last.OwnerScope,
 		BlockedBy: last.BlockedBy,

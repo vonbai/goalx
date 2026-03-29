@@ -1002,7 +1002,7 @@ func TestStatusShowsExperimentLineageFacts(t *testing.T) {
 	}
 }
 
-func TestStatusShowsCoverageUnknownWhenOwnersMissing(t *testing.T) {
+func TestStatusShowsCoverageUnknownWhenRequiredFrontierMissing(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	if err := SaveGoalState(GoalPath(runDir), &GoalState{
 		Required: []GoalItem{
@@ -1041,8 +1041,18 @@ func TestStatusShowsExplicitCoverageFacts(t *testing.T) {
 	}
 	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
 		Version: 1,
-		Owners: map[string]string{
-			"req-1": "session-9",
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-9",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceAvailable,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
 		},
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
@@ -1063,8 +1073,9 @@ func TestStatusShowsExplicitCoverageFacts(t *testing.T) {
 	for _, want := range []string{
 		"Coverage:",
 		"open_required=req-1,req-2",
-		"unmapped_open=req-2",
-		"owner_session_missing=req-1",
+		"unmapped_required=req-2",
+		"session_owner_missing=req-1",
+		"probing_required=req-1",
 		"idle_reusable=session-4",
 		"parked_reusable=session-5",
 	} {
@@ -1074,7 +1085,7 @@ func TestStatusShowsExplicitCoverageFacts(t *testing.T) {
 	}
 }
 
-func TestStatusWarnsAboutExplicitCoverageGapOutsideEvolve(t *testing.T) {
+func TestStatusWarnsAboutRequiredFrontierGapOutsideEvolve(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	if err := os.WriteFile(RunStatusPath(runDir), []byte(`{"version":1,"phase":"working","required_remaining":2,"active_sessions":[],"updated_at":"2026-03-28T10:00:00Z"}`), 0o644); err != nil {
 		t.Fatalf("write status record: %v", err)
@@ -1089,8 +1100,18 @@ func TestStatusWarnsAboutExplicitCoverageGapOutsideEvolve(t *testing.T) {
 	}
 	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
 		Version: 1,
-		Owners: map[string]string{
-			"req-1": "session-9",
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-9",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceAvailable,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
 		},
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
@@ -1107,9 +1128,10 @@ func TestStatusWarnsAboutExplicitCoverageGapOutsideEvolve(t *testing.T) {
 
 	for _, want := range []string{
 		"### advisories",
-		"Coverage facts:",
-		"unmapped_open=req-2",
-		"owner_session_missing=req-1",
+		"Required frontier facts:",
+		"unmapped_required=req-2",
+		"session_owner_missing=req-1",
+		"probing_required=req-1",
 		"reusable_sessions=session-4",
 	} {
 		if !strings.Contains(out, want) {
@@ -1118,7 +1140,7 @@ func TestStatusWarnsAboutExplicitCoverageGapOutsideEvolve(t *testing.T) {
 	}
 }
 
-func TestStatusShowsBlockedOwnerAttentionFacts(t *testing.T) {
+func TestStatusShowsBlockedRequiredFrontierFacts(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)
 	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
@@ -1144,7 +1166,19 @@ func TestStatusShowsBlockedOwnerAttentionFacts(t *testing.T) {
 	}
 	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
 		Version: 1,
-		Owners:  map[string]string{"req-1": "session-1"},
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-1",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceAvailable,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+		},
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
 	}
@@ -1182,8 +1216,8 @@ func TestStatusShowsBlockedOwnerAttentionFacts(t *testing.T) {
 		"session-1:transport_blocked",
 		"### advisories",
 		"Target attention:",
-		"Owner attention:",
-		"req-1 owner=session-1 state=transport_blocked",
+		"Required frontier:",
+		"req-1 owner=session-1 execution_state=probing owner_attention=transport_blocked",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status output missing %q:\n%s", want, out)
@@ -1234,7 +1268,7 @@ func TestStatusShowsForkedSessionWorktreeLineage(t *testing.T) {
 	}
 }
 
-func TestStatusWarnsAboutBlockedOwnerAttention(t *testing.T) {
+func TestStatusWarnsAboutBlockedRequiredFrontier(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)
 
@@ -1257,7 +1291,19 @@ func TestStatusWarnsAboutBlockedOwnerAttention(t *testing.T) {
 	}
 	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
 		Version: 1,
-		Owners:  map[string]string{"req-1": "session-1"},
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-1",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceAvailable,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+		},
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
 	}
@@ -1289,9 +1335,111 @@ func TestStatusWarnsAboutBlockedOwnerAttention(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"Owner attention:",
+		"Required frontier:",
 		"req-1 owner=session-1",
-		"state=transport_blocked",
+		"execution_state=probing",
+		"owner_attention=transport_blocked",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestStatusWarnsAboutMasterOrphanedRequiredFrontier(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := os.WriteFile(RunStatusPath(runDir), []byte(`{"version":1,"phase":"working","required_remaining":1,"active_sessions":[],"updated_at":"2026-03-28T10:00:00Z"}`), 0o644); err != nil {
+		t.Fatalf("write status record: %v", err)
+	}
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{{ID: "req-1", Text: "finish integration", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen}},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version: 1,
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "master",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-4", State: "idle", Mode: string(goalx.ModeDevelop)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"### advisories",
+		"Required frontier facts:",
+		"master_orphaned=req-1",
+		"reusable_sessions=session-4",
+		"Required frontier:",
+		"req-1 owner=master execution_state=probing",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestStatusWarnsAboutPrematureBlockedRequiredFrontier(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := os.WriteFile(RunStatusPath(runDir), []byte(`{"version":1,"phase":"working","required_remaining":1,"active_sessions":[],"updated_at":"2026-03-28T10:00:00Z"}`), 0o644); err != nil {
+		t.Fatalf("write status record: %v", err)
+	}
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{{ID: "req-1", Text: "verify remote system", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen}},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version: 1,
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "master",
+				ExecutionState: coordinationRequiredExecutionStateBlocked,
+				BlockedBy:      "claimed blocker before runtime exhausted",
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceExhausted,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfaceExhausted,
+					WebResearch:    coordinationRequiredSurfaceExhausted,
+					ExternalSystem: coordinationRequiredSurfaceUnreachable,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"### advisories",
+		"Required frontier facts:",
+		"premature_blocked=req-1",
+		"Required frontier:",
+		"req-1 owner=master execution_state=blocked blocked_by=claimed blocker before runtime exhausted",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status output missing %q:\n%s", want, out)

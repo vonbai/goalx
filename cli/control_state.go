@@ -27,12 +27,13 @@ type ControlRunIdentity struct {
 }
 
 type ControlRunState struct {
-	Version              int               `json:"version"`
-	LifecycleState       string            `json:"lifecycle_state,omitempty"`
-	Phase                string            `json:"phase,omitempty"`
-	ActiveSessionCount   int               `json:"active_session_count,omitempty"`
-	ProviderDialogAlerts map[string]string `json:"provider_dialog_alerts,omitempty"`
-	UpdatedAt            string            `json:"updated_at,omitempty"`
+	Version                int               `json:"version"`
+	LifecycleState         string            `json:"lifecycle_state,omitempty"`
+	Phase                  string            `json:"phase,omitempty"`
+	ActiveSessionCount     int               `json:"active_session_count,omitempty"`
+	ProviderDialogAlerts   map[string]string `json:"provider_dialog_alerts,omitempty"`
+	RequiredFrontierAlerts map[string]string `json:"required_frontier_alerts,omitempty"`
+	UpdatedAt              string            `json:"updated_at,omitempty"`
 }
 
 type ControlLease struct {

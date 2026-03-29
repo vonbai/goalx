@@ -106,11 +106,12 @@ var durableSurfaceRegistry = map[DurableSurfaceName]DurableSurfaceSpec{
 		FrameworkReadsBody: true,
 		Schema: DurableSurfaceSchemaSpec{
 			Format:  DurableSurfaceSchemaFormatJSON,
-			Summary: "Short master-written coordination digest for ownership and execution state.",
-			Example: `{"version":1,"plan_summary":["session-1 explores root cause"],"owners":{"req-1":"session-1"},"sessions":{"session-1":{"state":"active","execution_state":"working","scope":"trace unknown field source","last_round":1,"updated_at":"2026-03-28T10:00:00Z"}},"decision":{"root_cause":"legacy schema drift","chosen_path":"single_source_contract","chosen_path_reason":"one concern one path"},"blocked":[],"open_questions":[],"updated_at":"2026-03-28T10:00:00Z"}`,
+			Summary: "Short master-written coordination digest for required-item frontier state and session scope.",
+			Example: `{"version":1,"plan_summary":["session-1 explores root cause"],"required":{"req-1":{"owner":"session-1","execution_state":"probing","surfaces":{"repo":"active","runtime":"pending","run_artifacts":"pending","web_research":"pending","external_system":"not_applicable"},"updated_at":"2026-03-28T10:00:00Z"}},"sessions":{"session-1":{"state":"active","scope":"trace unknown field source","last_round":1,"updated_at":"2026-03-28T10:00:00Z"}},"decision":{"root_cause":"legacy schema drift","chosen_path":"single_source_contract","chosen_path_reason":"one concern one path"},"open_questions":[],"updated_at":"2026-03-28T10:00:00Z"}`,
 			FieldNotes: []string{
 				"No legacy aliases are accepted for session grouping fields.",
-				"`owners` is explicit coverage mapping when present.",
+				"`required` is the canonical required-item frontier map.",
+				"Coverage derives `premature_blocked` when a `blocked` item still has non-terminal machine surfaces.",
 				"Keep verbose reasoning in journals, not this digest.",
 			},
 		},

@@ -283,7 +283,7 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 	if len(attention) > 0 {
 		snapshot.Attention = attention
 	}
-	snapshot.Coverage = buildRequiredCoverage(goalState, coordinationState, sessionState, coverageSessionRoster(runDir, sessionState), attention)
+	snapshot.Coverage = buildRequiredCoverage(goalState, coordinationState, sessionState, coverageSessionRoster(runDir, sessionState))
 	return snapshot, nil
 }
 

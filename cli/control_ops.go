@@ -11,18 +11,19 @@ import (
 )
 
 const (
-	controlOpReminderQueue                = "reminder.queue"
-	controlOpReminderSuppress             = "reminder.suppress"
-	controlOpReminderRecordAttempt        = "reminder.record_attempt"
-	controlOpDeliveryPrepare              = "delivery.prepare"
-	controlOpDeliveryComplete             = "delivery.complete"
-	controlOpDeliveryReconcileTarget      = "delivery.reconcile_target"
-	controlOpRunStateProviderDialogAlerts = "run_state.provider_dialog_alerts"
-	controlOpFinalizeControlSurfaces      = "control.finalize_surfaces"
-	controlOpRunRuntimeUpsert             = "runtime.run.upsert"
-	controlOpSessionRuntimeUpsert         = "runtime.session.upsert"
-	controlOpSessionRuntimeRemove         = "runtime.session.remove"
-	controlOpSessionsRuntimeFinalize      = "runtime.sessions.finalize"
+	controlOpReminderQueue                  = "reminder.queue"
+	controlOpReminderSuppress               = "reminder.suppress"
+	controlOpReminderRecordAttempt          = "reminder.record_attempt"
+	controlOpDeliveryPrepare                = "delivery.prepare"
+	controlOpDeliveryComplete               = "delivery.complete"
+	controlOpDeliveryReconcileTarget        = "delivery.reconcile_target"
+	controlOpRunStateProviderDialogAlerts   = "run_state.provider_dialog_alerts"
+	controlOpRunStateRequiredFrontierAlerts = "run_state.required_frontier_alerts"
+	controlOpFinalizeControlSurfaces        = "control.finalize_surfaces"
+	controlOpRunRuntimeUpsert               = "runtime.run.upsert"
+	controlOpSessionRuntimeUpsert           = "runtime.session.upsert"
+	controlOpSessionRuntimeRemove           = "runtime.session.remove"
+	controlOpSessionsRuntimeFinalize        = "runtime.sessions.finalize"
 )
 
 type ControlOp struct {
@@ -79,6 +80,10 @@ type controlDeliveryReconcileTargetBody struct {
 }
 
 type controlRunStateProviderDialogAlertsBody struct {
+	Alerts map[string]string `json:"alerts,omitempty"`
+}
+
+type controlRunStateRequiredFrontierAlertsBody struct {
 	Alerts map[string]string `json:"alerts,omitempty"`
 }
 
@@ -333,6 +338,12 @@ func applyControlOp(runDir string, op ControlOp) error {
 			return err
 		}
 		return applyRunStateProviderDialogAlertsOp(runDir, body)
+	case controlOpRunStateRequiredFrontierAlerts:
+		var body controlRunStateRequiredFrontierAlertsBody
+		if err := json.Unmarshal(op.Body, &body); err != nil {
+			return err
+		}
+		return applyRunStateRequiredFrontierAlertsOp(runDir, body)
 	case controlOpFinalizeControlSurfaces:
 		var body controlFinalizeControlSurfacesBody
 		if err := json.Unmarshal(op.Body, &body); err != nil {
@@ -534,6 +545,20 @@ func applyRunStateProviderDialogAlertsOp(runDir string, body controlRunStateProv
 		state.ProviderDialogAlerts = nil
 	} else {
 		state.ProviderDialogAlerts = body.Alerts
+	}
+	state.UpdatedAt = ""
+	return SaveControlRunState(ControlRunStatePath(runDir), state)
+}
+
+func applyRunStateRequiredFrontierAlertsOp(runDir string, body controlRunStateRequiredFrontierAlertsBody) error {
+	state, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		return err
+	}
+	if len(body.Alerts) == 0 {
+		state.RequiredFrontierAlerts = nil
+	} else {
+		state.RequiredFrontierAlerts = body.Alerts
 	}
 	state.UpdatedAt = ""
 	return SaveControlRunState(ControlRunStatePath(runDir), state)

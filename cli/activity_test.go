@@ -284,8 +284,18 @@ func TestBuildActivitySnapshotIncludesCoverageFacts(t *testing.T) {
 	}
 	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
 		Version: 1,
-		Owners: map[string]string{
-			"req-1": "session-9",
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-9",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfacePending,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
 		},
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
@@ -302,20 +312,23 @@ func TestBuildActivitySnapshotIncludesCoverageFacts(t *testing.T) {
 		t.Fatalf("BuildActivitySnapshot: %v", err)
 	}
 
-	if !snapshot.Coverage.OwnersPresent {
-		t.Fatal("coverage owners_present = false, want true")
+	if !snapshot.Coverage.RequiredPresent {
+		t.Fatal("coverage required_present = false, want true")
 	}
 	if got, want := snapshot.Coverage.OpenRequiredIDs, []string{"req-1", "req-2"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("coverage open_required_ids = %v, want %v", got, want)
 	}
-	if got, want := snapshot.Coverage.OwnedOpenIDs, []string{"req-1"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("coverage owned_open_ids = %v, want %v", got, want)
+	if got, want := snapshot.Coverage.MappedRequiredIDs, []string{"req-1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage mapped_required_ids = %v, want %v", got, want)
 	}
-	if got, want := snapshot.Coverage.UnmappedOpenIDs, []string{"req-2"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("coverage unmapped_open_ids = %v, want %v", got, want)
+	if got, want := snapshot.Coverage.UnmappedRequiredIDs, []string{"req-2"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage unmapped_required_ids = %v, want %v", got, want)
 	}
-	if got, want := snapshot.Coverage.OwnerSessionMissingIDs, []string{"req-1"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("coverage owner_session_missing_ids = %v, want %v", got, want)
+	if got, want := snapshot.Coverage.SessionOwnerMissingIDs, []string{"req-1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage session_owner_missing_ids = %v, want %v", got, want)
+	}
+	if got, want := snapshot.Coverage.ProbingRequiredIDs, []string{"req-1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage probing_required_ids = %v, want %v", got, want)
 	}
 	if got, want := snapshot.Coverage.IdleReusableSessions, []string{"session-1"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("coverage idle_reusable_sessions = %v, want %v", got, want)
@@ -442,7 +455,7 @@ func TestBuildActivitySnapshotSerializesCoverageUnknownExplicitly(t *testing.T) 
 	}
 	text := string(data)
 	for _, want := range []string{
-		`"owners_present":false`,
+		`"required_present":false`,
 		`"open_required_ids":["req-1"]`,
 	} {
 		if !strings.Contains(text, want) {

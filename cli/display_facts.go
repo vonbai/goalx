@@ -113,35 +113,19 @@ func collectRunAdvisories(rc *RunContext) ([]string, error) {
 			advisories = append(advisories, "Budget exhausted: "+formatBudgetSummary(activity.Budget))
 		}
 		coverage := activity.Coverage
-		if coverage.OwnersPresent && (len(coverage.UnmappedOpenIDs) > 0 || len(coverage.OwnerSessionMissingIDs) > 0 || len(coverage.OwnerAttentionIDs) > 0 || len(coverage.OwnerBlockedIDs) > 0 || len(coverage.OwnerRiskyIDs) > 0) {
-			parts := make([]string, 0, 6)
-			if len(coverage.UnmappedOpenIDs) > 0 {
-				parts = append(parts, "unmapped_open="+strings.Join(coverage.UnmappedOpenIDs, ","))
-			}
-			if len(coverage.OwnerSessionMissingIDs) > 0 {
-				parts = append(parts, "owner_session_missing="+strings.Join(coverage.OwnerSessionMissingIDs, ","))
-			}
-			if len(coverage.OwnerAttentionIDs) > 0 {
-				parts = append(parts, "owner_attention="+strings.Join(coverage.OwnerAttentionIDs, ","))
-			}
-			if len(coverage.OwnerBlockedIDs) > 0 {
-				parts = append(parts, "owner_blocked="+strings.Join(coverage.OwnerBlockedIDs, ","))
-			}
-			if len(coverage.OwnerRiskyIDs) > 0 {
-				parts = append(parts, "owner_risky="+strings.Join(coverage.OwnerRiskyIDs, ","))
-			}
+		if parts := requiredFrontierFactParts(coverage); coverage.RequiredPresent && len(parts) > 0 {
 			reusable := append([]string{}, coverage.IdleReusableSessions...)
 			reusable = append(reusable, coverage.ParkedReusableSessions...)
 			if len(reusable) > 0 {
 				parts = append(parts, "reusable_sessions="+strings.Join(reusable, ","))
 			}
-			advisories = append(advisories, "Coverage facts: "+strings.Join(parts, " "))
+			advisories = append(advisories, "Required frontier facts: "+strings.Join(parts, " "))
 		}
 		if targetAttention := formatTargetAttentionAdvisory(activity.Attention); targetAttention != "" {
 			advisories = append(advisories, targetAttention)
 		}
-		if ownerAttention := formatOwnerAttentionAdvisory(rc.RunDir, coverage, activity.Attention); ownerAttention != "" {
-			advisories = append(advisories, ownerAttention)
+		if frontier := formatRequiredFrontierAdvisory(rc.RunDir, coverage, activity.Attention); frontier != "" {
+			advisories = append(advisories, frontier)
 		}
 	}
 	evolveFacts, err := LoadCurrentEvolveFacts(rc.RunDir)
@@ -198,27 +182,33 @@ func formatEvolveManagementAdvisory(facts *EvolveFacts, status *RunStatusRecord)
 
 func formatCoverageSummary(coverage RequiredCoverage) string {
 	if len(coverage.OpenRequiredIDs) == 0 &&
-		len(coverage.OwnedOpenIDs) == 0 &&
-		len(coverage.UnmappedOpenIDs) == 0 &&
-		len(coverage.OwnerSessionMissingIDs) == 0 &&
-		len(coverage.OwnerAttentionIDs) == 0 &&
-		len(coverage.OwnerBlockedIDs) == 0 &&
-		len(coverage.OwnerRiskyIDs) == 0 {
+		len(coverage.MappedRequiredIDs) == 0 &&
+		len(coverage.UnmappedRequiredIDs) == 0 &&
+		len(coverage.SessionOwnerMissingIDs) == 0 &&
+		len(coverage.MasterOwnedRequiredIDs) == 0 &&
+		len(coverage.MasterOrphanedRequiredIDs) == 0 &&
+		len(coverage.ProbingRequiredIDs) == 0 &&
+		len(coverage.WaitingRequiredIDs) == 0 &&
+		len(coverage.BlockedRequiredIDs) == 0 &&
+		len(coverage.PrematureBlockedRequiredIDs) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, 10)
-	if !coverage.OwnersPresent {
+	parts := make([]string, 0, 14)
+	if !coverage.RequiredPresent {
 		parts = append(parts, "coverage=unknown")
 	} else {
 		parts = append(parts, "coverage=explicit")
 	}
 	appendCoverageSummaryPart(&parts, "open_required", coverage.OpenRequiredIDs)
-	appendCoverageSummaryPart(&parts, "owned_open", coverage.OwnedOpenIDs)
-	appendCoverageSummaryPart(&parts, "unmapped_open", coverage.UnmappedOpenIDs)
-	appendCoverageSummaryPart(&parts, "owner_session_missing", coverage.OwnerSessionMissingIDs)
-	appendCoverageSummaryPart(&parts, "owner_attention", coverage.OwnerAttentionIDs)
-	appendCoverageSummaryPart(&parts, "owner_blocked", coverage.OwnerBlockedIDs)
-	appendCoverageSummaryPart(&parts, "owner_risky", coverage.OwnerRiskyIDs)
+	appendCoverageSummaryPart(&parts, "mapped_required", coverage.MappedRequiredIDs)
+	appendCoverageSummaryPart(&parts, "unmapped_required", coverage.UnmappedRequiredIDs)
+	appendCoverageSummaryPart(&parts, "session_owner_missing", coverage.SessionOwnerMissingIDs)
+	appendCoverageSummaryPart(&parts, "master_owned", coverage.MasterOwnedRequiredIDs)
+	appendCoverageSummaryPart(&parts, "master_orphaned", coverage.MasterOrphanedRequiredIDs)
+	appendCoverageSummaryPart(&parts, "probing_required", coverage.ProbingRequiredIDs)
+	appendCoverageSummaryPart(&parts, "waiting_required", coverage.WaitingRequiredIDs)
+	appendCoverageSummaryPart(&parts, "blocked_required", coverage.BlockedRequiredIDs)
+	appendCoverageSummaryPart(&parts, "premature_blocked", coverage.PrematureBlockedRequiredIDs)
 	appendCoverageSummaryPart(&parts, "idle_reusable", coverage.IdleReusableSessions)
 	appendCoverageSummaryPart(&parts, "parked_reusable", coverage.ParkedReusableSessions)
 	return strings.Join(parts, " ")
@@ -277,54 +267,114 @@ func appendCoverageSummaryPart(parts *[]string, label string, values []string) {
 	*parts = append(*parts, label+"="+strings.Join(values, ","))
 }
 
-func formatOwnerAttentionAdvisory(runDir string, coverage RequiredCoverage, attention map[string]TargetAttentionFacts) string {
-	if len(coverage.OwnerAttentionIDs) == 0 && len(coverage.OwnerBlockedIDs) == 0 && len(coverage.OwnerRiskyIDs) == 0 {
+func requiredFrontierFactParts(coverage RequiredCoverage) []string {
+	parts := make([]string, 0, 8)
+	appendCoverageSummaryPart(&parts, "unmapped_required", coverage.UnmappedRequiredIDs)
+	appendCoverageSummaryPart(&parts, "session_owner_missing", coverage.SessionOwnerMissingIDs)
+	appendCoverageSummaryPart(&parts, "master_orphaned", coverage.MasterOrphanedRequiredIDs)
+	appendCoverageSummaryPart(&parts, "probing_required", coverage.ProbingRequiredIDs)
+	appendCoverageSummaryPart(&parts, "waiting_required", coverage.WaitingRequiredIDs)
+	appendCoverageSummaryPart(&parts, "blocked_required", coverage.BlockedRequiredIDs)
+	appendCoverageSummaryPart(&parts, "premature_blocked", coverage.PrematureBlockedRequiredIDs)
+	return parts
+}
+
+func formatRequiredFrontierAdvisory(runDir string, coverage RequiredCoverage, attention map[string]TargetAttentionFacts) string {
+	if len(coverage.MappedRequiredIDs) == 0 {
 		return ""
 	}
 	coord, err := LoadCoordinationState(CoordinationPath(runDir))
-	if err != nil || coord == nil || len(coord.Owners) == 0 {
+	if err != nil || coord == nil || len(coord.Required) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, len(coverage.OwnerAttentionIDs)+len(coverage.OwnerBlockedIDs)+len(coverage.OwnerRiskyIDs))
-	appendOwnerAttentionParts(&parts, coord, attention, coverage.OwnerAttentionIDs)
-	appendOwnerAttentionParts(&parts, coord, attention, coverage.OwnerBlockedIDs)
-	appendOwnerAttentionParts(&parts, coord, attention, coverage.OwnerRiskyIDs)
-	if len(parts) == 0 {
-		return ""
-	}
-	return "Owner attention: " + strings.Join(parts, " | ")
-}
-
-func appendOwnerAttentionParts(parts *[]string, coord *CoordinationState, attention map[string]TargetAttentionFacts, ids []string) {
-	for _, id := range ids {
-		id = strings.TrimSpace(id)
-		if id == "" || coord == nil {
+	parts := make([]string, 0, len(coverage.MappedRequiredIDs))
+	for _, id := range sortedRequiredFrontierDetailIDs(coverage) {
+		required, ok := coord.Required[id]
+		if !ok {
 			continue
 		}
-		owner := strings.TrimSpace(coord.Owners[id])
+		owner := strings.TrimSpace(required.Owner)
 		if owner == "" {
 			continue
 		}
-		detail := id + " owner=" + owner
-		if facts, ok := attention[owner]; ok {
-			if state := strings.TrimSpace(facts.AttentionState); state != "" {
-				detail += " state=" + state
-			}
-			if facts.Unread > 0 {
-				detail += fmt.Sprintf(" unread=%d", facts.Unread)
-			}
-			if facts.CursorLag > 0 {
-				detail += fmt.Sprintf(" cursor_lag=%d", facts.CursorLag)
-			}
-			if facts.JournalStaleMinutes > 0 {
-				detail += fmt.Sprintf(" journal_stale=%dm", facts.JournalStaleMinutes)
-			}
-			if facts.WorktreeStaleMinutes > 0 {
-				detail += fmt.Sprintf(" worktree_stale=%dm", facts.WorktreeStaleMinutes)
-			}
+		attentionFacts, hasAttention := attention[owner]
+		attentionState := strings.TrimSpace(attentionFacts.AttentionState)
+		if !requiredFrontierDetailNeeded(id, required, coverage, hasAttention && targetAttentionNeedsAction(attentionFacts)) {
+			continue
 		}
-		*parts = append(*parts, detail)
+		detail := id + " owner=" + owner + " execution_state=" + required.ExecutionState
+		if blockedBy := strings.TrimSpace(required.BlockedBy); blockedBy != "" {
+			detail += " blocked_by=" + blockedBy
+		}
+		if containsString(coverage.SessionOwnerMissingIDs, id) {
+			detail += " owner_missing=true"
+		}
+		if containsString(coverage.MasterOrphanedRequiredIDs, id) {
+			detail += " master_orphaned=true"
+		}
+		if containsString(coverage.PrematureBlockedRequiredIDs, id) {
+			detail += " premature_blocked=true"
+		}
+		if hasAttention && targetAttentionNeedsAction(attentionFacts) && attentionState != "" {
+			detail += " owner_attention=" + attentionState
+		}
+		parts = append(parts, detail)
 	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Required frontier: " + strings.Join(parts, " | ")
+}
+
+func sortedRequiredFrontierDetailIDs(coverage RequiredCoverage) []string {
+	idSet := map[string]struct{}{}
+	for _, ids := range [][]string{
+		coverage.MappedRequiredIDs,
+		coverage.SessionOwnerMissingIDs,
+		coverage.MasterOrphanedRequiredIDs,
+		coverage.ProbingRequiredIDs,
+		coverage.WaitingRequiredIDs,
+		coverage.BlockedRequiredIDs,
+		coverage.PrematureBlockedRequiredIDs,
+	} {
+		for _, id := range ids {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			idSet[id] = struct{}{}
+		}
+	}
+	if len(idSet) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func requiredFrontierDetailNeeded(id string, required CoordinationRequiredItem, coverage RequiredCoverage, ownerAttention bool) bool {
+	switch required.ExecutionState {
+	case coordinationRequiredExecutionStateProbing, coordinationRequiredExecutionStateWaiting, coordinationRequiredExecutionStateBlocked:
+		return true
+	}
+	return containsString(coverage.SessionOwnerMissingIDs, id) ||
+		containsString(coverage.MasterOrphanedRequiredIDs, id) ||
+		containsString(coverage.PrematureBlockedRequiredIDs, id) ||
+		ownerAttention
+}
+
+func containsString(values []string, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, value := range values {
+		if strings.TrimSpace(value) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func formatTargetAttentionAdvisory(attention map[string]TargetAttentionFacts) string {

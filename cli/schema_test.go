@@ -57,7 +57,7 @@ func TestSchemaPrintsCoordinationContract(t *testing.T) {
 		"# GoalX Schema: coordination",
 		"structured_state",
 		"replace",
-		`"owners": {`,
+		`"required": {`,
 		`"decision": {`,
 		"goalx durable replace coordination --run NAME --file /abs/path.json",
 	} {
