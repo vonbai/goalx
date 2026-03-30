@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -29,12 +29,12 @@ func TestLookupDurableContractReturnsSchemaMetadata(t *testing.T) {
 	if len(contract.Notes) == 0 {
 		t.Fatal("contract.Notes is empty")
 	}
-	var record RunStatusRecord
-	if err := json.Unmarshal([]byte(contract.Example), &record); err != nil {
-		t.Fatalf("json.Unmarshal(status example): %v\n%s", err, contract.Example)
+	record, err := parseStatusAuthoringBody([]byte(contract.Example))
+	if err != nil {
+		t.Fatalf("parseStatusAuthoringBody(status example): %v\n%s", err, contract.Example)
 	}
-	if err := validateRunStatusRecord(&record); err != nil {
-		t.Fatalf("status example must satisfy validator: %v\n%s", err, contract.Example)
+	if record.Version != 1 {
+		t.Fatalf("record.Version = %d, want 1", record.Version)
 	}
 }
 
@@ -49,11 +49,14 @@ func TestLookupDurableContractSupportsEventLogs(t *testing.T) {
 	if contract.WriteMode != DurableSurfaceWriteModeAppend {
 		t.Fatalf("contract.WriteMode = %s, want %s", contract.WriteMode, DurableSurfaceWriteModeAppend)
 	}
-	if !strings.Contains(contract.Example, `"kind": "decision"`) {
-		t.Fatalf("contract.Example missing decision envelope:\n%s", contract.Example)
+	if !strings.Contains(contract.Example, `"decision": "initial_boundary_shape_selection"`) {
+		t.Fatalf("contract.Example missing decision body:\n%s", contract.Example)
 	}
 	if !strings.Contains(contract.Example, `"boundary_shapes_compared"`) {
-		t.Fatalf("contract.Example missing goal-log envelope:\n%s", contract.Example)
+		t.Fatalf("contract.Example missing goal-log body:\n%s", contract.Example)
+	}
+	if !slices.Equal(contract.AllowedKinds, []string{"decision", "checkpoint", "blocker", "handoff", "closeout", "note", "update"}) {
+		t.Fatalf("contract.AllowedKinds = %v", contract.AllowedKinds)
 	}
 }
 
@@ -85,11 +88,11 @@ func TestLookupDurableContractCoordinationExampleSatisfiesValidator(t *testing.T
 	if err != nil {
 		t.Fatalf("LookupDurableContract(coordination): %v", err)
 	}
-	var record CoordinationState
-	if err := json.Unmarshal([]byte(contract.Example), &record); err != nil {
-		t.Fatalf("json.Unmarshal(coordination example): %v\n%s", err, contract.Example)
+	record, err := parseCoordinationAuthoringBody([]byte(contract.Example))
+	if err != nil {
+		t.Fatalf("parseCoordinationAuthoringBody(coordination example): %v\n%s", err, contract.Example)
 	}
-	if err := validateCoordinationState(&record); err != nil {
-		t.Fatalf("coordination example must satisfy validator: %v\n%s", err, contract.Example)
+	if record.Version != 1 {
+		t.Fatalf("record.Version = %d, want 1", record.Version)
 	}
 }

@@ -51,8 +51,11 @@ func TestDurableSurfaceRegistryRejectsUnknownSurface(t *testing.T) {
 
 func TestDurableSurfaceRegistryIncludesSchemaMetadataForAllSurfaces(t *testing.T) {
 	for name, spec := range durableSurfaceRegistry {
-		if spec.Schema.Format == "" {
-			t.Fatalf("%s schema format is empty", name)
+		if spec.Schema.AuthoringFormat == "" {
+			t.Fatalf("%s schema authoring format is empty", name)
+		}
+		if spec.Schema.StorageFormat == "" {
+			t.Fatalf("%s schema storage format is empty", name)
 		}
 		if spec.Schema.Summary == "" {
 			t.Fatalf("%s schema summary is empty", name)

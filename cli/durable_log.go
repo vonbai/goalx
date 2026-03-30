@@ -50,34 +50,6 @@ func LoadDurableLog(path string, surface DurableSurfaceName) ([]DurableLogEvent,
 	return events, nil
 }
 
-func AppendDurableLog(path string, surface DurableSurfaceName, data []byte) error {
-	events, err := parseDurableLogBuffer(data, surface)
-	if err != nil {
-		return err
-	}
-	if len(events) == 0 {
-		return fmt.Errorf("durable log append payload is empty")
-	}
-	return withExclusiveFileLock(path, func() error {
-		existing, err := os.ReadFile(path)
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		var buf bytes.Buffer
-		if len(existing) > 0 {
-			buf.Write(existing)
-			if existing[len(existing)-1] != '\n' {
-				buf.WriteByte('\n')
-			}
-		}
-		buf.Write(data)
-		if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] != '\n' {
-			buf.WriteByte('\n')
-		}
-		return writeFileAtomic(path, buf.Bytes(), 0o644)
-	})
-}
-
 func parseDurableLogBuffer(data []byte, surface DurableSurfaceName) ([]DurableLogEvent, error) {
 	lines := splitNonEmptyLines(string(data))
 	if len(lines) == 0 {

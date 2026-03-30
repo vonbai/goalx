@@ -17,13 +17,17 @@ func TestSchemaPrintsStructuredSurfaceContract(t *testing.T) {
 		"# GoalX Schema: status",
 		"structured_state",
 		"replace",
-		`"version": 1`,
 		`"required_remaining": 0`,
-		"goalx durable replace status --run NAME --file /abs/path.json",
+		"goalx durable write status --run NAME --body-file /abs/path.json",
+		"Authoring format: `json`",
+		"Storage format: `json`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("schema output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, `"version": 1`) {
+		t.Fatalf("status schema should not expose storage-only version field in authoring example:\n%s", out)
 	}
 }
 
@@ -38,7 +42,7 @@ func TestSchemaPrintsGoalContractWithObligationGrammar(t *testing.T) {
 		"# GoalX Schema: goal",
 		`"role": "outcome"`,
 		`"source": "master"`,
-		"goalx durable replace goal --run NAME --file /abs/path.json",
+		"goalx durable write goal --run NAME --body-file /abs/path.json",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("schema output missing %q:\n%s", want, out)
@@ -59,7 +63,7 @@ func TestSchemaPrintsCoordinationContract(t *testing.T) {
 		"replace",
 		`"required": {`,
 		`"decision": {`,
-		"goalx durable replace coordination --run NAME --file /abs/path.json",
+		"goalx durable write coordination --run NAME --body-file /abs/path.json",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("schema output missing %q:\n%s", want, out)
@@ -78,12 +82,18 @@ func TestSchemaPrintsEventLogContract(t *testing.T) {
 		"# GoalX Schema: goal-log",
 		"event_log",
 		"append",
-		`"kind": "`,
-		`"body": {`,
-		"goalx durable append goal-log --run NAME --file /abs/path.jsonl",
+		`"decision": "initial_boundary_shape_selection"`,
+		"goalx durable write goal-log --run NAME --kind decision --actor master --body-file /abs/path.json",
+		"Authoring format: `json`",
+		"Storage format: `jsonl`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("schema output missing %q:\n%s", want, out)
+		}
+	}
+	for _, unwanted := range []string{`"kind": "decision"`, `"version": 1`, `"actor": "master"`} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("goal-log schema should not expose storage envelope field %q in authoring example:\n%s", unwanted, out)
 		}
 	}
 }
@@ -107,6 +117,9 @@ func TestSchemaJSONOutput(t *testing.T) {
 	}
 	if got := payload["write_mode"]; got != string(DurableSurfaceWriteModeReplace) {
 		t.Fatalf("write_mode = %#v, want %q", got, DurableSurfaceWriteModeReplace)
+	}
+	if got := payload["authoring_format"]; got != string(DurableSurfaceSchemaFormatJSON) {
+		t.Fatalf("authoring_format = %#v, want %q", got, DurableSurfaceSchemaFormatJSON)
 	}
 }
 

@@ -93,17 +93,25 @@ func appendExperimentCreated(runDir string, body ExperimentCreatedBody) error {
 	if body.CreatedAt == "" {
 		body.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	payload, err := json.Marshal(DurableLogEvent{
-		Version: 1,
-		Kind:    "experiment.created",
-		At:      body.CreatedAt,
-		Actor:   "goalx",
-		Body:    mustMarshalRaw(body),
+	payload, err := json.Marshal(experimentCreatedAuthoringBody{
+		ExperimentID:     body.ExperimentID,
+		Session:          body.Session,
+		Branch:           body.Branch,
+		Worktree:         body.Worktree,
+		Intent:           body.Intent,
+		BaseRef:          body.BaseRef,
+		BaseExperimentID: body.BaseExperimentID,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal experiment.created: %w", err)
 	}
-	return AppendDurableLog(ExperimentsLogPath(runDir), DurableSurfaceExperiments, payload)
+	return ApplyDurableMutation(runDir, DurableMutation{
+		Surface: DurableSurfaceExperiments,
+		Kind:    "experiment.created",
+		Actor:   "goalx",
+		At:      body.CreatedAt,
+		Body:    payload,
+	})
 }
 
 func appendExperimentIntegrated(runDir string, body ExperimentIntegratedBody) error {
@@ -114,17 +122,24 @@ func appendExperimentIntegrated(runDir string, body ExperimentIntegratedBody) er
 	if body.RecordedAt == "" {
 		body.RecordedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	payload, err := json.Marshal(DurableLogEvent{
-		Version: 1,
-		Kind:    "experiment.integrated",
-		At:      body.RecordedAt,
-		Actor:   "goalx",
-		Body:    mustMarshalRaw(body),
+	payload, err := json.Marshal(experimentIntegratedAuthoringBody{
+		IntegrationID:       body.IntegrationID,
+		ResultExperimentID:  body.ResultExperimentID,
+		SourceExperimentIDs: body.SourceExperimentIDs,
+		Method:              body.Method,
+		ResultBranch:        body.ResultBranch,
+		ResultCommit:        body.ResultCommit,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal experiment.integrated: %w", err)
 	}
-	return AppendDurableLog(ExperimentsLogPath(runDir), DurableSurfaceExperiments, payload)
+	return ApplyDurableMutation(runDir, DurableMutation{
+		Surface: DurableSurfaceExperiments,
+		Kind:    "experiment.integrated",
+		Actor:   "goalx",
+		At:      body.RecordedAt,
+		Body:    payload,
+	})
 }
 
 func initializeRootExperimentLineage(runDir, runWorktree, runName, intent string) error {
@@ -233,12 +248,4 @@ func validateExperimentLogBody(kind string, body json.RawMessage) error {
 	default:
 		return fmt.Errorf("unsupported experiment log kind %q", kind)
 	}
-}
-
-func mustMarshalRaw(v any) json.RawMessage {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return json.RawMessage(data)
 }

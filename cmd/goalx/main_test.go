@@ -269,7 +269,7 @@ func TestRunCommandDispatchesDurable(t *testing.T) {
 	called := false
 	mainDurable = func(_ string, args []string) error {
 		called = true
-		want := []string{"replace", "status", "--run", "demo", "--file", "/tmp/status.json"}
+		want := []string{"write", "status", "--run", "demo", "--body-file", "/tmp/status.body.json"}
 		if len(args) != len(want) {
 			t.Fatalf("args = %v, want %v", args, want)
 		}
@@ -280,7 +280,7 @@ func TestRunCommandDispatchesDurable(t *testing.T) {
 		}
 		return nil
 	}
-	if err := runCommand(t.TempDir(), "durable", []string{"replace", "status", "--run", "demo", "--file", "/tmp/status.json"}); err != nil {
+	if err := runCommand(t.TempDir(), "durable", []string{"write", "status", "--run", "demo", "--body-file", "/tmp/status.body.json"}); err != nil {
 		t.Fatalf("runCommand durable: %v", err)
 	}
 	if !called {
@@ -320,11 +320,11 @@ func TestUsageIncludesSchemaCommand(t *testing.T) {
 }
 
 func TestUsageDescribesDurableAsWritePath(t *testing.T) {
-	if !strings.Contains(usage, "goalx durable <replace|append> ...  Validate and write durable protocol surfaces") {
+	if !strings.Contains(usage, "goalx durable write <surface> ...   Apply structured durable authoring payloads") {
 		t.Fatalf("usage durable line should describe write path, not schema authority:\n%s", usage)
 	}
-	if strings.Contains(usage, "Validate and write canonical durable protocol surfaces") {
-		t.Fatalf("usage should not describe durable as canonical authority:\n%s", usage)
+	if strings.Contains(usage, "Validate and write durable protocol surfaces") {
+		t.Fatalf("usage should no longer describe raw durable replace/append writes:\n%s", usage)
 	}
 }
 

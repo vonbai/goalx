@@ -91,18 +91,18 @@ goalx schema goal-log
 goalx schema experiments
 ```
 
-Use `goalx schema <surface>` as the canonical machine-consumed durable contract authority.
+Use `goalx schema <surface>` as the canonical machine-consumed durable authoring-contract authority.
 
 ## Durable Surface Writes
 
 ```bash
-goalx durable replace goal --run NAME --file /abs/path.json
-goalx durable replace acceptance --run NAME --file /abs/path.json
-goalx durable replace coordination --run NAME --file /abs/path.json
-goalx durable replace status --run NAME --file /abs/path.json
+goalx durable write goal --run NAME --body-file /abs/path.json
+goalx durable write acceptance --run NAME --body-file /abs/path.json
+goalx durable write coordination --run NAME --body-file /abs/path.json
+goalx durable write status --run NAME --body-file /abs/path.json
 
-goalx durable append goal-log --run NAME --file /abs/path.jsonl
-goalx durable append experiments --run NAME --file /abs/path.jsonl
+goalx durable write goal-log --run NAME --kind decision --actor master --body-file /abs/path.json
+goalx durable write experiments --run NAME --kind experiment.created --actor master --body-file /abs/path.json
 ```
 
-Inspect the surface first with `goalx schema <surface>`, then use `goalx durable` to write it. Do not hand-edit those files in place.
+Inspect the surface first with `goalx schema <surface>`, then use `goalx durable write` with an authoring payload. The framework serializes the canonical storage envelope and timestamps. Do not hand-edit those files in place.

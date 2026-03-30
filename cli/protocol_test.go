@@ -2009,8 +2009,8 @@ func TestRenderMasterProtocolIncludesCurrentTimeAndEvolveIntentFacts(t *testing.
 		"This run was launched with explicit `evolve` intent.",
 		"Experiment ledger: `/tmp/experiments.jsonl`",
 		"Current integrated path: `/tmp/integration.json`",
-		"`goalx durable append experiments --run demo --file /abs/path.jsonl`",
-		"`version`, `kind`, `at`, `actor`, `body`",
+		"`goalx durable write experiments --run demo --kind experiment.created --actor master --body-file /abs/path.json`",
+		"Do not hand-author the durable-log envelope.",
 		"`required_remaining == 0` only means the current required baseline is covered.",
 		"Do not enter review or idle just because required items are covered.",
 		"Before you enter review or idle in `evolve`, either dispatch the next experiment, integrate a winning path, or append `evolve.stopped`.",
@@ -2229,7 +2229,7 @@ func TestRenderMasterProtocolIncludesExplicitCoverageOwnershipGuidance(t *testin
 	}
 	text := string(out)
 	for _, want := range []string{
-		"When durable ownership becomes explicit, inspect `goalx schema coordination` and replace `coordination` through `goalx durable replace coordination --run demo --file /abs/path.json`.",
+		"When durable ownership becomes explicit, inspect `goalx schema coordination` and write `coordination` through `goalx durable write coordination --run demo --body-file /abs/path.json`.",
 		"If `/tmp/coordination.json` shows uncovered current-goal work, required outcomes must not remain silently unmapped.",
 		"When explicit coverage facts show uncovered required work and reusable capacity exists, either dispatch or reassign it now, or record why this control cycle stays serial.",
 		"Do not infer ownership from journals or `owner_scope`.",

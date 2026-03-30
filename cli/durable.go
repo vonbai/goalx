@@ -1,31 +1,45 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 )
 
+const durableUsage = "usage: goalx durable write <surface> --run NAME --body-file /abs/path.json [--kind KIND] [--actor ACTOR]"
+
 func Durable(projectRoot string, args []string) error {
 	if len(args) == 1 && isHelpToken(args[0]) {
-		fmt.Println("usage: goalx durable <replace|append> <surface> --run NAME --file /abs/path")
-		fmt.Println("inspect the canonical contract first with `goalx schema <surface>`")
+		fmt.Println(durableUsage)
+		fmt.Println("inspect the authoring contract first with `goalx schema <surface>`")
 		return nil
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: goalx durable <replace|append> <surface> --run NAME --file /abs/path")
+		return fmt.Errorf(durableUsage)
 	}
 	mode := strings.TrimSpace(args[0])
+	if mode != "write" {
+		return fmt.Errorf("unknown durable mode %q", mode)
+	}
 	runName, rest, err := extractRunFlag(args[1:])
 	if err != nil {
 		return err
 	}
-	filePath, rest, err := extractStringFlag(rest, "--file")
+	bodyFile, rest, err := extractStringFlag(rest, "--body-file")
 	if err != nil {
 		return err
 	}
-	if runName == "" || strings.TrimSpace(filePath) == "" || len(rest) != 1 {
-		return fmt.Errorf("usage: goalx durable <replace|append> <surface> --run NAME --file /abs/path")
+	kind, rest, err := extractStringFlag(rest, "--kind")
+	if err != nil {
+		return err
+	}
+	actor, rest, err := extractStringFlag(rest, "--actor")
+	if err != nil {
+		return err
+	}
+	if runName == "" || strings.TrimSpace(bodyFile) == "" || len(rest) != 1 {
+		return fmt.Errorf(durableUsage)
 	}
 	rc, err := ResolveRun(projectRoot, runName)
 	if err != nil {
@@ -35,97 +49,34 @@ func Durable(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(bodyFile)
 	if err != nil {
 		return err
 	}
-	switch mode {
-	case string(DurableSurfaceWriteModeReplace):
-		return durableReplace(rc.RunDir, spec, data)
-	case string(DurableSurfaceWriteModeAppend):
-		return durableAppend(rc.RunDir, spec, data)
-	default:
-		return fmt.Errorf("unknown durable mode %q", mode)
-	}
-}
-
-func durableReplace(runDir string, spec DurableSurfaceSpec, data []byte) error {
-	if spec.WriteMode != DurableSurfaceWriteModeReplace {
-		return fmt.Errorf("surface %q does not support replace", spec.Name)
-	}
-	if spec.Class != DurableSurfaceClassStructuredState {
-		return fmt.Errorf("surface %q is not a structured state surface", spec.Name)
-	}
-	return replaceDurableStructuredSurface(runDir, spec.Name, data)
-}
-
-func durableAppend(runDir string, spec DurableSurfaceSpec, data []byte) error {
-	if spec.WriteMode != DurableSurfaceWriteModeAppend {
-		return fmt.Errorf("surface %q does not support append", spec.Name)
-	}
-	if spec.Class != DurableSurfaceClassEventLog {
-		return fmt.Errorf("surface %q is not an event log surface", spec.Name)
-	}
-	return AppendDurableLog(spec.Path(runDir), spec.Name, data)
-}
-
-func validateDurableStructuredPayload(surface DurableSurfaceName, data []byte) error {
-	switch surface {
-	case DurableSurfaceObjectiveContract:
-		_, err := parseObjectiveContract(data)
-		return err
-	case DurableSurfaceGoal:
-		_, err := parseGoalState(data)
-		return err
-	case DurableSurfaceAcceptance:
-		_, err := parseAcceptanceState(data)
-		return err
-	case DurableSurfaceCoordination:
-		_, err := parseCoordinationState(data)
-		return err
-	case DurableSurfaceStatus:
-		_, err := parseRunStatusRecord(data)
-		return err
-	default:
-		return fmt.Errorf("surface %q is not a structured state surface", surface)
-	}
-}
-
-func replaceDurableStructuredSurface(runDir string, surface DurableSurfaceName, data []byte) error {
-	switch surface {
-	case DurableSurfaceObjectiveContract:
-		contract, err := parseObjectiveContract(data)
-		if err != nil {
-			return err
+	if spec.Class == DurableSurfaceClassEventLog {
+		if strings.TrimSpace(kind) == "" {
+			return fmt.Errorf("event-log surface %q requires --kind", spec.Name)
 		}
-		return SaveObjectiveContract(ObjectiveContractPath(runDir), contract)
-	case DurableSurfaceGoal:
-		state, err := parseGoalState(data)
-		if err != nil {
-			return err
+		if strings.TrimSpace(actor) == "" {
+			return fmt.Errorf("event-log surface %q requires --actor", spec.Name)
 		}
-		return SaveGoalState(GoalPath(runDir), state)
-	case DurableSurfaceAcceptance:
-		state, err := parseAcceptanceState(data)
-		if err != nil {
-			return err
+	} else {
+		if strings.TrimSpace(kind) != "" {
+			return fmt.Errorf("structured surface %q does not accept --kind", spec.Name)
 		}
-		return SaveAcceptanceState(AcceptanceStatePath(runDir), state)
-	case DurableSurfaceCoordination:
-		state, err := parseCoordinationState(data)
-		if err != nil {
-			return err
+		if strings.TrimSpace(actor) != "" {
+			return fmt.Errorf("structured surface %q does not accept --actor", spec.Name)
 		}
-		return SaveCoordinationState(CoordinationPath(runDir), state)
-	case DurableSurfaceStatus:
-		record, err := parseRunStatusRecord(data)
-		if err != nil {
-			return err
-		}
-		return SaveRunStatusRecord(RunStatusPath(runDir), record)
-	default:
-		return fmt.Errorf("surface %q is not a structured state surface", surface)
 	}
+	if spec.Class == DurableSurfaceClassArtifact {
+		return fmt.Errorf("surface %q is not machine-consumed", spec.Name)
+	}
+	return ApplyDurableMutation(rc.RunDir, DurableMutation{
+		Surface: spec.Name,
+		Kind:    kind,
+		Actor:   actor,
+		Body:    json.RawMessage(data),
+	})
 }
 
 func extractStringFlag(args []string, name string) (string, []string, error) {

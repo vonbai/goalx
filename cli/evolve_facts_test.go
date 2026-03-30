@@ -132,7 +132,12 @@ func appendExperimentEventForTest(t *testing.T, runDir, payload string) {
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := AppendDurableLog(ExperimentsLogPath(runDir), DurableSurfaceExperiments, []byte(payload)); err != nil {
-		t.Fatalf("AppendDurableLog: %v", err)
+	file, err := os.OpenFile(ExperimentsLogPath(runDir), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	defer file.Close()
+	if _, err := file.WriteString(payload + "\n"); err != nil {
+		t.Fatalf("WriteString: %v", err)
 	}
 }

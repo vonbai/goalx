@@ -76,7 +76,7 @@ func TestBuildAffordancesRouteDurableInspectionThroughSchemaCommand(t *testing.T
 
 	var found bool
 	for _, item := range doc.Items {
-		if item.ID != "durable-replace" && item.ID != "durable-append" {
+		if item.ID != "durable-write-state" && item.ID != "durable-write-event" {
 			continue
 		}
 		found = true
@@ -90,7 +90,7 @@ func TestBuildAffordancesRouteDurableInspectionThroughSchemaCommand(t *testing.T
 		}
 	}
 	if !found {
-		t.Fatal("durable replace/append affordance not found")
+		t.Fatal("durable write affordance not found")
 	}
 }
 
@@ -297,8 +297,8 @@ func TestBuildAffordancesIncludesEvolveExperimentCommandsAndFacts(t *testing.T) 
 	for _, want := range []string{
 		"goalx diff --run guidance-run session-1 session-2",
 		`goalx add --run guidance-run --mode develop --worktree --base-branch session-N "follow-on direction"`,
-		"goalx durable append experiments --run guidance-run --file /abs/path.experiment-closed.jsonl",
-		"goalx durable append experiments --run guidance-run --file /abs/path.evolve-stopped.jsonl",
+		"goalx durable write experiments --run guidance-run --kind experiment.closed --actor master --body-file /abs/path.experiment-closed.json",
+		"goalx durable write experiments --run guidance-run --kind evolve.stopped --actor master --body-file /abs/path.evolve-stopped.json",
 	} {
 		if !strings.Contains(joinedCommands, want) {
 			t.Fatalf("affordance commands missing %q:\n%s", want, joinedCommands)
@@ -340,8 +340,8 @@ func TestBuildAffordancesOmitsEvolveManagementItemsOutsideEvolve(t *testing.T) {
 	}
 	joinedCommands := strings.Join(commands, "\n")
 	for _, blocked := range []string{
-		"goalx durable append experiments --run guidance-run --file /abs/path.experiment-closed.jsonl",
-		"goalx durable append experiments --run guidance-run --file /abs/path.evolve-stopped.jsonl",
+		"goalx durable write experiments --run guidance-run --kind experiment.closed --actor master --body-file /abs/path.experiment-closed.json",
+		"goalx durable write experiments --run guidance-run --kind evolve.stopped --actor master --body-file /abs/path.evolve-stopped.json",
 	} {
 		if strings.Contains(joinedCommands, blocked) {
 			t.Fatalf("affordances unexpectedly exposed evolve command %q:\n%s", blocked, joinedCommands)
