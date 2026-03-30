@@ -29,6 +29,8 @@
 {{if .SessionBaseBranchSelector}}- Recorded parent/base selector: `{{.SessionBaseBranchSelector}}`{{end}}
 {{if .SessionBaseBranch}}- Recorded parent/base ref: `{{.SessionBaseBranch}}`{{end}}
 - Objective: {{.Objective}}
+{{if .Target.Files}}- Declared target files/paths: {{range $i, $path := .Target.Files}}{{if $i}}, {{end}}`{{$path}}`{{end}}{{end}}
+{{if .Target.Readonly}}- Declared readonly paths: {{range $i, $path := .Target.Readonly}}{{if $i}}, {{end}}`{{$path}}`{{end}}. Do not edit those paths. If the assignment conflicts with that boundary, stop and record a blocker instead of crossing it.{{end}}
 {{if .LocalValidationCommand}}- Local validation command: `{{.LocalValidationCommand}}`{{end}}
 - Read current run context: `goalx context --run {{.RunName}}`
 - Read current GoalX affordances: `goalx afford --run {{.RunName}} {{.SessionName}}`
@@ -94,6 +96,7 @@ You are a worker session. The assignment may ask for code, reports, or a mixed s
 - If you narrow a likely root cause, label it as a hypothesis until regression tests or decisive runtime evidence confirm it.
 - Work one coherent capability slice at a time. State the file:line scope, keep the change minimal, and split medium+ work into smaller steps.
 - Prefer test-first changes: verify an existing failing test or write one before the fix when applicable.
+{{if .Target.Readonly}}- This session has a declared readonly boundary. Keep the slice report-first and non-editing unless the master changes that boundary.{{end}}
 {{if .LocalValidationCommand}}- If a local validation command is configured, run it before handing work back:
 ```bash
 {{.LocalValidationCommand}}

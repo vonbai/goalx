@@ -137,6 +137,41 @@ func TestAffordCommandPrintsSessionWorktreeBoundaryFacts(t *testing.T) {
 	}
 }
 
+func TestAffordCommandPrintsDeclaredReadonlyBoundaryFacts(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	seedGuidanceSessionFixture(t, runDir, cfg)
+	identity, err := LoadSessionIdentity(SessionIdentityPath(runDir, "session-1"))
+	if err != nil {
+		t.Fatalf("LoadSessionIdentity: %v", err)
+	}
+	if identity == nil {
+		t.Fatal("session-1 identity missing")
+	}
+	identity.Target = goalx.TargetConfig{Files: []string{"report.md"}, Readonly: []string{"."}}
+	if err := os.Remove(SessionIdentityPath(runDir, "session-1")); err != nil {
+		t.Fatalf("remove session identity: %v", err)
+	}
+	if err := SaveSessionIdentity(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
+		t.Fatalf("SaveSessionIdentity: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Afford(repo, []string{"--run", cfg.Name, "session-1"}); err != nil {
+			t.Fatalf("Afford: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"Declared readonly paths: `.`.",
+		"GoalX records this as an execution contract.",
+		"stop and redirect instead of crossing the readonly boundary",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("afford output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestAffordCommandJsonAllowsFlagBeforeTarget(t *testing.T) {
 	repo, _, cfg, _ := writeGuidanceRunFixture(t)
 

@@ -124,6 +124,15 @@ func renderContextIndex(index *ContextIndex) string {
 			writeContextLine("Worker role", identity.RoleContracts.Worker.Mandate)
 		}
 	}
+	if len(index.TargetFiles) > 0 || len(index.ReadonlyPaths) > 0 {
+		b.WriteString("\n## Run Boundary\n\n")
+		if len(index.TargetFiles) > 0 {
+			writeContextLine("Target files", strings.Join(index.TargetFiles, ", "))
+		}
+		if len(index.ReadonlyPaths) > 0 {
+			writeContextLine("Readonly paths", strings.Join(index.ReadonlyPaths, ", "))
+		}
+	}
 	if index.GoalBoundary != nil {
 		b.WriteString("\n## Goal Boundary\n\n")
 		writeContextLine("Required items", fmt.Sprintf("%d", index.GoalBoundary.RequiredCount))
@@ -274,6 +283,8 @@ func renderContextIndex(index *ContextIndex) string {
 			writeIndentedContextLine(&b, "branch", sess.Branch)
 			writeIndentedContextLine(&b, "base selector", sess.BaseBranchSelector)
 			writeIndentedContextLine(&b, "base branch", sess.BaseBranch)
+			writeIndentedContextLine(&b, "target files", strings.Join(sess.TargetFiles, ", "))
+			writeIndentedContextLine(&b, "readonly paths", strings.Join(sess.ReadonlyPaths, ", "))
 			writeIndentedContextLine(&b, "journal", sess.JournalPath)
 			writeIndentedContextLine(&b, "inbox", sess.InboxPath)
 			writeIndentedContextLine(&b, "cursor", sess.CursorPath)

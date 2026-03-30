@@ -437,6 +437,11 @@ func buildWorktreeBoundaryAffordance(index *ContextIndex, target string) *Afford
 		if session.BaseBranch != "" {
 			item.Facts = append(item.Facts, fmt.Sprintf("Recorded parent/base ref: `%s`.", session.BaseBranch))
 		}
+		if len(session.ReadonlyPaths) > 0 {
+			item.Facts = append(item.Facts, fmt.Sprintf("Declared readonly paths: `%s`.", strings.Join(session.ReadonlyPaths, "`, `")))
+			item.Facts = append(item.Facts, "GoalX records this as an execution contract.")
+			item.Facts = append(item.Facts, "If the assignment conflicts with it, stop and redirect instead of crossing the readonly boundary.")
+		}
 		if session.WorktreePath != "" {
 			item.Facts = append(item.Facts, "If you discover accidental edits outside your assigned worktree, stop, record the boundary violation, and migrate or revert those edits before continuing.")
 		}

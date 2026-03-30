@@ -581,6 +581,42 @@ func TestRenderSubagentProtocolUsesGenericWorkerGuidanceNotHardBans(t *testing.T
 	}
 }
 
+func TestRenderSubagentProtocolDeclaresReadonlyBoundary(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		RunName:           "demo",
+		Objective:         "investigate auth",
+		Mode:              goalx.ModeWorker,
+		Engine:            "codex",
+		ProjectRoot:       "/tmp/project",
+		SessionName:       "session-1",
+		Target:            goalx.TargetConfig{Files: []string{"report.md"}, Readonly: []string{"."}},
+		JournalPath:       "/tmp/journal.jsonl",
+		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath: "/tmp/control/session-1-cursor.json",
+	}
+
+	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
+		t.Fatalf("RenderSubagentProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "program-1.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"Declared target files/paths: `report.md`",
+		"Declared readonly paths: `.`",
+		"Do not edit those paths.",
+		"This session has a declared readonly boundary.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered protocol missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestRenderSubagentProtocolKeepsWorkerMethodologyConciseForCodeSlices(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{

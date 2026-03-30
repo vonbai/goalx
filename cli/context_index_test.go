@@ -85,6 +85,57 @@ func TestBuildContextIndexIncludesImmutableRunIdentity(t *testing.T) {
 	}
 }
 
+func TestBuildContextIndexIncludesDeclaredReadonlyBoundary(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	cfg.Target = goalx.TargetConfig{Files: []string{"report.md"}, Readonly: []string{"."}}
+	if err := SaveRunSpec(runDir, cfg); err != nil {
+		t.Fatalf("SaveRunSpec: %v", err)
+	}
+	seedGuidanceSessionFixture(t, runDir, cfg)
+	identity, err := LoadSessionIdentity(SessionIdentityPath(runDir, "session-1"))
+	if err != nil {
+		t.Fatalf("LoadSessionIdentity: %v", err)
+	}
+	if identity == nil {
+		t.Fatal("session identity missing")
+	}
+	identity.Target = goalx.TargetConfig{Files: []string{"report.md"}, Readonly: []string{"."}}
+	if err := os.Remove(SessionIdentityPath(runDir, "session-1")); err != nil {
+		t.Fatalf("remove session identity: %v", err)
+	}
+	if err := SaveSessionIdentity(SessionIdentityPath(runDir, "session-1"), identity); err != nil {
+		t.Fatalf("SaveSessionIdentity: %v", err)
+	}
+
+	index, err := BuildContextIndex(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildContextIndex: %v", err)
+	}
+	if got, want := index.TargetFiles, []string{"report.md"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("target_files = %#v, want %#v", got, want)
+	}
+	if got, want := index.ReadonlyPaths, []string{"."}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("readonly_paths = %#v, want %#v", got, want)
+	}
+	if len(index.Sessions) != 1 {
+		t.Fatalf("sessions = %#v, want one session", index.Sessions)
+	}
+	if got, want := index.Sessions[0].ReadonlyPaths, []string{"."}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("session readonly_paths = %#v, want %#v", got, want)
+	}
+	rendered := renderContextIndex(index)
+	for _, want := range []string{
+		"## Run Boundary",
+		"Target files: `report.md`",
+		"Readonly paths: `.`",
+		"readonly paths: `.`",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered context missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
 func TestBuildContextIndexIncludesEvolveFactsOnlyForEvolveRuns(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	meta.Intent = runIntentEvolve

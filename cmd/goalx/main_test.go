@@ -327,6 +327,15 @@ func TestUsageIncludesSchemaCommand(t *testing.T) {
 	}
 }
 
+func TestUsageDescribesSavedRunPhaseContinuation(t *testing.T) {
+	if !strings.Contains(usage, "saved run") {
+		t.Fatalf("usage should describe saved runs, got:\n%s", usage)
+	}
+	if strings.Contains(usage, "existing run with an explicit next-step intent") {
+		t.Fatalf("usage should not describe phase continuation as an existing live run:\n%s", usage)
+	}
+}
+
 func TestUsageDescribesDurableAsWritePath(t *testing.T) {
 	if !strings.Contains(usage, "goalx durable write <surface> ...   Apply structured durable authoring payloads") {
 		t.Fatalf("usage durable line should describe write path, not schema authority:\n%s", usage)

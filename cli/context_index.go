@@ -19,6 +19,8 @@ type ContextIndex struct {
 	RunDir                string                     `json:"run_dir,omitempty"`
 	RunName               string                     `json:"run_name,omitempty"`
 	RunWorktree           string                     `json:"run_worktree,omitempty"`
+	TargetFiles           []string                   `json:"target_files,omitempty"`
+	ReadonlyPaths         []string                   `json:"readonly_paths,omitempty"`
 	RunIdentity           ContextRunIdentity         `json:"run_identity"`
 	ReportsDir            string                     `json:"reports_dir,omitempty"`
 	CharterPath           string                     `json:"charter_path,omitempty"`
@@ -173,6 +175,8 @@ type ContextSession struct {
 	Branch                 string                    `json:"branch,omitempty"`
 	BaseBranchSelector     string                    `json:"base_branch_selector,omitempty"`
 	BaseBranch             string                    `json:"base_branch,omitempty"`
+	TargetFiles            []string                  `json:"target_files,omitempty"`
+	ReadonlyPaths          []string                  `json:"readonly_paths,omitempty"`
 }
 
 type ProviderRuntimeFact struct {
@@ -244,6 +248,8 @@ func BuildContextIndex(projectRoot, runName, runDir string) (*ContextIndex, erro
 		RunDir:                runDir,
 		RunName:               runName,
 		RunWorktree:           RunWorktreePath(runDir),
+		TargetFiles:           append([]string(nil), cfg.Target.Files...),
+		ReadonlyPaths:         append([]string(nil), cfg.Target.Readonly...),
 		RunIdentity:           contextRunIdentity(charter, meta),
 		ReportsDir:            ReportsDir(runDir),
 		CharterPath:           RunCharterPath(runDir),
@@ -354,6 +360,8 @@ func BuildContextIndex(projectRoot, runName, runDir string) (*ContextIndex, erro
 			session.EffectiveEffort = identity.EffectiveEffort
 			session.BaseBranchSelector = identity.BaseBranchSelector
 			session.BaseBranch = identity.BaseBranch
+			session.TargetFiles = append([]string(nil), identity.Target.Files...)
+			session.ReadonlyPaths = append([]string(nil), identity.Target.Readonly...)
 			index.ProviderRuntimeFacts = append(index.ProviderRuntimeFacts, providerRuntimeFactsForEngine(name, identity.Engine)...)
 		}
 		if sessionsState, err := EnsureSessionsRuntimeState(runDir); err == nil {

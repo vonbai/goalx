@@ -160,7 +160,7 @@ goalx run "we understand why ranking quality regressed and have an evidence-back
 
 - `deliver` stays the default fresh-run path when the user wants the goal achieved.
 - `explore` is the fresh evidence-first path when the user wants investigation, alternatives, and reports before implementation.
-- `--readonly` is the hard no-code-change boundary when the run should investigate and report without editing the repo.
+- `--readonly` declares a no-edit execution boundary in `target.readonly` and surfaces it to workers through GoalX protocol/context/affordances. It is a GoalX contract boundary, not an OS sandbox.
 
 ### Evolve Workflow
 
@@ -204,7 +204,7 @@ goalx run --from auth-audit --intent explore --readonly
 - `debate`: challenge and refine prior findings
 - `implement`: build from prior evidence or debate output
 - `explore`: either start fresh as an evidence-first run or extend the evidence base from saved artifacts
-- `--readonly`: keep the next phase investigative even when it reuses prior artifacts
+- `--readonly`: carry a declared no-edit boundary into the next phase when it should stay investigative
 
 ## Worktree Architecture
 

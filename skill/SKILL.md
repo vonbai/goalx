@@ -136,7 +136,10 @@ Intent mapping:
 - **evolve**: the user wants open-ended iterative improvement
 - **debate**: challenge and refine prior findings from a saved run
 - **implement**: build from prior evidence or debate output from a saved run
-- **--readonly**: enforce a no-code-change target boundary for report-first or investigation-only runs
+
+Boundary flag:
+
+- **--readonly**: declare a no-edit execution boundary in `target.readonly` for report-first or investigation-only runs; GoalX exposes it in protocol/context/affordances instead of pretending it is an OS sandbox
 
 ## Evolve
 
@@ -171,7 +174,7 @@ Rules:
 
 - `debate` and `implement` phase continuation require a saved run
 - `explore` supports both fresh runs and saved-run continuation
-- add `--readonly` when the continuation should stay investigative and avoid repo edits
+- add `--readonly` when the continuation should carry a declared no-edit boundary
 - the saved run must contain report or summary context
 - use `goalx save` before telling the user to continue from a prior run
 

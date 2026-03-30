@@ -15,7 +15,7 @@ const usage = `goalx — autonomous goal execution CLI
 
 Usage:
   goalx run     "objective" [--readonly] [flags]   Primary goal entrypoint; defaults to deliver semantics
-  goalx run     --from RUN --intent debate|implement|explore [--readonly] [flags] Continue an existing run with an explicit next-step intent
+  goalx run     --from RUN --intent debate|implement|explore [--readonly] [flags] Continue a saved run with an explicit next-step intent
   goalx init    "objective" [flags]   Generate an explicit manual draft config from an objective
   goalx start   --config PATH         Create run + tmux + launch the master from an explicit manual draft
   goalx start   "objective" [flags]   Create and start a run directly from CLI flags
