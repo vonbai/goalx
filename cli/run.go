@@ -44,6 +44,11 @@ func Run(projectRoot string, args []string) error {
 	case runIntentDeliver:
 		fallthrough
 	case runIntentEvolve:
+		fallthrough
+	case runIntentExplore:
+		if req.Intent == runIntentExplore && hasLiteralFlag(req.Args, "--from") {
+			return runExploreIntent(projectRoot, req.Args)
+		}
 		opts, err := parseLaunchOptions(req.Args, goalx.ModeAuto, true)
 		if err != nil {
 			return err
@@ -55,19 +60,23 @@ func Run(projectRoot string, args []string) error {
 		printAutoStarted()
 		return nil
 	case runIntentDebate:
+		if err := requirePhaseSource(req.Intent, req.Args); err != nil {
+			return err
+		}
 		return runDebateIntent(projectRoot, req.Args)
 	case runIntentImplement:
+		if err := requirePhaseSource(req.Intent, req.Args); err != nil {
+			return err
+		}
 		return runImplementIntent(projectRoot, req.Args)
-	case runIntentExplore:
-		return runExploreIntent(projectRoot, req.Args)
 	default:
 		return fmt.Errorf("unsupported run intent %q", req.Intent)
 	}
 }
 
 func runUsage() string {
-	return `usage: goalx run "objective" [--intent deliver|evolve] [flags]
-       goalx run --from RUN --intent debate [flags]
+	return `usage: goalx run "objective" [--intent deliver|evolve|explore] [flags]
+       goalx run --from RUN --intent debate|implement|explore [flags]
 
 notes:
   run is the primary entrypoint.
@@ -118,6 +127,22 @@ func prependRunIntent(args []string, intent string) []string {
 	next = append(next, "--intent", intent)
 	next = append(next, args...)
 	return next
+}
+
+func hasLiteralFlag(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
+}
+
+func requirePhaseSource(intent string, args []string) error {
+	if hasLiteralFlag(args, "--from") {
+		return nil
+	}
+	return fmt.Errorf("--intent %s requires --from RUN", intent)
 }
 
 func printAutoStarted() {

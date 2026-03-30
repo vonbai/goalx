@@ -16,6 +16,7 @@ Do not choose this path by default. Prefer:
 
 ```bash
 goalx run "goal"
+goalx run "goal" --intent explore
 goalx run "goal" --intent evolve --budget 8h
 goalx recover --run RUN
 goalx run --from RUN --intent debate
@@ -117,6 +118,7 @@ Prefer durable GoalX commands over direct transport input:
 - `goalx add --run NAME --effort high "question"` to add a deeper worker using the current selection policy
 - `goalx add --run NAME --engine ENGINE --model MODEL --effort LEVEL "task"` only when you intentionally want to bypass the current selection policy
 - `goalx run "goal" --effort high` to start a deeper default-deliver run with explicit reasoning depth
+- `goalx run "goal" --intent explore` to start a fresh evidence-first run
 - `goalx run --from RUN --intent debate` to start a debate phase from a saved run
 - `goalx run --from RUN --intent implement` to start an implementation phase from a saved run
 - `goalx run --from RUN --intent explore` to start a follow-up exploration phase from a saved run

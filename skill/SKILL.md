@@ -120,6 +120,7 @@ Use intent to express the kind of outcome the user wants.
 
 ```bash
 goalx run "goal"
+goalx run "goal" --intent explore
 goalx run "goal" --intent evolve --budget 8h
 goalx run --from RUN --intent debate
 goalx run --from RUN --intent implement
@@ -129,10 +130,10 @@ goalx run --from RUN --intent explore
 Intent mapping:
 
 - **default / deliver**: the user wants the goal achieved
+- **explore**: the user wants a fresh evidence-first investigation or a follow-up evidence expansion
 - **evolve**: the user wants open-ended iterative improvement
-- **debate**: challenge and refine prior findings
-- **implement**: build from prior evidence or debate output
-- **explore**: extend prior findings and search for better paths
+- **debate**: challenge and refine prior findings from a saved run
+- **implement**: build from prior evidence or debate output from a saved run
 
 ## Evolve
 
@@ -164,7 +165,8 @@ goalx run --from RUN --intent explore
 
 Rules:
 
-- phase continuation requires a saved run
+- `debate` and `implement` phase continuation require a saved run
+- `explore` supports both fresh runs and saved-run continuation
 - the saved run must contain report or summary context
 - use `goalx save` before telling the user to continue from a prior run
 

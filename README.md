@@ -154,8 +154,11 @@ What happens:
 Use `intent` to bias master behavior and output shape without creating separate runtime modes.
 
 ```bash
-goalx run "we understand why ranking quality regressed and have an evidence-backed recovery plan"
+goalx run "we understand why ranking quality regressed and have an evidence-backed recovery plan" --intent explore
 ```
+
+- `deliver` stays the default fresh-run path when the user wants the goal achieved.
+- `explore` is the fresh evidence-first path when the user wants investigation, alternatives, and reports before implementation.
 
 ### Evolve Workflow
 
@@ -197,7 +200,7 @@ goalx run --from auth-audit --intent explore
 - `save + run --from` creates a new phase run from saved artifacts
 - `debate`: challenge and refine prior findings
 - `implement`: build from prior evidence or debate output
-- `explore`: extend the evidence base and look for stronger paths
+- `explore`: either start fresh as an evidence-first run or extend the evidence base from saved artifacts
 
 ## Worktree Architecture
 
