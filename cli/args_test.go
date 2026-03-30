@@ -105,6 +105,16 @@ func TestParseLaunchOptionsAcceptsNoSnapshotFlag(t *testing.T) {
 	}
 }
 
+func TestParseLaunchOptionsAcceptsReadonlyFlag(t *testing.T) {
+	opts, err := parseLaunchOptions([]string{"audit auth", "--readonly"}, goalx.ModeWorker, true)
+	if err != nil {
+		t.Fatalf("parseLaunchOptions: %v", err)
+	}
+	if !opts.Readonly {
+		t.Fatal("Readonly = false, want true")
+	}
+}
+
 func TestParseLaunchOptionsSupportsRepeatedDimensions(t *testing.T) {
 	opts, err := parseLaunchOptions([]string{
 		"audit auth",

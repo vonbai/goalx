@@ -155,10 +155,12 @@ Use `intent` to bias master behavior and output shape without creating separate 
 
 ```bash
 goalx run "we understand why ranking quality regressed and have an evidence-backed recovery plan" --intent explore
+goalx run "we understand why ranking quality regressed and have an evidence-backed recovery plan" --intent explore --readonly
 ```
 
 - `deliver` stays the default fresh-run path when the user wants the goal achieved.
 - `explore` is the fresh evidence-first path when the user wants investigation, alternatives, and reports before implementation.
+- `--readonly` is the hard no-code-change boundary when the run should investigate and report without editing the repo.
 
 ### Evolve Workflow
 
@@ -195,12 +197,14 @@ goalx save auth-audit
 goalx run --from auth-audit --intent debate
 goalx run --from auth-audit --intent implement
 goalx run --from auth-audit --intent explore
+goalx run --from auth-audit --intent explore --readonly
 ```
 
 - `save + run --from` creates a new phase run from saved artifacts
 - `debate`: challenge and refine prior findings
 - `implement`: build from prior evidence or debate output
 - `explore`: either start fresh as an evidence-first run or extend the evidence base from saved artifacts
+- `--readonly`: keep the next phase investigative even when it reuses prior artifacts
 
 ## Worktree Architecture
 

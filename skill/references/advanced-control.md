@@ -17,11 +17,13 @@ Do not choose this path by default. Prefer:
 ```bash
 goalx run "goal"
 goalx run "goal" --intent explore
+goalx run "goal" --intent explore --readonly
 goalx run "goal" --intent evolve --budget 8h
 goalx recover --run RUN
 goalx run --from RUN --intent debate
 goalx run --from RUN --intent implement
 goalx run --from RUN --intent explore
+goalx run --from RUN --intent explore --readonly
 ```
 
 Recommended engine/model policy lives in user-scoped `~/.goalx/config.yaml` under `selection`.
@@ -119,9 +121,11 @@ Prefer durable GoalX commands over direct transport input:
 - `goalx add --run NAME --engine ENGINE --model MODEL --effort LEVEL "task"` only when you intentionally want to bypass the current selection policy
 - `goalx run "goal" --effort high` to start a deeper default-deliver run with explicit reasoning depth
 - `goalx run "goal" --intent explore` to start a fresh evidence-first run
+- `goalx run "goal" --intent explore --readonly` to force an investigation-only run with no repo edits
 - `goalx run --from RUN --intent debate` to start a debate phase from a saved run
 - `goalx run --from RUN --intent implement` to start an implementation phase from a saved run
 - `goalx run --from RUN --intent explore` to start a follow-up exploration phase from a saved run
+- `goalx run --from RUN --intent explore --readonly` to keep that follow-up exploration report-first and non-editing
 - `--master engine/model` and `--worker engine/model` to override role defaults
 - `--effort LEVEL`, `--master-effort LEVEL`, and `--worker-effort LEVEL` to control provider-aware reasoning depth
 - `--dimension depth,adversarial` to seed launch-time viewpoints for a new run or phase

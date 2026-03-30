@@ -231,6 +231,54 @@ func TestBuildLaunchConfigPreviewLeavesTargetAndLocalValidationUnsetWhenUnconfig
 	}
 }
 
+func TestBuildLaunchResolveRequestAppliesReadonlyTargetOverride(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+	req, err := buildLaunchResolveRequest(projectRoot, layers.Config, launchOptions{
+		Objective: "audit auth",
+		Mode:      goalx.ModeWorker,
+		Readonly:  true,
+	})
+	if err != nil {
+		t.Fatalf("buildLaunchResolveRequest: %v", err)
+	}
+	if req.TargetOverride == nil {
+		t.Fatal("TargetOverride = nil, want readonly override")
+	}
+	if got, want := req.TargetOverride.Readonly, []string{"."}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("target.readonly override = %#v, want %#v", got, want)
+	}
+}
+
+func TestResolveLaunchConfigAppliesReadonlyOverride(t *testing.T) {
+	projectRoot := t.TempDir()
+	writeLaunchConfigProjectFile(t, projectRoot, `
+target:
+  files: ["cli/"]
+local_validation:
+  command: go test ./cli/...
+`)
+
+	resolved, err := resolveLaunchConfig(projectRoot, launchOptions{
+		Objective: "audit auth",
+		Mode:      goalx.ModeWorker,
+		Readonly:  true,
+	})
+	if err != nil {
+		t.Fatalf("resolveLaunchConfig: %v", err)
+	}
+	if got, want := resolved.Config.Target.Readonly, []string{"."}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("target.readonly = %#v, want %#v", got, want)
+	}
+	if got, want := resolved.Config.Target.Files, []string{"cli/"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("target.files = %#v, want %#v", got, want)
+	}
+}
+
 func TestResolveLaunchConfigPreservesConfiguredBudgetWhenFlagOmitted(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `

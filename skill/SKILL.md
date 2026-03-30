@@ -121,10 +121,12 @@ Use intent to express the kind of outcome the user wants.
 ```bash
 goalx run "goal"
 goalx run "goal" --intent explore
+goalx run "goal" --intent explore --readonly
 goalx run "goal" --intent evolve --budget 8h
 goalx run --from RUN --intent debate
 goalx run --from RUN --intent implement
 goalx run --from RUN --intent explore
+goalx run --from RUN --intent explore --readonly
 ```
 
 Intent mapping:
@@ -134,6 +136,7 @@ Intent mapping:
 - **evolve**: the user wants open-ended iterative improvement
 - **debate**: challenge and refine prior findings from a saved run
 - **implement**: build from prior evidence or debate output from a saved run
+- **--readonly**: enforce a no-code-change target boundary for report-first or investigation-only runs
 
 ## Evolve
 
@@ -161,12 +164,14 @@ goalx save --run RUN
 goalx run --from RUN --intent debate
 goalx run --from RUN --intent implement
 goalx run --from RUN --intent explore
+goalx run --from RUN --intent explore --readonly
 ```
 
 Rules:
 
 - `debate` and `implement` phase continuation require a saved run
 - `explore` supports both fresh runs and saved-run continuation
+- add `--readonly` when the continuation should stay investigative and avoid repo edits
 - the saved run must contain report or summary context
 - use `goalx save` before telling the user to continue from a prior run
 

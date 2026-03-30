@@ -103,6 +103,9 @@ func TestRunIntentExploreUsesAutoLaunchModeWithoutFrom(t *testing.T) {
 		if opts.Intent != runIntentExplore {
 			t.Fatalf("intent = %q, want %q", opts.Intent, runIntentExplore)
 		}
+		if !opts.Readonly {
+			t.Fatal("readonly = false, want true")
+		}
 		return nil
 	}
 	runExploreIntent = func(projectRoot string, args []string) error {
@@ -111,7 +114,7 @@ func TestRunIntentExploreUsesAutoLaunchModeWithoutFrom(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		if err := Run(t.TempDir(), []string{"audit auth boundary", "--intent", "explore"}); err != nil {
+		if err := Run(t.TempDir(), []string{"audit auth boundary", "--intent", "explore", "--readonly"}); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 	})
@@ -241,8 +244,9 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`goalx run "objective" [--intent deliver|evolve|explore] [flags]`,
-		`goalx run --from RUN --intent debate|implement|explore [flags]`,
+		`goalx run "objective" [--intent deliver|evolve|explore] [--readonly] [flags]`,
+		`goalx run --from RUN --intent debate|implement|explore [--readonly] [flags]`,
+		`--readonly`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("run help missing %q:\n%s", want, out)

@@ -14,8 +14,8 @@ import (
 const usage = `goalx — autonomous goal execution CLI
 
 Usage:
-  goalx run     "objective" [flags]   Primary goal entrypoint; defaults to deliver semantics
-  goalx run     --from RUN --intent debate|implement|explore [flags] Continue an existing run with an explicit next-step intent
+  goalx run     "objective" [--readonly] [flags]   Primary goal entrypoint; defaults to deliver semantics
+  goalx run     --from RUN --intent debate|implement|explore [--readonly] [flags] Continue an existing run with an explicit next-step intent
   goalx init    "objective" [flags]   Generate an explicit manual draft config from an objective
   goalx start   --config PATH         Create run + tmux + launch the master from an explicit manual draft
   goalx start   "objective" [flags]   Create and start a run directly from CLI flags
@@ -53,7 +53,7 @@ Notes:
   RUN selectors are local-first. Bare NAME stays in the current project; use project-id/run or run_id for cross-project targeting.
   --parallel is optional initial fan-out, not a permanent cap on later dispatch.
   Use --master and --worker for role-specific engine/model defaults.
-  goalx run --intent debate|implement|explore requires --from RUN unless you choose --write-config.
+  goalx run --intent debate|implement requires --from RUN.
   .goalx/config.yaml is the shared project config; .goalx/goalx.yaml is an explicit manual draft only.
 
 Run 'goalx <command> --help' for details.`
@@ -196,6 +196,7 @@ func runCommand(cwd, cmd string, args []string) error {
 
 func runNeedsSignalCleanup(args []string) bool {
 	intent := "deliver"
+	hasFrom := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--intent":
@@ -204,12 +205,16 @@ func runNeedsSignalCleanup(args []string) bool {
 				i++
 			}
 		case "--from":
-			return false
+			hasFrom = true
 		}
 	}
 
+	if hasFrom {
+		return false
+	}
+
 	switch intent {
-	case "debate", "implement", "explore":
+	case "debate", "implement":
 		return false
 	default:
 		return true

@@ -125,6 +125,48 @@ context:
 	}
 }
 
+func TestExploreWriteConfigAppliesReadonlyTargetOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	writeProjectConfigFixture(t, projectRoot, `
+master:
+  engine: codex
+  model: gpt-5.4
+roles:
+  worker:
+    engine: codex
+    model: gpt-5.4
+target:
+  files: ["reports/"]
+local_validation:
+  command: go test ./...
+`)
+	writeResolvedSavedRunFixture(t, projectRoot, "research-a", launchOptions{
+		Objective: "audit auth flow",
+		Mode:      goalx.ModeWorker,
+	}, map[string]string{
+		"summary.md":          "# summary\n",
+		"session-1-report.md": "# report\n",
+	})
+
+	if err := Explore(projectRoot, []string{"--from", "research-a", "--readonly", "--write-config"}); err != nil {
+		t.Fatalf("Explore: %v", err)
+	}
+
+	cfg, err := goalx.LoadYAML[goalx.Config](filepath.Join(projectRoot, ".goalx", "goalx.yaml"))
+	if err != nil {
+		t.Fatalf("load goalx.yaml: %v", err)
+	}
+	if got, want := cfg.Target.Readonly, []string{"."}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("target.readonly = %#v, want %#v", got, want)
+	}
+	if got, want := cfg.Target.Files, []string{"reports/"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("target.files = %#v, want %#v", got, want)
+	}
+}
+
 func installPhaseStartFakeTmux(t *testing.T) {
 	t.Helper()
 	fakeBin := t.TempDir()

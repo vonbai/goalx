@@ -14,6 +14,7 @@ type phaseOptions struct {
 	Name         string
 	Objective    string
 	Parallel     int
+	Readonly     bool
 	ContextPaths []string
 	Dimensions   []string
 	Effort       goalx.EffortLevel
@@ -27,7 +28,7 @@ type phaseOptions struct {
 }
 
 func phaseUsage(command string) string {
-	return fmt.Sprintf(`usage: goalx %s --from RUN [--name NAME] [--objective TEXT] [--parallel N] [--master ENGINE/MODEL] [--worker ENGINE/MODEL] [--context PATHS] [--dimension SPEC]... [--effort LEVEL] [--master-effort LEVEL] [--worker-effort LEVEL] [--budget DURATION] [--write-config]
+	return fmt.Sprintf(`usage: goalx %s --from RUN [--name NAME] [--objective TEXT] [--parallel N] [--master ENGINE/MODEL] [--worker ENGINE/MODEL] [--context PATHS] [--dimension SPEC]... [--effort LEVEL] [--master-effort LEVEL] [--worker-effort LEVEL] [--budget DURATION] [--readonly] [--write-config]
 
 notes:
   --from RUN is required and must reference a saved run.
@@ -133,6 +134,8 @@ func parsePhaseOptions(command string, args []string) (phaseOptions, error) {
 			}
 			opts.BudgetSet = true
 			opts.Budget = budget
+		case "--readonly":
+			opts.Readonly = true
 		case "--write-config":
 			opts.WriteConfig = true
 		case "--engine", "--model":

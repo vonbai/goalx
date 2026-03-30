@@ -262,6 +262,15 @@ func TestRunCommandDispatchesRun(t *testing.T) {
 	}
 }
 
+func TestRunNeedsSignalCleanupTreatsFreshExploreAsLaunchPath(t *testing.T) {
+	if !runNeedsSignalCleanup([]string{"goal", "--intent", "explore"}) {
+		t.Fatal("fresh explore should keep signal cleanup enabled")
+	}
+	if runNeedsSignalCleanup([]string{"--from", "saved-run", "--intent", "explore"}) {
+		t.Fatal("phase explore should not use fresh-run signal cleanup")
+	}
+}
+
 func TestRunCommandDispatchesDurable(t *testing.T) {
 	oldDurable := mainDurable
 	defer func() { mainDurable = oldDurable }()

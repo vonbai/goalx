@@ -96,6 +96,9 @@ func buildLaunchResolveRequest(projectRoot string, baseCfg goalx.Config, opts la
 
 	req.MasterOverride = masterOverride
 	req.WorkerOverride = workerOverride
+	if opts.Readonly {
+		req.TargetOverride = &goalx.TargetConfig{Readonly: []string{"."}}
+	}
 	return req, nil
 }
 

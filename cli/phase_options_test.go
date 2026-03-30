@@ -20,6 +20,7 @@ func TestParsePhaseOptions(t *testing.T) {
 		"--effort", "minimal",
 		"--context", "README.md,docs/arch.md",
 		"--budget", "15m",
+		"--readonly",
 		"--write-config",
 	})
 	if err != nil {
@@ -54,6 +55,9 @@ func TestParsePhaseOptions(t *testing.T) {
 	}
 	if opts.Budget != 15*time.Minute {
 		t.Fatalf("budget = %v, want 15m", opts.Budget)
+	}
+	if !opts.Readonly {
+		t.Fatal("readonly = false, want true")
 	}
 	if !opts.WriteConfig {
 		t.Fatal("write-config = false, want true")

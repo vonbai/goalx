@@ -424,6 +424,9 @@ func TestDebateHelpPrintsUsage(t *testing.T) {
 	if !strings.Contains(out, "--write-config") {
 		t.Fatalf("debate help missing write-config note:\n%s", out)
 	}
+	if !strings.Contains(out, "--readonly") {
+		t.Fatalf("debate help missing readonly note:\n%s", out)
+	}
 	if !strings.Contains(out, "saved run selection snapshot stays in effect unless you request an explicit CLI selection override") {
 		t.Fatalf("debate help missing selection snapshot note:\n%s", out)
 	}

@@ -230,6 +230,9 @@ func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.M
 		WorkerOverride:            workerOverride,
 		RequireEngineAvailability: true,
 	}
+	if opts.Readonly {
+		req.TargetOverride = &goalx.TargetConfig{Readonly: []string{"."}}
+	}
 	return req, nil
 }
 
