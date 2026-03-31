@@ -31,8 +31,8 @@ func TestBuildActivitySnapshotAggregatesControlFacts(t *testing.T) {
 	if err := RenewControlLease(runDir, "master", meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
 		t.Fatalf("RenewControlLease master: %v", err)
 	}
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 	if err := RenewControlLease(runDir, "session-1", meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
 		t.Fatalf("RenewControlLease session-1: %v", err)

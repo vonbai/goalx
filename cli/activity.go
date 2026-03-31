@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -148,7 +147,7 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	previous, _ := LoadActivitySnapshot(ActivityPath(runDir))
-	tmuxSession := goalx.TmuxSessionName(projectRoot, runName)
+	tmuxSession := resolveRunTmuxSession(projectRoot, runDir, runName)
 	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
 	if err != nil {
 		return nil, err
@@ -194,7 +193,7 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 		snapshot.Run.Epoch = meta.Epoch
 	}
 	if controlState != nil {
-		snapshot.Lifecycle.ControlState = controlState.LifecycleState
+		snapshot.Lifecycle.ControlState = controlRunDisplayState(controlState)
 		if snapshot.Lifecycle.ControlState == "" {
 			snapshot.Lifecycle.ControlState = controlState.Phase
 		}
@@ -208,8 +207,8 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 	}
 	if runtimeState != nil {
 		snapshot.Lifecycle.RuntimePhase = runtimeState.Phase
-		snapshot.Lifecycle.RunActive = runtimeState.Active
 	}
+	snapshot.Lifecycle.RunActive = controlRunContinuityRunning(controlState, runtimeState)
 	snapshot.Budget = buildActivityBudget(cfg, runtimeState, meta, snapshot.CheckedAt)
 	targets, err := BuildTargetPresenceFacts(runDir, tmuxSession)
 	if err != nil {
@@ -217,7 +216,7 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 	}
 	snapshot.Targets = targets
 	snapshot.Actors["master"] = buildActivityActor(runDir, "master", tmuxSession, "master", previousActor(previous, "master"), snapshot.CheckedAt)
-	snapshot.Actors["sidecar"] = buildActivityActor(runDir, "sidecar", tmuxSession, "", previousActor(previous, "sidecar"), snapshot.CheckedAt)
+	snapshot.Actors["runtime-host"] = buildActivityActor(runDir, "runtime-host", tmuxSession, "", previousActor(previous, "runtime-host"), snapshot.CheckedAt)
 
 	liveness, err := LoadLivenessState(LivenessPath(runDir))
 	if err != nil {
@@ -275,7 +274,7 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 			session.LastSubmitAttemptAt = transport.LastSubmitAttemptAt
 			session.LastTransportAcceptAt = transport.LastTransportAcceptAt
 		}
-		paneHash, panePresent := capturePaneHash(tmuxSession, name)
+		paneHash, panePresent := capturePaneHash(runDir, tmuxSession, name)
 		session.PanePresent = panePresent
 		session.PaneHash = paneHash
 		session.LastOutputChangeAt = carryPaneChangeTime(previousSession(previous, name), paneHash, panePresent, snapshot.CheckedAt)
@@ -351,6 +350,17 @@ func buildActivityBudget(cfg *goalx.Config, runtimeState *RunRuntimeState, meta 
 
 func buildActivityActor(runDir, holder, tmuxSession, window string, previous ActivityActor, checkedAt string) ActivityActor {
 	actor := ActivityActor{}
+	if strings.TrimSpace(holder) == "runtime-host" {
+		if host, err := LoadRunHostState(RunHostStatePath(runDir)); err == nil && host != nil {
+			actor.Lease = runtimeHostSummary(runDir, "missing")
+			actor.PID = host.PID
+			actor.PIDAlive = processAlive(host.PID)
+			actor.Transport = host.Transport
+			actor.RenewedAt = host.UpdatedAt
+			actor.ExpiresAt = host.UpdatedAt
+			return actor
+		}
+	}
 	lease, _ := LoadControlLease(ControlLeasePath(runDir, holder))
 	if lease != nil {
 		actor.Lease = actorLeaseSummary(runDir, holder, "missing")
@@ -361,7 +371,7 @@ func buildActivityActor(runDir, holder, tmuxSession, window string, previous Act
 		actor.ExpiresAt = lease.ExpiresAt
 	}
 	if strings.TrimSpace(window) != "" {
-		actor.PaneHash, actor.PanePresent = capturePaneHash(tmuxSession, window)
+		actor.PaneHash, actor.PanePresent = capturePaneHash(runDir, tmuxSession, window)
 		actor.LastOutputChangeAt = carryPaneChangeTime(previous, actor.PaneHash, actor.PanePresent, checkedAt)
 	}
 	return actor
@@ -411,11 +421,11 @@ func carryWorktreeChangeTime(previous, current ActivitySession, fallback string)
 	return fallback
 }
 
-func capturePaneHash(tmuxSession, window string) (string, bool) {
+func capturePaneHash(runDir, tmuxSession, window string) (string, bool) {
 	if strings.TrimSpace(tmuxSession) == "" || strings.TrimSpace(window) == "" {
 		return "", false
 	}
-	out, err := exec.Command("tmux", "capture-pane", "-t", tmuxSession+":"+window, "-p", "-S", "-200").Output()
+	out, err := tmuxOutputWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "capture-pane", "-t", tmuxSession+":"+window, "-p", "-S", "-200")
 	if err != nil {
 		return "", false
 	}

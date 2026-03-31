@@ -119,7 +119,8 @@ func TestWaitReturnsStoppedErrorWhenRunStops(t *testing.T) {
 
 	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
 		Version:        1,
-		LifecycleState: "stopped",
+		GoalState:       "open",
+		ContinuityState: "stopped",
 	}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}

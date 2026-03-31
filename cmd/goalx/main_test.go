@@ -359,21 +359,21 @@ func TestRunCommandRejectsServe(t *testing.T) {
 	}
 }
 
-func TestRunCommandDispatchesSidecar(t *testing.T) {
-	oldSidecar := mainSidecar
-	defer func() { mainSidecar = oldSidecar }()
+func TestRunCommandDispatchesRuntimeHost(t *testing.T) {
+	oldRuntimeHost := mainRuntimeHost
+	defer func() { mainRuntimeHost = oldRuntimeHost }()
 
 	called := false
-	mainSidecar = func(string, []string) error {
+	mainRuntimeHost = func(string, []string) error {
 		called = true
 		return nil
 	}
 
-	if err := runCommand(t.TempDir(), "sidecar", []string{"--run", "demo"}); err != nil {
-		t.Fatalf("runCommand sidecar: %v", err)
+	if err := runCommand(t.TempDir(), "runtime-host", []string{"--run", "demo"}); err != nil {
+		t.Fatalf("runCommand runtime-host: %v", err)
 	}
 	if !called {
-		t.Fatal("sidecar command was not dispatched")
+		t.Fatal("runtime-host command was not dispatched")
 	}
 }
 

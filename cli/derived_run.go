@@ -20,7 +20,8 @@ type DerivedRunState struct {
 	Epoch          int
 	Charter        string
 	Selector       string
-	LifecycleState string
+	GoalState       string
+	ContinuityState string
 	Status         string
 	Completed      bool
 	HasLease       bool
@@ -36,8 +37,11 @@ func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
 	if name == "" {
 		name = filepath.Base(runDir)
 	}
-	tmuxSession := goalx.TmuxSessionName(projectRoot, name)
+	tmuxSession := resolveRunTmuxSession(projectRoot, runDir, name)
 	if err := repairCompletedRunFinalizationForRun(projectRoot, name, runDir, tmuxSession); err != nil {
+		return nil, err
+	}
+	if err := reconcileRunContinuityForRun(projectRoot, name, runDir); err != nil {
 		return nil, err
 	}
 
@@ -47,35 +51,61 @@ func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
 		Objective:      cfg.Objective,
 		RunDir:         runDir,
 		Selector:       goalx.ProjectID(projectRoot) + "/" + name,
-		HasLease:       controlLeaseActive(runDir, "sidecar") || controlLeaseActive(runDir, "master"),
-		HasTmuxSession: SessionExists(tmuxSession),
+		HasLease:       controlLeaseActive(runDir, "runtime-host") || controlLeaseActive(runDir, "master"),
+		HasTmuxSession: SessionExistsInRun(runDir, tmuxSession),
 	}
 	state.RunID, state.Epoch, state.Charter, state.Objective = deriveRunIdentitySurface(runDir, cfg.Objective)
 
 	runtimeState, _ := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
 	controlState, _ := LoadControlRunState(ControlRunStatePath(runDir))
-	if controlState != nil && controlState.LifecycleState != "" {
-		state.LifecycleState = controlState.LifecycleState
-	} else if runtimeState != nil {
+	if controlState != nil {
+		state.GoalState = strings.TrimSpace(controlState.GoalState)
+		state.ContinuityState = strings.TrimSpace(controlState.ContinuityState)
+	}
+	if state.GoalState == "" && runtimeState != nil && runtimeState.Phase == "complete" {
+		state.GoalState = "completed"
+	}
+	if state.GoalState == "" {
+		state.GoalState = "open"
+	}
+	if state.ContinuityState == "" && runtimeState != nil {
 		switch {
 		case runtimeState.StoppedAt != "":
-			state.LifecycleState = "stopped"
+			state.ContinuityState = "stopped"
 		case runtimeState.Active:
-			state.LifecycleState = "active"
+			state.ContinuityState = "running"
 		case runtimeState.Phase == "complete":
-			state.LifecycleState = "completed"
-		default:
-			state.LifecycleState = "inactive"
+			state.ContinuityState = "stopped"
 		}
 	}
-	state.Completed = runtimeState != nil && runtimeState.Phase == "complete"
-
-	switch state.LifecycleState {
-	case "active":
-		presence, err := BuildTargetPresenceFacts(runDir, tmuxSession)
-		if err != nil {
-			return nil, err
+	if state.ContinuityState == "" {
+		if state.GoalState == "completed" || state.GoalState == "dropped" {
+			state.ContinuityState = "stopped"
+		} else if state.HasLease || state.HasTmuxSession {
+			state.ContinuityState = "running"
+		} else {
+			state.ContinuityState = "stopped"
 		}
+	}
+	state.Completed = state.GoalState == "completed" || (runtimeState != nil && runtimeState.Phase == "complete")
+
+	switch state.GoalState {
+	case "completed":
+		state.Status = "completed"
+		state.Completed = true
+	case "dropped":
+		state.Status = "dropped"
+	default:
+		switch state.ContinuityState {
+		case "stranded":
+			state.Status = "stranded"
+		case "stopped":
+			state.Status = "stopped"
+		default:
+			presence, err := BuildTargetPresenceFacts(runDir, tmuxSession)
+			if err != nil {
+				return nil, err
+			}
 		sessionMissing := false
 		sessionTruthAvailable := false
 		for target, facts := range presence {
@@ -90,31 +120,15 @@ func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
 			}
 		}
 		masterMissing := targetPresenceMissing(presence["master"])
-		sidecarMissing := targetPresenceMissing(presence["sidecar"])
-		switch {
-		case masterMissing || sidecarMissing || sessionMissing:
-			if !state.HasLease && !state.HasTmuxSession && !sessionTruthAvailable {
-				state.Status = "stranded"
-				break
+		sidecarMissing := targetPresenceMissing(presence["runtime-host"])
+			switch {
+			case masterMissing || sidecarMissing || sessionMissing:
+				state.Status = "degraded"
+			case state.HasLease || state.HasTmuxSession || sessionTruthAvailable:
+				state.Status = "active"
+			default:
+				state.Status = "degraded"
 			}
-			state.Status = "degraded"
-		case state.HasLease || state.HasTmuxSession || sessionTruthAvailable:
-			state.Status = "active"
-		default:
-			state.Status = "degraded"
-		}
-	case "completed":
-		state.Status = "completed"
-		state.Completed = true
-	case "stopped", "inactive", "dropped":
-		state.Status = state.LifecycleState
-	default:
-		if state.Completed {
-			state.Status = "completed"
-		} else if state.HasLease {
-			state.Status = "active"
-		} else {
-			state.Status = "completed"
 		}
 	}
 	return state, nil

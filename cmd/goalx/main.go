@@ -65,8 +65,9 @@ var (
 	mainStop             = cli.Stop
 	mainRecover          = cli.Recover
 	mainWait             = cli.Wait
-	mainSidecar          = cli.Sidecar
+	mainRuntimeHost      = cli.RuntimeHostCommand
 	mainLeaseLoop        = cli.LeaseLoop
+	mainTargetRunner     = cli.TargetRunnerCommand
 	mainContext          = cli.Context
 	mainAfford           = cli.Afford
 	mainDurable          = cli.Durable
@@ -185,10 +186,12 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.Observe(cwd, args)
 	case "claude-hook":
 		return cli.ClaudeHook(cwd, args)
-	case "sidecar":
-		return mainSidecar(cwd, args)
+	case "runtime-host":
+		return mainRuntimeHost(cwd, args)
 	case "lease-loop":
 		return mainLeaseLoop(cwd, args)
+	case "target-runner":
+		return mainTargetRunner(cwd, args)
 	default:
 		return errUnknownCommand
 	}

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	goalx "github.com/vonbai/goalx"
 	"gopkg.in/yaml.v3"
@@ -107,11 +106,9 @@ esac
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 	tmuxSess := goalx.TmuxSessionName(repo, cfg.Name)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error {
-		return os.ErrPermission
-	}
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	runtimeSupervisor = &runtimeSupervisorStub{startErr: os.ErrPermission}
 
 	err = Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")})
 	if err == nil {
@@ -291,20 +288,23 @@ esac
 	t.Setenv("PATH", binDir+":"+origPath)
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	var gotSidecarProjectRoot, gotSidecarRunName string
-	var gotSidecarInterval time.Duration
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error {
-		gotSidecarProjectRoot, gotSidecarRunName, gotSidecarInterval = projectRoot, runName, interval
-		return nil
-	}
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	supervisor := &runtimeSupervisorStub{}
+	runtimeSupervisor = supervisor
 
 	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
 	runDir := goalx.RunDir(repo, cfg.Name)
+	locator, err := LoadTmuxLocator(TmuxLocatorPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadTmuxLocator: %v", err)
+	}
+	if locator == nil || locator.Session != goalx.TmuxSessionName(repo, cfg.Name) {
+		t.Fatalf("tmux locator = %+v, want session %q", locator, goalx.TmuxSessionName(repo, cfg.Name))
+	}
 	activity, err := LoadActivitySnapshot(ActivityPath(runDir))
 	if err != nil {
 		t.Fatalf("LoadActivitySnapshot: %v", err)
@@ -445,11 +445,14 @@ esac
 	if strings.Contains(logText, "send-keys -t "+goalx.TmuxSessionName(repo, cfg.Name)+":master") {
 		t.Fatalf("start should launch master directly, not via send-keys:\n%s", logText)
 	}
-	if gotSidecarProjectRoot != repo || gotSidecarRunName != cfg.Name {
-		t.Fatalf("launchRunSidecar got (%q, %q), want (%q, %q)", gotSidecarProjectRoot, gotSidecarRunName, repo, cfg.Name)
+	if supervisor.startCalls != 1 {
+		t.Fatalf("runtime supervisor start calls = %d, want 1", supervisor.startCalls)
 	}
-	if gotSidecarInterval <= 0 {
-		t.Fatalf("launchRunSidecar interval = %v, want > 0", gotSidecarInterval)
+	if supervisor.lastStartSpec.ProjectRoot != repo || supervisor.lastStartSpec.RunName != cfg.Name || supervisor.lastStartSpec.RunDir != runDir {
+		t.Fatalf("runtime supervisor start spec = %+v, want project=%q run=%q runDir=%q", supervisor.lastStartSpec, repo, cfg.Name, runDir)
+	}
+	if supervisor.lastStartSpec.Interval <= 0 {
+		t.Fatalf("runtime supervisor interval = %v, want > 0", supervisor.lastStartSpec.Interval)
 	}
 	operations, err := LoadControlOperationsState(ControlOperationsPath(runDir))
 	if err != nil {
@@ -578,9 +581,7 @@ esac
 	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -675,11 +676,7 @@ esac
 	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error {
-		return nil
-	}
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -786,9 +783,7 @@ esac
 	t.Setenv("PATH", binDir+":"+origPath)
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -865,9 +860,7 @@ esac
 	t.Setenv("PATH", binDir+":"+origPath)
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	writeDraft := func(name, objective string) string {
 		t.Helper()
@@ -1006,11 +999,7 @@ esac
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", binDir+":"+origPath)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error {
-		return nil
-	}
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Start(repo, []string{"ship it"}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -1110,9 +1099,7 @@ esac
 	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -1239,9 +1226,7 @@ esac
 	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -1356,9 +1341,7 @@ esac
 	t.Setenv("TMUX_PANE", "%99")
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -1371,13 +1354,12 @@ esac
 	runDir := goalx.RunDir(repo, cfg.Name)
 	runWT := RunWorktreePath(runDir)
 	logText := string(logData)
-	for _, want := range []string{
-		"new-session -d -s " + goalx.TmuxSessionName(repo, cfg.Name) + " -n master -c " + runWT + " env ",
-		"/bin/bash -c ",
-		"lease-loop --run",
-		"--holder",
-		"master",
-		"FOO_TOOLCHAIN_ROOT='/opt/goalx-toolchain'",
+		for _, want := range []string{
+			"new-session -d -s " + goalx.TmuxSessionName(repo, cfg.Name) + " -n master -c " + runWT + " env ",
+			"target-runner --run",
+			"--holder",
+			"master",
+			"FOO_TOOLCHAIN_ROOT='/opt/goalx-toolchain'",
 		"HOME='" + home + "'",
 		"PATH='" + binDir + ":" + origPath + "'",
 		"OPENAI_API_KEY='sk-goalx'",
@@ -1477,9 +1459,7 @@ esac
 	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -1590,9 +1570,7 @@ esac
 	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
 	t.Setenv("GOALX_FAKE_TMUX_STATE", stateDir)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Start(repo, []string{"--config", filepath.Join(goalxDir, "goalx.yaml")}); err != nil {
 		t.Fatalf("Start: %v", err)

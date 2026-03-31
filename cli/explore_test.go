@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	goalx "github.com/vonbai/goalx"
 )
@@ -18,7 +17,7 @@ func TestExploreStartCreatesFreshCharterWithPreservedRootLineage(t *testing.T) {
 	writeAndCommit(t, projectRoot, "base.txt", "base", "base commit")
 	sourceMeta, sourceCharter := writeSavedPhaseSourceFixture(t, projectRoot, "research-a", "research")
 	installPhaseStartFakeTmux(t)
-	stubLaunchRunSidecar(t)
+	stubLaunchRunRuntimeHost(t)
 
 	if err := Explore(projectRoot, []string{"--from", "research-a"}); err != nil {
 		t.Fatalf("Explore: %v", err)
@@ -281,13 +280,9 @@ esac
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-func stubLaunchRunSidecar(t *testing.T) {
+func stubLaunchRunRuntimeHost(t *testing.T) {
 	t.Helper()
-	origLaunchSidecar := launchRunSidecar
-	launchRunSidecar = func(projectRoot, runName string, intervalDuration time.Duration) error {
-		return nil
-	}
-	t.Cleanup(func() { launchRunSidecar = origLaunchSidecar })
+	_ = stubRuntimeSupervisor(t)
 }
 
 func writeSavedPhaseSourceFixture(t *testing.T, projectRoot, runName, phaseKind string) (*RunMetadata, *RunCharter) {

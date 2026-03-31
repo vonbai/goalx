@@ -44,8 +44,8 @@ func TestRefreshDisplayFactsRepairsCloseoutReadyRunWhenWorkerWindowKeepsTmuxSess
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState.LifecycleState != "completed" {
-		t.Fatalf("lifecycle_state = %q, want completed", controlState.LifecycleState)
+	if controlState.GoalState != "completed" || controlState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want completed/stopped", controlState)
 	}
 
 	runtimeState, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
@@ -110,8 +110,8 @@ func TestTellRejectsCloseoutReadyRunBeforeExplicitFinalization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState.LifecycleState != "completed" {
-		t.Fatalf("lifecycle_state = %q, want completed", controlState.LifecycleState)
+	if controlState.GoalState != "completed" || controlState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want completed/stopped", controlState)
 	}
 }
 
@@ -155,7 +155,7 @@ func prepareCloseoutReadyActiveRun(t *testing.T, repo string) (string, string) {
 	if err := os.WriteFile(CompletionStatePath(runDir), []byte(`{"completed_at":"2026-03-27T16:02:03Z"}`), 0o644); err != nil {
 		t.Fatalf("write completion proof: %v", err)
 	}
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 	return runName, runDir

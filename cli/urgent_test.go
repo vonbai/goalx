@@ -10,7 +10,7 @@ import (
 	goalx "github.com/vonbai/goalx"
 )
 
-func writeFakeSidecarTmux(t *testing.T, logPath string, extra string) string {
+func writeFakeRuntimeHostTmux(t *testing.T, logPath string, extra string) string {
 	t.Helper()
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
@@ -90,14 +90,14 @@ func TestHasUrgentUnreadReturnsFalseWhenNoUrgent(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickUsesWakeSubmitForPromptCapableUrgentMaster(t *testing.T) {
+func TestRunRuntimeHostTickUsesWakeSubmitForPromptCapableUrgentMaster(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -107,7 +107,7 @@ func TestRunSidecarTickUsesWakeSubmitForPromptCapableUrgentMaster(t *testing.T) 
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestRunSidecarTickUsesWakeSubmitForPromptCapableUrgentMaster(t *testing.T) 
 		t.Fatalf("write master capture: %v", err)
 	}
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
-	writeFakeSidecarTmux(t, logPath, "")
+	writeFakeRuntimeHostTmux(t, logPath, "")
 
 	origDetailed := sendAgentNudgeDetailed
 	defer func() { sendAgentNudgeDetailed = origDetailed }()
@@ -134,8 +134,8 @@ func TestRunSidecarTickUsesWakeSubmitForPromptCapableUrgentMaster(t *testing.T) 
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "queued"}, nil
 	}
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	wantTarget := goalx.TmuxSessionName(repo, cfg.Name) + ":master"
@@ -159,14 +159,14 @@ func TestRunSidecarTickUsesWakeSubmitForPromptCapableUrgentMaster(t *testing.T) 
 	}
 }
 
-func TestRunSidecarTickDoesNotInterruptActiveWorkingMasterOnUrgentUnread(t *testing.T) {
+func TestRunRuntimeHostTickDoesNotInterruptActiveWorkingMasterOnUrgentUnread(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -176,7 +176,7 @@ func TestRunSidecarTickDoesNotInterruptActiveWorkingMasterOnUrgentUnread(t *test
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -193,14 +193,14 @@ func TestRunSidecarTickDoesNotInterruptActiveWorkingMasterOnUrgentUnread(t *test
 		t.Fatalf("write master capture: %v", err)
 	}
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
-	writeFakeSidecarTmux(t, logPath, "")
+	writeFakeRuntimeHostTmux(t, logPath, "")
 
 	orig := sendAgentNudge
 	defer func() { sendAgentNudge = orig }()
 	sendAgentNudge = func(target, engine string) error { return nil }
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	logData, err := os.ReadFile(logPath)
@@ -213,14 +213,14 @@ func TestRunSidecarTickDoesNotInterruptActiveWorkingMasterOnUrgentUnread(t *test
 	}
 }
 
-func TestRunSidecarTickWritesTargetScopedRecoveryForUrgentSession(t *testing.T) {
+func TestRunRuntimeHostTickWritesTargetScopedRecoveryForUrgentSession(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -230,7 +230,7 @@ func TestRunSidecarTickWritesTargetScopedRecoveryForUrgentSession(t *testing.T) 
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestRunSidecarTickWritesTargetScopedRecoveryForUrgentSession(t *testing.T) 
 	}
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
-	writeFakeSidecarTmux(t, logPath, "")
+	writeFakeRuntimeHostTmux(t, logPath, "")
 
 	origDetailed := sendAgentNudgeDetailed
 	defer func() { sendAgentNudgeDetailed = origDetailed }()
@@ -270,8 +270,8 @@ func TestRunSidecarTickWritesTargetScopedRecoveryForUrgentSession(t *testing.T) 
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "queued"}, nil
 	}
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	recovery, err := LoadTransportRecovery(TransportRecoveryPath(runDir))
@@ -297,7 +297,7 @@ func TestRelaunchMasterRecreatesWindow(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -332,26 +332,26 @@ exit 0
 	}
 	logText := string(logData)
 	wantSession := goalx.TmuxSessionName(repo, cfg.Name)
-	for _, want := range []string{
-		"kill-window -t " + wantSession + ":master",
-		"new-window -t " + wantSession + " -n master -c " + RunWorktreePath(runDir),
-		"lease-loop --run",
-		filepath.Join(runDir, "master.md"),
-	} {
+		for _, want := range []string{
+			"kill-window -t " + wantSession + ":master",
+			"new-window -t " + wantSession + " -n master -c " + RunWorktreePath(runDir),
+			"target-runner --run",
+			filepath.Join(runDir, "master.md"),
+		} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("tmux log missing %q:\n%s", want, logText)
 		}
 	}
 }
 
-func TestRunSidecarTickDoesNotRelaunchMasterForUrgentUnreadAlone(t *testing.T) {
+func TestRunRuntimeHostTickDoesNotRelaunchMasterForUrgentUnreadAlone(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -361,7 +361,7 @@ func TestRunSidecarTickDoesNotRelaunchMasterForUrgentUnreadAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestRunSidecarTickDoesNotRelaunchMasterForUrgentUnreadAlone(t *testing.T) {
 		t.Fatalf("write master capture: %v", err)
 	}
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
-	writeFakeSidecarTmux(t, logPath, "")
+	writeFakeRuntimeHostTmux(t, logPath, "")
 
 	origDetailed := sendAgentNudgeDetailed
 	defer func() { sendAgentNudgeDetailed = origDetailed }()
@@ -387,8 +387,8 @@ func TestRunSidecarTickDoesNotRelaunchMasterForUrgentUnreadAlone(t *testing.T) {
 	}
 
 	for tick := 1; tick <= 3; tick++ {
-		if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-			t.Fatalf("runSidecarTick #%d: %v", tick, err)
+		if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+			t.Fatalf("runRuntimeHostTick #%d: %v", tick, err)
 		}
 	}
 
@@ -409,14 +409,14 @@ func TestRunSidecarTickDoesNotRelaunchMasterForUrgentUnreadAlone(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickDoesNotInterruptProviderDialogWithoutUnread(t *testing.T) {
+func TestRunRuntimeHostTickDoesNotInterruptProviderDialogWithoutUnread(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -426,7 +426,7 @@ func TestRunSidecarTickDoesNotInterruptProviderDialogWithoutUnread(t *testing.T)
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -440,11 +440,11 @@ func TestRunSidecarTickDoesNotInterruptProviderDialogWithoutUnread(t *testing.T)
 		t.Fatalf("write master capture: %v", err)
 	}
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
-	writeFakeSidecarTmux(t, logPath, "")
+	writeFakeRuntimeHostTmux(t, logPath, "")
 
 	for tick := 1; tick <= 3; tick++ {
-		if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-			t.Fatalf("runSidecarTick #%d: %v", tick, err)
+		if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+			t.Fatalf("runRuntimeHostTick #%d: %v", tick, err)
 		}
 	}
 

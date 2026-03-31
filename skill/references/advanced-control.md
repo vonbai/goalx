@@ -156,8 +156,8 @@ Recovery boundary:
 ## Urgent Delivery and Recovery
 
 - `goalx tell --urgent` marks the inbox message as urgent instead of relying on raw transport nudges.
-- The sidecar handles the first escalation by sending tmux `Escape` plus a wake nudge so the master can interrupt its current action and read the durable inbox quickly.
-- If the urgent message stays unread for 3 sidecar ticks, the sidecar relaunches the master from durable state. The relaunched master re-reads the charter, inbox, goal, and runtime state before continuing.
+- The runtime host handles the first escalation by sending tmux `Escape` plus a wake nudge so the master can interrupt its current action and read the durable inbox quickly.
+- If the urgent message stays unread for 3 runtime-host ticks, the runtime host relaunches the master from durable state. The relaunched master re-reads the charter, inbox, goal, and runtime state before continuing.
 - If tmux or the master is gone, or the run was intentionally stopped, use `goalx recover --run NAME` to relaunch that same run in place.
 - Use this path when the direction must cut through a stuck or long-running master action; do not bypass the durable inbox with pane typing unless the user explicitly asks for pane-level control.
 

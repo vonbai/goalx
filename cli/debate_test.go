@@ -440,7 +440,7 @@ func TestDebateStartCreatesFreshCharterWithPreservedRootLineage(t *testing.T) {
 	writeAndCommit(t, projectRoot, "base.txt", "base", "base commit")
 	sourceMeta, sourceCharter := writeSavedPhaseSourceFixture(t, projectRoot, "research-a", "research")
 	installPhaseStartFakeTmux(t)
-	stubLaunchRunSidecar(t)
+	stubLaunchRunRuntimeHost(t)
 
 	if err := Debate(projectRoot, []string{"--from", "research-a"}); err != nil {
 		t.Fatalf("Debate: %v", err)

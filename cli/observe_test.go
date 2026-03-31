@@ -647,7 +647,7 @@ func TestObserveShowsBlockedRequiredFrontierAdvisory(t *testing.T) {
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
-	for _, holder := range []string{"master", "sidecar", "session-1"} {
+	for _, holder := range []string{"master", "runtime-host", "session-1"} {
 		if err := RenewControlLease(runDir, holder, meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
 			t.Fatalf("RenewControlLease %s: %v", holder, err)
 		}

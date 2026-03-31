@@ -27,7 +27,7 @@ func Recover(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if SessionExists(rc.TmuxSession) {
+	if SessionExistsInRun(rc.RunDir, rc.TmuxSession) {
 		return fmt.Errorf("run '%s' is already active (tmux session %s exists)", rc.Name, rc.TmuxSession)
 	}
 	if err := requireRunBudgetAvailable(rc.RunDir, rc.Config); err != nil {
@@ -41,7 +41,7 @@ func Recover(projectRoot string, args []string) error {
 	if err := EnsureMasterControl(rc.RunDir); err != nil {
 		return fmt.Errorf("init master control: %w", err)
 	}
-	if err := stopRunSidecar(rc.RunDir); err != nil {
+	if err := runtimeSupervisor.Stop(rc.RunDir); err != nil {
 		return err
 	}
 	killRunPaneProcessTrees(rc.RunDir, rc.TmuxSession)
@@ -98,7 +98,8 @@ func Recover(projectRoot string, args []string) error {
 	if controlState == nil {
 		controlState = &ControlRunState{Version: 1}
 	}
-	controlState.LifecycleState = "active"
+	controlState.GoalState = "open"
+	controlState.ContinuityState = "running"
 	controlState.UpdatedAt = now
 	if err := SaveControlRunState(ControlRunStatePath(rc.RunDir), controlState); err != nil {
 		return err
@@ -111,9 +112,14 @@ func Recover(projectRoot string, args []string) error {
 		return fmt.Errorf("focus active run: %w", err)
 	}
 
-	checkSec, _ := normalizeSidecarInterval(rc.Config.Master.CheckInterval)
-	if err := launchRunSidecar(rc.ProjectRoot, rc.Name, time.Duration(checkSec)*time.Second); err != nil {
-		return fmt.Errorf("launch sidecar: %w", err)
+	checkSec, _ := normalizeRuntimeHostInterval(rc.Config.Master.CheckInterval)
+	if _, err := runtimeSupervisor.Start(RuntimeSupervisorStartSpec{
+		ProjectRoot: rc.ProjectRoot,
+		RunName:     rc.Name,
+		RunDir:      rc.RunDir,
+		Interval:    time.Duration(checkSec) * time.Second,
+	}); err != nil {
+		return fmt.Errorf("launch runtime supervisor: %w", err)
 	}
 	if _, err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)

@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -51,7 +50,7 @@ func Observe(projectRoot string, args []string) error {
 	printObserveOperationsSection(rc.RunDir)
 	printObserveEvolveSection(rc.RunDir)
 
-	if !SessionExists(rc.TmuxSession) {
+	if !SessionExistsInRun(rc.RunDir, rc.TmuxSession) {
 		fmt.Println("### transport")
 		fmt.Println("transport degraded (no tmux session)")
 		fmt.Println()
@@ -95,12 +94,12 @@ func Observe(projectRoot string, args []string) error {
 		if label := targetPresenceObserveLabel("master", facts); label != "" {
 			fmt.Println(label)
 		} else {
-			printPaneCapture(rc.TmuxSession, "master")
+				printPaneCapture(rc.RunDir, rc.TmuxSession, "master")
 		}
 	} else if label := transportMissingLabel("master", loadTransportTargetFacts(rc.RunDir, "master")); label != "" {
 		fmt.Println(label)
 	} else {
-		printPaneCapture(rc.TmuxSession, "master")
+			printPaneCapture(rc.RunDir, rc.TmuxSession, "master")
 	}
 	fmt.Println()
 
@@ -118,19 +117,19 @@ func Observe(projectRoot string, args []string) error {
 			if label := targetPresenceObserveLabel(SessionName(num), facts); label != "" {
 				fmt.Println(label)
 			} else {
-				printPaneCapture(rc.TmuxSession, windowName)
+					printPaneCapture(rc.RunDir, rc.TmuxSession, windowName)
 			}
 		} else if label := transportMissingLabel(SessionName(num), loadTransportTargetFacts(rc.RunDir, SessionName(num))); label != "" {
 			fmt.Println(label)
 		} else {
-			printPaneCapture(rc.TmuxSession, windowName)
+				printPaneCapture(rc.RunDir, rc.TmuxSession, windowName)
 		}
 		fmt.Println()
 	}
 
 	// Check for dynamically added sessions (windows beyond the configured count)
 	// by listing all tmux windows
-	out, err := exec.Command("tmux", "list-windows", "-t", rc.TmuxSession, "-F", "#{window_name}").Output()
+	out, err := tmuxOutputWithSocketDir(resolveRunTmuxSocketDir(rc.ProjectRoot, rc.RunDir, rc.Name), "list-windows", "-t", rc.TmuxSession, "-F", "#{window_name}")
 	if err == nil {
 		configured := make(map[string]bool)
 		configured["master"] = true
@@ -140,7 +139,7 @@ func Observe(projectRoot string, args []string) error {
 		for _, w := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if w != "" && !configured[w] {
 				fmt.Printf("### %s (dynamic)\n", w)
-				printPaneCapture(rc.TmuxSession, w)
+					printPaneCapture(rc.RunDir, rc.TmuxSession, w)
 				fmt.Println()
 			}
 		}
@@ -286,12 +285,12 @@ func printObserveOperationsSection(runDir string) {
 	fmt.Println()
 }
 
-func printPaneCapture(tmuxSession, window string) {
-	out, err := exec.Command(
-		"tmux", "capture-pane",
+func printPaneCapture(runDir, tmuxSession, window string) {
+	out, err := tmuxOutputWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""),
+		"capture-pane",
 		"-t", tmuxSession+":"+window,
 		"-p", "-S", "-200",
-	).Output()
+	)
 	if err != nil {
 		fmt.Println("(window not found)")
 		return

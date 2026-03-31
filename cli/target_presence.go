@@ -36,12 +36,12 @@ type TargetPresenceFacts struct {
 
 func BuildTargetPresenceFacts(runDir, tmuxSession string) (map[string]TargetPresenceFacts, error) {
 	checkedAt := time.Now().UTC().Format(time.RFC3339)
-	sessionExists := SessionExists(tmuxSession)
+	sessionExists := SessionExistsInRun(runDir, tmuxSession)
 	windowsByName := map[string]struct{}{}
 	if sessionExists {
-		windowsByName, _ = tmuxWindowsByName(tmuxSession)
+		windowsByName, _ = tmuxWindowsByNameInRun(runDir, tmuxSession)
 	}
-	panesByWindow, err := tmuxPanesByWindow(tmuxSession)
+	panesByWindow, err := tmuxPanesByWindow(runDir, tmuxSession)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func BuildTargetPresenceFacts(runDir, tmuxSession string) (map[string]TargetPres
 		name := SessionName(idx)
 		targets[name] = buildTmuxTargetPresence(name, "session", name, checkedAt, sessionExists, !parkedTargets[name], windowsByName, panesByWindow)
 	}
-	targets["sidecar"] = buildLeaseTargetPresence(runDir, "sidecar", checkedAt)
+	targets["runtime-host"] = buildRuntimeHostTargetPresence(runDir, checkedAt)
 	return targets, nil
 }
 
@@ -205,4 +205,28 @@ func buildLeaseTargetPresence(runDir, target, checkedAt string) TargetPresenceFa
 		facts.State = TargetPresencePresent
 	}
 	return facts
+}
+
+func buildRuntimeHostTargetPresence(runDir, checkedAt string) TargetPresenceFacts {
+	if host, err := LoadRunHostState(RunHostStatePath(runDir)); err == nil && host != nil {
+		facts := TargetPresenceFacts{
+			Target:          "runtime-host",
+			Kind:            "runtime_host",
+			CheckedAt:       checkedAt,
+			LeasePresent:    true,
+			LeaseHealthy:    host.Running,
+			ProcessPID:      host.PID,
+			ProcessPIDAlive: processAlive(host.PID),
+		}
+		switch {
+		case !host.Running:
+			facts.State = TargetPresenceLeaseExpired
+		case host.PID > 0 && !facts.ProcessPIDAlive:
+			facts.State = TargetPresenceProcessMissing
+		default:
+			facts.State = TargetPresencePresent
+		}
+		return facts
+	}
+	return buildLeaseTargetPresence(runDir, "runtime-host", checkedAt)
 }

@@ -172,10 +172,14 @@ func waitRunStopped(runDir string) (bool, string, error) {
 		return false, "", err
 	}
 	if state, err := LoadControlRunState(ControlRunStatePath(runDir)); err == nil && state != nil {
-		switch state.LifecycleState {
-		case "", "active":
+		switch {
+		case state.GoalState == "completed":
+			return true, "completed", nil
+		case state.GoalState == "dropped":
+			return true, "dropped", nil
+		case state.ContinuityState == "", state.ContinuityState == "running":
 		default:
-			return true, state.LifecycleState, nil
+			return true, state.ContinuityState, nil
 		}
 	}
 	if state, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir)); err == nil && state != nil && !state.Active {

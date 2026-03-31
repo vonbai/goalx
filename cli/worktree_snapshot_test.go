@@ -89,7 +89,7 @@ func TestSnapshotWorktreesReportsDirtyRootAndSessionStats(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "one\ntwo\n", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -99,7 +99,7 @@ func TestSnapshotWorktreesReportsDirtyRootAndSessionStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestSnapshotWorktreesIncludesForkedLineageFacts(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base\n", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -161,7 +161,7 @@ func TestSnapshotWorktreesIncludesForkedLineageFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -224,14 +224,14 @@ func TestRefreshRunGuidanceWritesSessionLineageSnapshot(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickWritesWorktreeSnapshot(t *testing.T) {
+func TestRunRuntimeHostTickWritesWorktreeSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base\n", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -241,7 +241,7 @@ func TestRunSidecarTickWritesWorktreeSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -259,8 +259,8 @@ func TestRunSidecarTickWritesWorktreeSnapshot(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	snapshot, err := LoadWorktreeSnapshot(WorktreeSnapshotPath(runDir))

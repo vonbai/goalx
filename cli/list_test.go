@@ -21,10 +21,10 @@ func TestListShowsDerivedStatusAndCanonicalSelector(t *testing.T) {
 		Mode:      goalx.ModeWorker,
 		Objective: "ship alpha",
 	})
-	if err := SaveControlRunState(ControlRunStatePath(activeRun), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(activeRun), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState active: %v", err)
 	}
-	if err := RenewControlLease(activeRun, "sidecar", "run_alpha", 1, time.Minute, "process", os.Getpid()); err != nil {
+	if err := RenewControlLease(activeRun, "runtime-host", "run_alpha", 1, time.Minute, "process", os.Getpid()); err != nil {
 		t.Fatalf("RenewControlLease active: %v", err)
 	}
 
@@ -33,7 +33,7 @@ func TestListShowsDerivedStatusAndCanonicalSelector(t *testing.T) {
 		Mode:      goalx.ModeWorker,
 		Objective: "audit beta",
 	})
-	if err := SaveControlRunState(ControlRunStatePath(degradedRun), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(degradedRun), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState degraded: %v", err)
 	}
 	installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")

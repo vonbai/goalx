@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,16 +15,13 @@ import (
 	goalx "github.com/vonbai/goalx"
 )
 
-const sidecarUsage = "usage: goalx sidecar --run RUN [--interval SECONDS]"
+const runtimeHostUsage = "usage: goalx runtime-host --run RUN [--interval SECONDS]"
 
-var launchRunSidecar = defaultLaunchRunSidecar
-var stopRunSidecar = defaultStopRunSidecar
+var errRuntimeHostStale = errors.New("runtime host run is stale")
+var errRuntimeHostCompleted = errors.New("runtime host run completed")
 
-var errSidecarStale = errors.New("sidecar run is stale")
-var errSidecarCompleted = errors.New("sidecar run completed")
-
-func Sidecar(projectRoot string, args []string) error {
-	runName, interval, err := parseSidecarArgs(args)
+func RuntimeHostCommand(projectRoot string, args []string) error {
+	runName, interval, err := parseRuntimeHostArgs(args)
 	if err != nil {
 		return err
 	}
@@ -39,16 +34,16 @@ func Sidecar(projectRoot string, args []string) error {
 		return err
 	}
 	if interval <= 0 {
-		checkSec, _ := normalizeSidecarInterval(rc.Config.Master.CheckInterval)
+		checkSec, _ := normalizeRuntimeHostInterval(rc.Config.Master.CheckInterval)
 		interval = time.Duration(checkSec) * time.Second
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return runSidecarLoop(ctx, rc.ProjectRoot, rc.Name, rc.RunDir, meta.RunID, meta.Epoch, interval)
+	return runRuntimeHostLoop(ctx, rc.ProjectRoot, rc.Name, rc.RunDir, meta.RunID, meta.Epoch, interval)
 }
 
-func parseSidecarArgs(args []string) (string, time.Duration, error) {
+func parseRuntimeHostArgs(args []string) (string, time.Duration, error) {
 	runName, rest, err := extractRunFlag(args)
 	if err != nil {
 		return "", 0, err
@@ -57,7 +52,7 @@ func parseSidecarArgs(args []string) (string, time.Duration, error) {
 	for i := 0; i < len(rest); i++ {
 		switch rest[i] {
 		case "--help", "-h":
-			return "", 0, fmt.Errorf(sidecarUsage)
+			return "", 0, fmt.Errorf(runtimeHostUsage)
 		case "--interval":
 			if i+1 >= len(rest) {
 				return "", 0, fmt.Errorf("missing value for --interval")
@@ -69,16 +64,16 @@ func parseSidecarArgs(args []string) (string, time.Duration, error) {
 			interval = time.Duration(seconds) * time.Second
 			i++
 		default:
-			return "", 0, fmt.Errorf(sidecarUsage)
+			return "", 0, fmt.Errorf(runtimeHostUsage)
 		}
 	}
 	if runName == "" {
-		return "", 0, fmt.Errorf(sidecarUsage)
+		return "", 0, fmt.Errorf(runtimeHostUsage)
 	}
 	return runName, interval, nil
 }
 
-func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID string, epoch int, interval time.Duration) error {
+func runRuntimeHostLoop(ctx context.Context, projectRoot, runName, runDir, runID string, epoch int, interval time.Duration) error {
 	if interval <= 0 {
 		interval = 5 * time.Minute
 	}
@@ -87,12 +82,12 @@ func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID str
 	var watcher *TmuxControlWatcher
 	defer func() {
 		if shouldExpire {
-			_ = ExpireControlLease(runDir, "sidecar")
+			_ = ExpireControlLease(runDir, "runtime-host")
 		}
 	}()
-	appendAuditLog(runDir, "sidecar started pid=%d runID=%s epoch=%d", os.Getpid(), runID, epoch)
+	appendAuditLog(runDir, "runtime-host started pid=%d runID=%s epoch=%d", os.Getpid(), runID, epoch)
 	defer func() {
-		appendAuditLog(runDir, "sidecar exiting reason=%s", exitReason)
+		appendAuditLog(runDir, "runtime-host exiting reason=%s", exitReason)
 	}()
 	defer func() {
 		if watcher != nil {
@@ -100,19 +95,19 @@ func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID str
 		}
 	}()
 	reportError := func(err error) error {
-		appendAuditLog(runDir, "sidecar error: %v", err)
+		appendAuditLog(runDir, "runtime-host error: %v", err)
 		exitReason = err.Error()
 		return err
 	}
-	watcher = ensureSidecarTransportWatcher(projectRoot, runName, runDir, watcher)
-	if err := runSidecarTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, os.Getpid(), watcher); err != nil {
-		if errors.Is(err, errSidecarStale) {
+	watcher = ensureRuntimeHostTransportWatcher(projectRoot, runName, runDir, watcher)
+	if err := runRuntimeHostTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, os.Getpid(), watcher); err != nil {
+		if errors.Is(err, errRuntimeHostStale) {
 			shouldExpire = false
-			exitReason = errSidecarStale.Error()
+			exitReason = errRuntimeHostStale.Error()
 			return nil
 		}
-		if errors.Is(err, errSidecarCompleted) {
-			exitReason = errSidecarCompleted.Error()
+		if errors.Is(err, errRuntimeHostCompleted) {
+			exitReason = errRuntimeHostCompleted.Error()
 			return nil
 		}
 		return reportError(err)
@@ -126,15 +121,15 @@ func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID str
 			exitReason = ctx.Err().Error()
 			return nil
 		case <-ticker.C:
-			watcher = ensureSidecarTransportWatcher(projectRoot, runName, runDir, watcher)
-			if err := runSidecarTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, os.Getpid(), watcher); err != nil {
-				if errors.Is(err, errSidecarStale) {
+			watcher = ensureRuntimeHostTransportWatcher(projectRoot, runName, runDir, watcher)
+			if err := runRuntimeHostTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, os.Getpid(), watcher); err != nil {
+				if errors.Is(err, errRuntimeHostStale) {
 					shouldExpire = false
-					exitReason = errSidecarStale.Error()
+					exitReason = errRuntimeHostStale.Error()
 					return nil
 				}
-				if errors.Is(err, errSidecarCompleted) {
-					exitReason = errSidecarCompleted.Error()
+				if errors.Is(err, errRuntimeHostCompleted) {
+					exitReason = errRuntimeHostCompleted.Error()
 					return nil
 				}
 				return reportError(err)
@@ -143,24 +138,24 @@ func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID str
 	}
 }
 
-func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, interval time.Duration, pid int) error {
-	return runSidecarTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, pid, nil)
+func runRuntimeHostTick(projectRoot, runName, runDir, runID string, epoch int, interval time.Duration, pid int) error {
+	return runRuntimeHostTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, pid, nil)
 }
 
-func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch int, interval time.Duration, pid int, watcher *TmuxControlWatcher) error {
+func runRuntimeHostTickWithWatcher(projectRoot, runName, runDir, runID string, epoch int, interval time.Duration, pid int, watcher *TmuxControlWatcher) error {
 	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errSidecarStale
+			return errRuntimeHostStale
 		}
 		return err
 	}
 	if meta == nil || meta.RunID != runID || meta.Epoch != epoch {
-		return errSidecarStale
+		return errRuntimeHostStale
 	}
 	if _, err := os.Stat(RunSpecPath(runDir)); err != nil {
 		if os.IsNotExist(err) {
-			return errSidecarStale
+			return errRuntimeHostStale
 		}
 		return err
 	}
@@ -168,7 +163,7 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 	if err != nil {
 		return err
 	}
-	tmuxSession := goalx.TmuxSessionName(projectRoot, runName)
+	tmuxSession := resolveRunTmuxSession(projectRoot, runDir, runName)
 	runState, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
 	if err != nil {
 		return err
@@ -177,7 +172,7 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 	if ttl < time.Second {
 		ttl = time.Second
 	}
-	if err := RenewControlLease(runDir, "sidecar", runID, epoch, ttl, "process", pid); err != nil {
+	if err := RenewControlLease(runDir, "runtime-host", runID, epoch, ttl, "process", pid); err != nil {
 		return err
 	}
 	if err := ApplyPendingControlOps(runDir); err != nil {
@@ -221,10 +216,10 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 		}
 		return nil
 	case RunCloseoutMaintenanceActionFinalize:
-		if err := finalizeCompletedRunFromSidecar(projectRoot, runName, runDir, tmuxSession); err != nil {
+		if err := finalizeCompletedRunFromRuntimeHost(projectRoot, runName, runDir, tmuxSession); err != nil {
 			return err
 		}
-		return errSidecarCompleted
+		return errRuntimeHostCompleted
 	}
 	presence, err = reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession, cfg, runState, closeoutFacts.Complete, presence)
 	if err != nil {
@@ -234,7 +229,7 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 	if err != nil {
 		return err
 	}
-	if err := runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession, cfg, interval, presence, watcher, controlState); err != nil {
+	if err := runRuntimeHostMaintenanceCycle(projectRoot, runName, runDir, tmuxSession, cfg, interval, presence, watcher, controlState); err != nil {
 		return err
 	}
 	return nil
@@ -248,7 +243,7 @@ func refreshActivityFacts(runDir, projectRoot, runName string) error {
 	return SaveActivitySnapshot(runDir, snapshot)
 }
 
-func refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine string, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
+func refreshTransportFactsForRuntimeHost(runDir, tmuxSession, masterEngine string, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
 	if controlState == nil {
 		return fmt.Errorf("control run state is nil")
 	}
@@ -274,8 +269,8 @@ func refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine string, w
 	return reconcileProviderDialogAlerts(runDir, tmuxSession, masterEngine, controlState, facts)
 }
 
-func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string, cfg *goalx.Config, interval time.Duration, presence map[string]TargetPresenceFacts, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
-	if err := refreshSidecarTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "pre-queue"); err != nil {
+func runRuntimeHostMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string, cfg *goalx.Config, interval time.Duration, presence map[string]TargetPresenceFacts, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
+	if err := refreshRuntimeHostTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "pre-queue"); err != nil {
 		return err
 	}
 	if err := processUrgentTransportTargets(runDir, runName, tmuxSession, cfg, presence); err != nil {
@@ -290,7 +285,7 @@ func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string
 	if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudgeDetailed); err != nil {
 		return err
 	}
-	if err := refreshSidecarTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "snapshot"); err != nil {
+	if err := refreshRuntimeHostTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "snapshot"); err != nil {
 		return err
 	}
 	if err := refreshActivityFacts(runDir, projectRoot, runName); err != nil {
@@ -325,14 +320,14 @@ func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string
 	return nil
 }
 
-func refreshSidecarTransportFacts(runDir, tmuxSession, masterEngine string, watcher *TmuxControlWatcher, controlState *ControlRunState, warningPhase string) error {
+func refreshRuntimeHostTransportFacts(runDir, tmuxSession, masterEngine string, watcher *TmuxControlWatcher, controlState *ControlRunState, warningPhase string) error {
 	if watcher != nil && watcher.Alive() {
-		if err := refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine, watcher, controlState); err != nil {
+		if err := refreshTransportFactsForRuntimeHost(runDir, tmuxSession, masterEngine, watcher, controlState); err != nil {
 			appendAuditLog(runDir, "transport watcher %s warning: %v", warningPhase, err)
 		}
 		return nil
 	}
-	return refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine, nil, controlState)
+	return refreshTransportFactsForRuntimeHost(runDir, tmuxSession, masterEngine, nil, controlState)
 }
 
 func reconcileProviderDialogAlerts(runDir, tmuxSession, masterEngine string, controlState *ControlRunState, facts *TransportFacts) error {
@@ -350,7 +345,7 @@ func reconcileProviderDialogAlerts(runDir, tmuxSession, masterEngine string, con
 				continue
 			}
 			body := fmt.Sprintf("Provider dialog visible in unattended GoalX run; target=%s engine=%s kind=%s hint=%s", blankAsUnknown(target), blankAsUnknown(targetFacts.Engine), blankAsUnknown(targetFacts.ProviderDialogKind), blankAsUnknown(targetFacts.ProviderDialogHint))
-			if _, err := appendControlInboxMessage(runDir, "master", "provider-dialog-visible", "goalx sidecar", body, true); err != nil {
+			if _, err := appendControlInboxMessage(runDir, "master", "provider-dialog-visible", "goalx runtime-host", body, true); err != nil {
 				return err
 			}
 			dedupeKey := fmt.Sprintf("provider-dialog:%s:%s", target, current[target])
@@ -387,12 +382,12 @@ func mapsEqual(left, right map[string]string) bool {
 	return true
 }
 
-func ensureSidecarTransportWatcher(projectRoot, runName, runDir string, watcher *TmuxControlWatcher) *TmuxControlWatcher {
+func ensureRuntimeHostTransportWatcher(projectRoot, runName, runDir string, watcher *TmuxControlWatcher) *TmuxControlWatcher {
 	if watcher != nil && watcher.Alive() {
 		return watcher
 	}
-	tmuxSession := goalx.TmuxSessionName(projectRoot, runName)
-	if !SessionExists(tmuxSession) {
+	tmuxSession := resolveRunTmuxSession(projectRoot, runDir, runName)
+	if !SessionExistsInRun(runDir, tmuxSession) {
 		return nil
 	}
 	cfg, err := LoadRunSpec(runDir)
@@ -409,7 +404,7 @@ func ensureSidecarTransportWatcher(projectRoot, runName, runDir string, watcher 
 }
 
 func queueRefreshContextReminder(runDir, tmuxSession, engine string) error {
-	if !SessionExists(tmuxSession) {
+	if !SessionExistsInRun(runDir, tmuxSession) {
 		return nil
 	}
 	_, err := QueueControlReminderWithEngine(runDir, "refresh-context", "identity-fence-changed", tmuxSession+":master", engine)
@@ -486,7 +481,7 @@ func processTargetAttentionAlerts(runDir, tmuxSession, masterEngine string, pres
 		reason := formatBlockedTargetReason(facts)
 		appendAuditLog(runDir, "target_attention_alert target=%s state=%s reason=%s", target, state, reason)
 		body := fmt.Sprintf("Target attention needed in active GoalX run; target=%s state=%s %s", target, state, reason)
-		if _, err := appendControlInboxMessage(runDir, "master", "target-attention", "goalx sidecar", body, true); err != nil {
+		if _, err := appendControlInboxMessage(runDir, "master", "target-attention", "goalx runtime-host", body, true); err != nil {
 			return false, err
 		}
 		if err := recordTargetAttentionAlert(runDir, target, state, reason); err != nil {
@@ -566,7 +561,7 @@ func processMasterAlerts(runDir, tmuxSession, masterEngine string, presence map[
 			continue
 		}
 		appendAuditLog(runDir, "master_alert key=%s fingerprint=%s", alert.Key, alert.Fingerprint)
-		if _, err := appendControlInboxMessage(runDir, "master", "master-alert", "goalx sidecar", alert.Body, true); err != nil {
+			if _, err := appendControlInboxMessage(runDir, "master", "master-alert", "goalx runtime-host", alert.Body, true); err != nil {
 			return false, err
 		}
 		dedupeKey := "master-alert:" + alert.Key + ":" + alert.Fingerprint
@@ -998,7 +993,7 @@ func reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession string, cf
 		reason := fmt.Sprintf("target missing: %s state=%s first_seen=%s", sessionName, sessionFacts.State, blankAsUnknown(recovery.CurrentMissingFirstSeenAt))
 		appendAuditLog(runDir, "target_missing_alert target=%s cause=%s first_seen=%s", sessionName, sessionFacts.State, blankAsUnknown(recovery.CurrentMissingFirstSeenAt))
 		body := fmt.Sprintf("Target missing in active GoalX run; target=%s state=%s first_seen=%s action=do_not_respawn_worker", sessionName, sessionFacts.State, blankAsUnknown(recovery.CurrentMissingFirstSeenAt))
-		if _, err := appendControlInboxMessage(runDir, "master", "target-missing", "goalx sidecar", body, true); err != nil {
+			if _, err := appendControlInboxMessage(runDir, "master", "target-missing", "goalx runtime-host", body, true); err != nil {
 			return nil, err
 		}
 		if err := recordMissingTargetAlert(runDir, sessionName, sessionFacts.State, reason); err != nil {
@@ -1024,49 +1019,9 @@ func transportAcceptedRecently(facts TransportTargetFacts, window time.Duration,
 	return false
 }
 
-func defaultLaunchRunSidecar(projectRoot, runName string, interval time.Duration) error {
-	goalxBin, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("resolve goalx executable: %w", err)
-	}
-	seconds := int(interval.Seconds())
-	if seconds <= 0 {
-		seconds = 300
-	}
-
-	runDir := goalx.RunDir(projectRoot, runName)
-	logFile, err := os.OpenFile(filepath.Join(runDir, "sidecar.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("open sidecar log: %w", err)
-	}
-	defer logFile.Close()
-
-	cmd := exec.Command(goalxBin, "sidecar", "--run", runName, "--interval", strconv.Itoa(seconds))
-	cmd.Dir = projectRoot
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start sidecar: %w", err)
-	}
+func defaultStopRunRuntimeHost(runDir string) error {
 	meta, _ := LoadRunMetadata(RunMetadataPath(runDir))
-	epoch := 1
-	if meta != nil && meta.Epoch > 0 {
-		epoch = meta.Epoch
-	}
-	runID := ""
-	if meta != nil {
-		runID = meta.RunID
-	}
-	if err := RenewControlLease(runDir, "sidecar", runID, epoch, interval*2, "process", cmd.Process.Pid); err != nil {
-		return err
-	}
-	return cmd.Process.Release()
-}
-
-func defaultStopRunSidecar(runDir string) error {
-	meta, _ := LoadRunMetadata(RunMetadataPath(runDir))
-	lease, err := LoadControlLease(ControlLeasePath(runDir, "sidecar"))
+	lease, err := LoadControlLease(ControlLeasePath(runDir, "runtime-host"))
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return err
@@ -1082,7 +1037,7 @@ func defaultStopRunSidecar(runDir string) error {
 			_ = proc.Signal(syscall.SIGTERM)
 			deadline := time.Now().Add(2 * time.Second)
 			for time.Now().Before(deadline) {
-				current, loadErr := LoadControlLease(ControlLeasePath(runDir, "sidecar"))
+				current, loadErr := LoadControlLease(ControlLeasePath(runDir, "runtime-host"))
 				if loadErr == nil && current.PID == 0 {
 					return nil
 				}
@@ -1094,5 +1049,5 @@ func defaultStopRunSidecar(runDir string) error {
 			_ = proc.Signal(syscall.SIGKILL)
 		}
 	}
-	return ExpireControlLease(runDir, "sidecar")
+	return ExpireControlLease(runDir, "runtime-host")
 }

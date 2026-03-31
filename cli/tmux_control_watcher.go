@@ -45,7 +45,7 @@ var listTmuxSessionPanes = defaultListTmuxSessionPanes
 var launchTmuxControlClient = defaultLaunchTmuxControlClient
 
 func StartTmuxControlWatcher(runDir, session, masterEngine string) (*TmuxControlWatcher, error) {
-	cmd, stdin, stdout, err := launchTmuxControlClient(session)
+	cmd, stdin, stdout, err := launchTmuxControlClient(runDir, session)
 	if err != nil {
 		return nil, err
 	}
@@ -197,8 +197,8 @@ func (w *TmuxControlWatcher) writeSnapshot() error {
 	return SaveTransportFacts(w.runDir, facts)
 }
 
-func defaultLaunchTmuxControlClient(session string) (*exec.Cmd, io.WriteCloser, io.Reader, error) {
-	cmd := exec.Command("tmux", "-C", "attach-session", "-t", session)
+func defaultLaunchTmuxControlClient(runDir, session string) (*exec.Cmd, io.WriteCloser, io.Reader, error) {
+	cmd := tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "-C", "attach-session", "-t", session)
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -214,8 +214,8 @@ func defaultLaunchTmuxControlClient(session string) (*exec.Cmd, io.WriteCloser, 
 	return cmd, stdin, stdout, nil
 }
 
-func defaultListTmuxSessionPanes(session string) ([]tmuxPaneRef, error) {
-	out, err := exec.Command("tmux", "list-panes", "-a", "-F", "#{session_name}\t#{pane_id}\t#{window_name}").Output()
+func defaultListTmuxSessionPanes(runDir, session string) ([]tmuxPaneRef, error) {
+	out, err := tmuxOutputWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "list-panes", "-a", "-F", "#{session_name}\t#{pane_id}\t#{window_name}")
 	if err != nil {
 		return nil, err
 	}

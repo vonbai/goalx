@@ -239,7 +239,7 @@ func TestTellRejectsCompletedRun(t *testing.T) {
 	writeAndCommit(t, repo, "base.txt", "base", "base commit")
 	runName, runDir := writeLifecycleRunFixture(t, repo)
 
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "completed"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "completed", ContinuityState: "stopped"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 

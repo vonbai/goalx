@@ -103,14 +103,14 @@ func cleanupSessionWorktreeBoundary(repoRoot, worktreePath, branch string) error
 	return errors.Join(errs...)
 }
 
-func cleanupSessionWindow(tmuxSession, windowName string) error {
+func cleanupSessionWindow(runDir, tmuxSession, windowName string) error {
 	if tmuxSession == "" || windowName == "" {
 		return nil
 	}
-	if !SessionExists(tmuxSession) || !WindowExists(tmuxSession, windowName) {
+	if !SessionExistsInRun(runDir, tmuxSession) || !WindowExistsInRun(runDir, tmuxSession, windowName) {
 		return nil
 	}
-	return KillWindow(tmuxSession, windowName)
+	return KillWindowInRun(runDir, tmuxSession, windowName)
 }
 
 func removeIfExists(path string) error {

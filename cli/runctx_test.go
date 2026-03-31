@@ -93,6 +93,39 @@ func TestResolveRunUsesLocalRunForBareExplicitName(t *testing.T) {
 	}
 }
 
+func TestResolveRunPrefersSavedTmuxLocator(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := initNamedGitRepo(t, "project-locator")
+	writeAndCommit(t, projectRoot, "README.md", "base", "base commit")
+
+	cfg := &goalx.Config{
+		Name:      "locator-run",
+		Mode:      goalx.ModeWorker,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	runDir := writeRunSpecFixture(t, projectRoot, cfg)
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if err := SaveTmuxLocator(TmuxLocatorPath(runDir), &TmuxLocator{
+		Version: 1,
+		Session: "gx-custom-locator",
+	}); err != nil {
+		t.Fatalf("SaveTmuxLocator: %v", err)
+	}
+
+	rc, err := ResolveRun(projectRoot, cfg.Name)
+	if err != nil {
+		t.Fatalf("ResolveRun: %v", err)
+	}
+	if rc.TmuxSession != "gx-custom-locator" {
+		t.Fatalf("ResolveRun tmux session = %q, want gx-custom-locator", rc.TmuxSession)
+	}
+}
+
 func TestResolveRunDoesNotUseBareGlobalLookup(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

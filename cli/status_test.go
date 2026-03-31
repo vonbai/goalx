@@ -77,8 +77,8 @@ func TestStatusShowsControlQueueAndLeaseSummary(t *testing.T) {
 	if err := RenewControlLease(runDir, "master", "run_status", 1, time.Minute, "tmux", 1234); err != nil {
 		t.Fatalf("RenewControlLease master: %v", err)
 	}
-	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
-		t.Fatalf("ExpireControlLease sidecar: %v", err)
+	if err := ExpireControlLease(runDir, "runtime-host"); err != nil {
+		t.Fatalf("ExpireControlLease runtime-host: %v", err)
 	}
 	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
 		Name:  "session-1",
@@ -124,8 +124,8 @@ func TestStatusShowsControlQueueAndLeaseSummary(t *testing.T) {
 		"run_status=degraded",
 		"unread_inbox=2",
 		"master_lease=healthy",
-		"sidecar_lease=expired",
-		"sidecar missing (lease_expired)",
+			"runtime_host=expired",
+			"runtime host missing (lease_expired)",
 		"reminders_due=1",
 		"deliveries_failed=1",
 		"LEASE",
@@ -149,8 +149,8 @@ func TestStatusPrefersCanonicalControlFactsOverStaleActivitySnapshot(t *testing.
 	if err := RenewControlLease(runDir, "master", meta.RunID, meta.Epoch, time.Minute, "tmux", 1234); err != nil {
 		t.Fatalf("RenewControlLease master: %v", err)
 	}
-	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
-		t.Fatalf("ExpireControlLease sidecar: %v", err)
+	if err := ExpireControlLease(runDir, "runtime-host"); err != nil {
+		t.Fatalf("ExpireControlLease runtime-host: %v", err)
 	}
 	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
 		Version: 1,
@@ -185,7 +185,7 @@ func TestStatusPrefersCanonicalControlFactsOverStaleActivitySnapshot(t *testing.
 		},
 		Actors: map[string]ActivityActor{
 			"master":  {Lease: "expired"},
-			"sidecar": {Lease: "healthy"},
+			"runtime-host": {Lease: "healthy"},
 		},
 	}); err != nil {
 		t.Fatalf("SaveActivitySnapshot: %v", err)
@@ -202,7 +202,7 @@ func TestStatusPrefersCanonicalControlFactsOverStaleActivitySnapshot(t *testing.
 		"epoch=1",
 		"unread_inbox=1",
 		"master_lease=healthy",
-		"sidecar_lease=expired",
+			"runtime_host=expired",
 		"reminders_due=1",
 		"deliveries_failed=1",
 	} {
@@ -226,8 +226,8 @@ func TestStatusDoesNotReviveStaleActivityUnreadWhenCanonicalQueueIsZero(t *testi
 	if err := RenewControlLease(runDir, "master", meta.RunID, meta.Epoch, time.Minute, "tmux", 1234); err != nil {
 		t.Fatalf("RenewControlLease master: %v", err)
 	}
-	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
-		t.Fatalf("ExpireControlLease sidecar: %v", err)
+	if err := ExpireControlLease(runDir, "runtime-host"); err != nil {
+		t.Fatalf("ExpireControlLease runtime-host: %v", err)
 	}
 	if err := SaveActivitySnapshot(runDir, &ActivitySnapshot{
 		Version:   1,
@@ -1210,7 +1210,7 @@ func TestStatusShowsBlockedRequiredFrontierFacts(t *testing.T) {
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
-	for _, holder := range []string{"master", "sidecar", "session-1"} {
+	for _, holder := range []string{"master", "runtime-host", "session-1"} {
 		if err := RenewControlLease(runDir, holder, meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
 			t.Fatalf("RenewControlLease %s: %v", holder, err)
 		}
@@ -1338,7 +1338,7 @@ func TestStatusShowsForkedSessionWorktreeLineage(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", session1Capture)
 	t.Setenv("TMUX_SESSION2_CAPTURE", session2Capture)
 	installGuidanceFakeTmux(t, []string{"session-1", "session-2"})
-	for _, holder := range []string{"master", "sidecar", "session-1", "session-2"} {
+	for _, holder := range []string{"master", "runtime-host", "session-1", "session-2"} {
 		if err := RenewControlLease(runDir, holder, meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
 			t.Fatalf("RenewControlLease %s: %v", holder, err)
 		}

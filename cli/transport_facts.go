@@ -446,12 +446,12 @@ func latestSessionTransportFacts(all *TransportFacts, sessionName string) Transp
 	return all.Targets[sessionName]
 }
 
-func tmuxPanesByWindow(session string) (map[string]tmuxPaneRef, error) {
+func tmuxPanesByWindow(runDir, session string) (map[string]tmuxPaneRef, error) {
 	panes := map[string]tmuxPaneRef{}
-	if !SessionExists(session) {
+	if !SessionExistsInRun(runDir, session) {
 		return panes, nil
 	}
-	items, err := listTmuxSessionPanes(session)
+	items, err := listTmuxSessionPanes(runDir, session)
 	if err != nil {
 		return nil, err
 	}

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,7 +16,7 @@ func PanePIDPath(runDir, holder string) string {
 }
 
 func PersistPanePIDsFromTmux(runDir, holder, target string) error {
-	out, err := exec.Command("tmux", "list-panes", "-t", target, "-F", "#{pane_pid}").Output()
+	out, err := tmuxOutputWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "list-panes", "-t", target, "-F", "#{pane_pid}")
 	if err != nil {
 		return err
 	}
@@ -30,8 +29,8 @@ func PersistPanePIDsFromTmux(runDir, holder, target string) error {
 	return os.WriteFile(PanePIDPath(runDir, holder), out, 0o644)
 }
 
-func listTmuxPanePIDs(tmuxSession string) ([]int, error) {
-	out, err := exec.Command("tmux", "list-panes", "-s", "-t", tmuxSession, "-F", "#{pane_pid}").Output()
+func listTmuxPanePIDs(runDir, tmuxSession string) ([]int, error) {
+	out, err := tmuxOutputWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "list-panes", "-s", "-t", tmuxSession, "-F", "#{pane_pid}")
 	if err != nil {
 		return nil, err
 	}
@@ -61,8 +60,8 @@ func loadPersistedPanePIDs(runDir string) ([]int, error) {
 }
 
 func killRunPaneProcessTrees(runDir, tmuxSession string) {
-	if tmuxSession != "" && SessionExists(tmuxSession) {
-		if pids, err := listTmuxPanePIDs(tmuxSession); err == nil && len(pids) > 0 {
+	if tmuxSession != "" && SessionExistsInRun(runDir, tmuxSession) {
+		if pids, err := listTmuxPanePIDs(runDir, tmuxSession); err == nil && len(pids) > 0 {
 			killProcessTrees(pids)
 			return
 		}

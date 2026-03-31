@@ -197,7 +197,7 @@ Use this when you want to relaunch the same run in place.
 goalx recover --run auth-audit
 ```
 
-- `recover` restarts tmux/master/sidecar for the existing run
+- `recover` restarts tmux/master/runtime-host for the existing run
 - it preserves the same run identity and run directory
 - use it after `goalx stop`, tmux loss, or a stranded run with no live master
 

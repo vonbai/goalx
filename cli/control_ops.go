@@ -596,7 +596,17 @@ func applyFinalizeControlSurfacesOp(runDir string, body controlFinalizeControlSu
 	if err != nil {
 		return err
 	}
-	runState.LifecycleState = body.Lifecycle
+	switch strings.TrimSpace(body.Lifecycle) {
+	case "completed":
+		runState.GoalState = "completed"
+		runState.ContinuityState = "stopped"
+	case "dropped":
+		runState.GoalState = "dropped"
+		runState.ContinuityState = "stopped"
+	default:
+		runState.GoalState = "open"
+		runState.ContinuityState = "stopped"
+	}
 	runState.UpdatedAt = body.UpdatedAt
 	if err := SaveControlRunState(ControlRunStatePath(runDir), runState); err != nil {
 		return err

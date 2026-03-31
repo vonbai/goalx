@@ -219,7 +219,7 @@ func printStatusControlSummary(rc *RunContext) {
 	}
 	unread := unreadControlInboxCount(MasterInboxPath(rc.RunDir), MasterCursorPath(rc.RunDir))
 	masterLease := controlLeaseSummary(rc.RunDir, "master")
-	sidecarLease := controlLeaseSummary(rc.RunDir, "sidecar")
+	runtimeHost := controlLeaseSummary(rc.RunDir, "runtime-host")
 	remindersDue, deliveriesFailed := controlQueueSummary(rc.RunDir)
 	if activity, err := LoadActivitySnapshot(ActivityPath(rc.RunDir)); err == nil && activity != nil {
 		if masterLease == "missing" {
@@ -227,11 +227,11 @@ func printStatusControlSummary(rc *RunContext) {
 				masterLease = actor.Lease
 			}
 		}
-		if sidecarLease == "missing" {
-			if actor, ok := activity.Actors["sidecar"]; ok && actor.Lease != "" {
-				sidecarLease = actor.Lease
+			if runtimeHost == "missing" {
+				if actor, ok := activity.Actors["runtime-host"]; ok && actor.Lease != "" {
+					runtimeHost = actor.Lease
+				}
 			}
-		}
 	}
 	runID := "-"
 	epoch := "-"
@@ -251,7 +251,7 @@ func printStatusControlSummary(rc *RunContext) {
 			charter = derived.Charter
 		}
 	}
-	fmt.Printf("Control: run_id=%s epoch=%s charter=%s run_status=%s unread_inbox=%d master_lease=%s sidecar_lease=%s reminders_due=%d deliveries_failed=%d\n", runID, epoch, charter, runStatus, unread, masterLease, sidecarLease, remindersDue, deliveriesFailed)
+	fmt.Printf("Control: run_id=%s epoch=%s charter=%s run_status=%s unread_inbox=%d master_lease=%s runtime_host=%s reminders_due=%d deliveries_failed=%d\n", runID, epoch, charter, runStatus, unread, masterLease, runtimeHost, remindersDue, deliveriesFailed)
 	if missing := targetLossSummary(rc); missing != "" {
 		fmt.Printf("Targets: %s\n", missing)
 	}
@@ -332,10 +332,10 @@ func targetLossSummary(rc *RunContext) string {
 			}
 		}
 	}
-	if sidecar, err := LoadTargetPresenceFact(rc.RunDir, rc.TmuxSession, "sidecar"); err == nil && targetPresenceMissing(sidecar) {
-		parts = append(parts, "sidecar missing ("+sidecar.State+")")
-	}
-	return strings.Join(parts, " | ")
+		if runtimeHostFacts, err := LoadTargetPresenceFact(rc.RunDir, rc.TmuxSession, "runtime-host"); err == nil && targetPresenceMissing(runtimeHostFacts) {
+			parts = append(parts, "runtime host missing ("+runtimeHostFacts.State+")")
+		}
+		return strings.Join(parts, " | ")
 }
 
 func formatObjectiveIntegritySummary(runDir string) string {
@@ -497,6 +497,9 @@ func hasTransportFacts(facts TransportTargetFacts) bool {
 }
 
 func actorLeaseSummary(runDir, holder, missing string) string {
+	if strings.TrimSpace(holder) == "runtime-host" {
+		return runtimeHostSummary(runDir, missing)
+	}
 	lease, err := LoadControlLease(ControlLeasePath(runDir, holder))
 	if err != nil || lease == nil || lease.ExpiresAt == "" {
 		return missing
@@ -513,4 +516,26 @@ func actorLeaseSummary(runDir, holder, missing string) string {
 
 func controlLeaseSummary(runDir, holder string) string {
 	return actorLeaseSummary(runDir, holder, "missing")
+}
+
+func runtimeHostSummary(runDir, missing string) string {
+	host, err := LoadRunHostState(RunHostStatePath(runDir))
+	if err == nil && host != nil {
+		if host.Running {
+			return "healthy"
+		}
+		return "expired"
+	}
+	lease, leaseErr := LoadControlLease(ControlLeasePath(runDir, "runtime-host"))
+	if leaseErr != nil || lease == nil || lease.ExpiresAt == "" {
+		return missing
+	}
+	expiresAt, parseErr := time.Parse(time.RFC3339, lease.ExpiresAt)
+	if parseErr != nil {
+		return "invalid"
+	}
+	if expiresAt.After(time.Now().UTC()) {
+		return "healthy"
+	}
+	return "expired"
 }

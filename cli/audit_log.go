@@ -8,7 +8,7 @@ import (
 )
 
 func auditLogPath(runDir string) string {
-	return filepath.Join(runDir, "sidecar.log")
+	return filepath.Join(runDir, "runtime-host.log")
 }
 
 func appendAuditLog(runDir, format string, args ...any) {

@@ -46,8 +46,9 @@ func TestFinalizeControlRunRecordsControlSurfaceFinalizeOp(t *testing.T) {
 		t.Fatalf("EnsureControlState: %v", err)
 	}
 	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
-		Version:        1,
-		LifecycleState: "active",
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
 	}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
@@ -112,9 +113,10 @@ func TestStopKillsLeasedProcessesBeforeTmuxSession(t *testing.T) {
 		t.Fatalf("RenewControlLease: %v", err)
 	}
 
-	origStopSidecar := stopRunSidecar
-	defer func() { stopRunSidecar = origStopSidecar }()
-	stopRunSidecar = func(runDir string) error { return nil }
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	supervisor := &runtimeSupervisorStub{}
+	runtimeSupervisor = supervisor
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
@@ -171,9 +173,10 @@ func TestStopSucceedsWhenTmuxSessionAlreadyExited(t *testing.T) {
 		t.Fatalf("EnsureControlState: %v", err)
 	}
 
-	origStopSidecar := stopRunSidecar
-	defer func() { stopRunSidecar = origStopSidecar }()
-	stopRunSidecar = func(runDir string) error { return nil }
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	supervisor := &runtimeSupervisorStub{}
+	runtimeSupervisor = supervisor
 
 	fakeBin := t.TempDir()
 	statePath := filepath.Join(fakeBin, "tmux-session")
@@ -212,8 +215,11 @@ esac
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if runState.LifecycleState != "stopped" {
-		t.Fatalf("lifecycle_state = %q, want stopped", runState.LifecycleState)
+	if runState.GoalState != "open" || runState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want open/stopped", runState)
+	}
+	if supervisor.stopCalls != 1 || supervisor.lastStopRunDir != runDir {
+		t.Fatalf("runtime supervisor stop = calls:%d runDir:%q, want calls=1 runDir=%q", supervisor.stopCalls, supervisor.lastStopRunDir, runDir)
 	}
 }
 
@@ -250,9 +256,7 @@ func TestStopPreservesCompletedLifecycleWhenCloseoutExists(t *testing.T) {
 		t.Fatalf("write completion proof: %v", err)
 	}
 
-	origStopSidecar := stopRunSidecar
-	defer func() { stopRunSidecar = origStopSidecar }()
-	stopRunSidecar = func(runDir string) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
@@ -282,8 +286,8 @@ esac
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState.LifecycleState != "completed" {
-		t.Fatalf("lifecycle_state = %q, want completed", controlState.LifecycleState)
+	if controlState.GoalState != "completed" || controlState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want completed/stopped", controlState)
 	}
 
 	runtimeState, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
@@ -330,7 +334,7 @@ func TestRefreshDisplayFactsRepairsCompletedRunAndCleansLeases(t *testing.T) {
 	if err := os.WriteFile(CompletionStatePath(runDir), []byte(`{"verdict":"complete"}`), 0o644); err != nil {
 		t.Fatalf("write completion proof: %v", err)
 	}
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "stopped"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "stopped"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 
@@ -378,8 +382,8 @@ esac
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState.LifecycleState != "completed" {
-		t.Fatalf("lifecycle_state = %q, want completed", controlState.LifecycleState)
+	if controlState.GoalState != "completed" || controlState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want completed/stopped", controlState)
 	}
 
 	runtimeState, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
@@ -443,7 +447,7 @@ func TestRefreshDisplayFactsDoesNotRepairCompletedEvolveRunWithoutManagedStop(t 
 		t.Fatalf("write completion proof: %v", err)
 	}
 	appendExperimentEventForTest(t, runDir, `{"version":1,"kind":"experiment.created","at":"2026-03-29T10:00:00Z","actor":"master","body":{"experiment_id":"exp-1","created_at":"2026-03-29T10:00:00Z"}}`)
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "stopped"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "stopped"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 
@@ -479,8 +483,8 @@ esac
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState.LifecycleState != "stopped" {
-		t.Fatalf("lifecycle_state = %q, want stopped when evolve frontier is still open", controlState.LifecycleState)
+	if controlState.GoalState != "open" || controlState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want open/stopped when evolve frontier is still open", controlState)
 	}
 }
 
@@ -571,7 +575,7 @@ func TestRefreshDisplayFactsDoesNotRepairCompletedRunWhenQualityDebtRemains(t *t
 	if err := os.WriteFile(CompletionStatePath(runDir), []byte(`{"verdict":"complete"}`), 0o644); err != nil {
 		t.Fatalf("write completion proof: %v", err)
 	}
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "stopped"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "stopped"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 
@@ -607,7 +611,111 @@ esac
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState.LifecycleState != "stopped" {
-		t.Fatalf("lifecycle_state = %q, want stopped when quality debt remains", controlState.LifecycleState)
+	if controlState.GoalState != "open" || controlState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want open/stopped when quality debt remains", controlState)
+	}
+}
+
+func TestRefreshDisplayFactsStrandsOpenRunWhenRuntimeHostStopped(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	if err := RegisterActiveRun(repo, cfg); err != nil {
+		t.Fatalf("RegisterActiveRun: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(cfg.Mode),
+		Active:    true,
+		Phase:     "working",
+		StartedAt: "2026-03-31T00:00:00Z",
+		UpdatedAt: "2026-03-31T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+	if err := SaveRunHostState(RunHostStatePath(runDir), &RunHostState{
+		Version:   1,
+		Kind:      "runtime_host",
+		Launcher:  "process",
+		RunDir:    runDir,
+		RunName:   runName,
+		Running:   true,
+		PID:       4242,
+		UpdatedAt: "2026-03-31T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunHostState: %v", err)
+	}
+
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	runtimeSupervisor = &runtimeSupervisorStub{
+		inspectState: &RunHostState{
+			Version:   1,
+			Kind:      "runtime_host",
+			Launcher:  "process",
+			RunDir:    runDir,
+			RunName:   runName,
+			Running:   false,
+			PID:       0,
+			UpdatedAt: "2026-03-31T00:05:00Z",
+		},
+	}
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	rc, err := buildRunContext(repo, runDir, runName)
+	if err != nil {
+		t.Fatalf("buildRunContext: %v", err)
+	}
+	if err := refreshDisplayFacts(rc); err != nil {
+		t.Fatalf("refreshDisplayFacts: %v", err)
+	}
+
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if controlState.GoalState != "open" || controlState.ContinuityState != "stranded" {
+		t.Fatalf("control state = %+v, want open/stranded", controlState)
+	}
+	runtimeState, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadRunRuntimeState: %v", err)
+	}
+	if runtimeState.Active {
+		t.Fatalf("runtime state should be inactive after stranding: %+v", runtimeState)
+	}
+	reg, err := LoadProjectRegistry(repo)
+	if err != nil {
+		t.Fatalf("LoadProjectRegistry: %v", err)
+	}
+	if _, ok := reg.ActiveRuns[runName]; ok {
+		t.Fatalf("run %q still registered active after stranding", runName)
 	}
 }

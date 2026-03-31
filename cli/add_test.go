@@ -817,13 +817,12 @@ local_validation:
 		t.Fatalf("read tmux log: %v", err)
 	}
 	logText := string(logData)
-	for _, want := range []string{
-		"new-window -t " + goalx.TmuxSessionName(repo, runName) + " -n session-2 -c " + WorktreePath(runDir, runName, 2) + " env ",
-		"/bin/bash -c ",
-		"lease-loop --run",
-		"--holder",
-		"session-2",
-		"FOO_TOOLCHAIN_ROOT='/opt/add-after'",
+		for _, want := range []string{
+			"new-window -t " + goalx.TmuxSessionName(repo, runName) + " -n session-2 -c " + WorktreePath(runDir, runName, 2) + " env ",
+			"target-runner --run",
+			"--holder",
+			"session-2",
+			"FOO_TOOLCHAIN_ROOT='/opt/add-after'",
 		"HOME='" + home + "'",
 		"PATH='" + fakeBin + ":/tmp/goalx-bin:/usr/bin'",
 		"ANTHROPIC_API_KEY='anthropic-after'",

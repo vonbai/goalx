@@ -343,7 +343,7 @@ func TestImplementStartCreatesFreshCharterWithPreservedRootLineage(t *testing.T)
 	writeAndCommit(t, projectRoot, "base.txt", "base", "base commit")
 	sourceMeta, sourceCharter := writeSavedPhaseSourceFixture(t, projectRoot, "debate", "debate")
 	installPhaseStartFakeTmux(t)
-	stubLaunchRunSidecar(t)
+	stubLaunchRunRuntimeHost(t)
 
 	if err := Implement(projectRoot, []string{"--from", "debate"}); err != nil {
 		t.Fatalf("Implement: %v", err)

@@ -25,9 +25,10 @@ func TestRecoverRelaunchesStoppedRunInPlace(t *testing.T) {
 		t.Fatalf("mkdir run worktree: %v", err)
 	}
 	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
-		Version:        1,
-		LifecycleState: "stopped",
-		UpdatedAt:      "2026-03-29T00:00:00Z",
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "stopped",
+		UpdatedAt:       "2026-03-29T00:00:00Z",
 	}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
@@ -43,14 +44,10 @@ func TestRecoverRelaunchesStoppedRunInPlace(t *testing.T) {
 		t.Fatalf("SaveRunRuntimeState: %v", err)
 	}
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	var gotSidecarProjectRoot, gotSidecarRunName string
-	var gotSidecarInterval time.Duration
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error {
-		gotSidecarProjectRoot, gotSidecarRunName, gotSidecarInterval = projectRoot, runName, interval
-		return nil
-	}
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	supervisor := &runtimeSupervisorStub{}
+	runtimeSupervisor = supervisor
 
 	if err := Recover(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Recover: %v", err)
@@ -68,8 +65,8 @@ func TestRecoverRelaunchesStoppedRunInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState == nil || controlState.LifecycleState != "active" {
-		t.Fatalf("control state after recover = %+v, want lifecycle_state active", controlState)
+	if controlState == nil || controlState.GoalState != "open" || controlState.ContinuityState != "running" {
+		t.Fatalf("control state after recover = %+v, want open/running", controlState)
 	}
 
 	reg, err := LoadProjectRegistry(repo)
@@ -97,8 +94,17 @@ func TestRecoverRelaunchesStoppedRunInPlace(t *testing.T) {
 		}
 	}
 
-	if gotSidecarProjectRoot != repo || gotSidecarRunName != runName || gotSidecarInterval <= 0 {
-		t.Fatalf("launchRunSidecar got (%q, %q, %v), want (%q, %q, >0)", gotSidecarProjectRoot, gotSidecarRunName, gotSidecarInterval, repo, runName)
+	if supervisor.stopCalls != 1 || supervisor.lastStopRunDir != runDir {
+		t.Fatalf("runtime supervisor stop = calls:%d runDir:%q, want calls=1 runDir=%q", supervisor.stopCalls, supervisor.lastStopRunDir, runDir)
+	}
+	if supervisor.startCalls != 1 {
+		t.Fatalf("runtime supervisor start calls = %d, want 1", supervisor.startCalls)
+	}
+	if supervisor.lastStartSpec.ProjectRoot != repo || supervisor.lastStartSpec.RunName != runName || supervisor.lastStartSpec.RunDir != runDir {
+		t.Fatalf("runtime supervisor start spec = %+v, want project=%q run=%q runDir=%q", supervisor.lastStartSpec, repo, runName, runDir)
+	}
+	if supervisor.lastStartSpec.Interval <= 0 {
+		t.Fatalf("runtime supervisor interval = %v, want > 0", supervisor.lastStartSpec.Interval)
 	}
 
 	if _, err := os.Stat(filepath.Join(stateDir, "session_"+goalx.TmuxSessionName(repo, runName))); err != nil {
@@ -120,8 +126,9 @@ func TestRecoverRejectsAlreadyActiveRun(t *testing.T) {
 		t.Fatalf("seed tmux session marker: %v", err)
 	}
 	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
-		Version:        1,
-		LifecycleState: "active",
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
 	}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
@@ -156,9 +163,10 @@ func TestRecoverPromotesSuccessPriorBeforeRelaunch(t *testing.T) {
 		t.Fatalf("mkdir run worktree: %v", err)
 	}
 	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
-		Version:        1,
-		LifecycleState: "stopped",
-		UpdatedAt:      "2026-03-29T00:00:00Z",
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "stopped",
+		UpdatedAt:       "2026-03-29T00:00:00Z",
 	}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
@@ -194,9 +202,7 @@ func TestRecoverPromotesSuccessPriorBeforeRelaunch(t *testing.T) {
 		t.Fatalf("writeProposalShard: %v", err)
 	}
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Recover(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Recover: %v", err)

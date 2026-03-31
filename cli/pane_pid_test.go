@@ -46,9 +46,7 @@ func TestStartPersistsMasterPanePID(t *testing.T) {
 
 	installFakePaneTmux(t, false, "4321", 0)
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Start(repo, []string{"--config", cfgPath}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -132,9 +130,7 @@ func TestStopKillsLivePaneProcessTreesBeforeTmuxSession(t *testing.T) {
 	shellPID, childPID, waitDone := startSleepProcessTree(t)
 	installFakePaneTmux(t, true, strconv.Itoa(shellPID), shellPID)
 
-	origStopSidecar := stopRunSidecar
-	defer func() { stopRunSidecar = origStopSidecar }()
-	stopRunSidecar = func(runDir string) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Stop(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Stop: %v", err)
@@ -171,9 +167,7 @@ func TestStopKillsPersistedPaneProcessTreesWhenTmuxSessionMissing(t *testing.T) 
 	writePersistedPanePID(t, runDir, "session-1", shellPID)
 	installFakePaneTmux(t, false, "", 0)
 
-	origStopSidecar := stopRunSidecar
-	defer func() { stopRunSidecar = origStopSidecar }()
-	stopRunSidecar = func(runDir string) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Stop(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Stop: %v", err)
@@ -210,9 +204,7 @@ func TestDropKillsPersistedPaneProcessTreesWhenTmuxSessionMissing(t *testing.T) 
 	writePersistedPanePID(t, runDir, "session-1", shellPID)
 	installFakePaneTmux(t, false, "", 0)
 
-	origStopSidecar := stopRunSidecar
-	defer func() { stopRunSidecar = origStopSidecar }()
-	stopRunSidecar = func(runDir string) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Drop(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Drop: %v", err)
@@ -256,9 +248,9 @@ func TestRelaunchMissingMasterWindowAuditsAndSkipsKill(t *testing.T) {
 		t.Fatalf("missing-master relaunch should not kill window:\n%s", logText)
 	}
 
-	auditData, err := os.ReadFile(filepath.Join(runDir, "sidecar.log"))
+	auditData, err := os.ReadFile(filepath.Join(runDir, "runtime-host.log"))
 	if err != nil {
-		t.Fatalf("read sidecar audit log: %v", err)
+		t.Fatalf("read runtime-host audit log: %v", err)
 	}
 	auditText := string(auditData)
 	for _, want := range []string{
@@ -266,7 +258,7 @@ func TestRelaunchMissingMasterWindowAuditsAndSkipsKill(t *testing.T) {
 		"target_relaunch_result target=master result=success cause=window_missing",
 	} {
 		if !strings.Contains(auditText, want) {
-			t.Fatalf("sidecar audit log missing %q:\n%s", want, auditText)
+			t.Fatalf("runtime-host audit log missing %q:\n%s", want, auditText)
 		}
 	}
 }
@@ -278,7 +270,7 @@ func TestScanLivenessReportsJournalStaleMinutes(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -288,7 +280,7 @@ func TestScanLivenessReportsJournalStaleMinutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -328,29 +320,29 @@ func TestScanLivenessReportsJournalStaleMinutes(t *testing.T) {
 	}
 }
 
-func TestRunSidecarLoopWritesAuditLogOnError(t *testing.T) {
+func TestRunRuntimeHostLoopWritesAuditLogOnError(t *testing.T) {
 	runDir := t.TempDir()
 	if err := os.WriteFile(RunMetadataPath(runDir), []byte("{not-json"), 0o644); err != nil {
 		t.Fatalf("write invalid metadata: %v", err)
 	}
 
-	err := runSidecarLoop(context.Background(), t.TempDir(), "demo", runDir, "run_demo", 1, time.Second)
+	err := runRuntimeHostLoop(context.Background(), t.TempDir(), "demo", runDir, "run_demo", 1, time.Second)
 	if err == nil {
-		t.Fatal("expected runSidecarLoop error")
+		t.Fatal("expected runRuntimeHostLoop error")
 	}
 
-	logData, readErr := os.ReadFile(filepath.Join(runDir, "sidecar.log"))
+	logData, readErr := os.ReadFile(filepath.Join(runDir, "runtime-host.log"))
 	if readErr != nil {
-		t.Fatalf("read sidecar audit log: %v", readErr)
+		t.Fatalf("read runtime-host audit log: %v", readErr)
 	}
 	logText := string(logData)
 	for _, want := range []string{
-		"sidecar started pid=",
-		"sidecar error:",
-		"sidecar exiting reason=",
+		"runtime-host started pid=",
+		"runtime-host error:",
+		"runtime-host exiting reason=",
 	} {
 		if !strings.Contains(logText, want) {
-			t.Fatalf("sidecar audit log missing %q:\n%s", want, logText)
+			t.Fatalf("runtime-host audit log missing %q:\n%s", want, logText)
 		}
 	}
 }
@@ -381,9 +373,9 @@ func TestRunLeaseLoopWritesExitAuditLog(t *testing.T) {
 		t.Fatalf("runLeaseLoop: %v", err)
 	}
 
-	logData, err := os.ReadFile(filepath.Join(runDir, "sidecar.log"))
+	logData, err := os.ReadFile(filepath.Join(runDir, "runtime-host.log"))
 	if err != nil {
-		t.Fatalf("read sidecar audit log: %v", err)
+		t.Fatalf("read runtime-host audit log: %v", err)
 	}
 	if !strings.Contains(string(logData), "lease-loop exiting holder=master reason=context canceled") {
 		t.Fatalf("lease-loop audit log missing exit reason:\n%s", string(logData))

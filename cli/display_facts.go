@@ -15,6 +15,9 @@ func refreshDisplayFacts(rc *RunContext) error {
 	if err := repairCompletedRunFinalization(rc); err != nil {
 		return err
 	}
+	if err := reconcileRunContinuityForRun(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+		return err
+	}
 	_ = reconcileControlDeliveries(rc.RunDir)
 	if _, err := RefreshRunSuccessContextForRun(rc.ProjectRoot, rc.RunDir); err != nil {
 		return err
@@ -29,7 +32,7 @@ func refreshDisplayFacts(rc *RunContext) error {
 	if rc.Config != nil {
 		masterEngine = rc.Config.Master.Engine
 	}
-	if SessionExists(rc.TmuxSession) {
+	if SessionExistsInRun(rc.RunDir, rc.TmuxSession) {
 		facts, err := BuildTransportFacts(rc.RunDir, rc.TmuxSession, masterEngine)
 		if err != nil {
 			return err
