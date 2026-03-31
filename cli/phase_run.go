@@ -221,7 +221,7 @@ func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.M
 		parallel = source.Parallel
 	}
 	req := goalx.ResolveRequest{
-		Name:                      derivePhaseRunName(source.Run, phaseKind, opts.Name),
+		Name:                      phaseRunName(projectRoot, source.Run, phaseKind, opts.Name),
 		Mode:                      mode,
 		Objective:                 resolvePhaseObjective(phaseKind, source.Run, opts.Objective),
 		Parallel:                  parallel,
@@ -234,6 +234,13 @@ func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.M
 		req.TargetOverride = &goalx.TargetConfig{Readonly: []string{"."}}
 	}
 	return req, nil
+}
+
+func phaseRunName(projectRoot, sourceRun, phaseKind, explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	return nextAvailableRunName(projectRoot, derivePhaseRunName(sourceRun, phaseKind, ""))
 }
 
 func phaseSelectionOverrideRequested(opts phaseOptions) bool {

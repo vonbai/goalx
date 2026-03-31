@@ -58,7 +58,7 @@ advanced/manual path:
   goalx start --config .goalx/goalx.yaml
 
 notes:
-  --context accepts existing files/dirs, URLs, and explicit ref:/note: items.
+  repeat --context for multiple items; each value may be a file/dir, URL, or explicit ref:/note: item.
   selection uses detected candidate pools by default.
   --parallel is optional initial fan-out, not a permanent cap on later dispatch.
   role defaults are separate: --master and --worker.`
@@ -67,7 +67,7 @@ notes:
 
 notes:
   this is the advanced config-first path and writes the explicit manual draft .goalx/goalx.yaml.
-  --context accepts existing files/dirs, URLs, and explicit ref:/note: items.
+  repeat --context for multiple items; each value may be a file/dir, URL, or explicit ref:/note: item.
   selection uses detected candidate pools by default.
   --parallel is optional initial fan-out, not a permanent cap on later dispatch.
   role defaults are separate: --master and --worker.`
@@ -108,7 +108,7 @@ func parseLaunchOptions(args []string, defaultMode goalx.Mode, allowModeSwitch b
 				return opts, fmt.Errorf("missing value for --context")
 			}
 			i++
-			opts.ContextPaths = strings.Split(args[i], ",")
+			opts.ContextPaths = append(opts.ContextPaths, args[i])
 		case "--dimension":
 			if i+1 >= len(args) {
 				return opts, fmt.Errorf("missing value for --dimension")

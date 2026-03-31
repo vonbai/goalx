@@ -219,6 +219,94 @@ func TestBuildLaunchConfigSplitsContextFilesAndRefs(t *testing.T) {
 	}
 }
 
+func TestBuildLaunchConfigPreservesContextRefWithCommas(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	cfg, err := buildLaunchConfig(projectRoot, launchOptions{
+		Objective:    "audit auth",
+		Mode:         goalx.ModeWorker,
+		ContextPaths: []string{"note:program centric, owner scoped, no demo drift"},
+	})
+	if err != nil {
+		t.Fatalf("buildLaunchConfig: %v", err)
+	}
+
+	if len(cfg.Context.Files) != 0 {
+		t.Fatalf("context.files = %#v, want none", cfg.Context.Files)
+	}
+	if got, want := cfg.Context.Refs, []string{"program centric, owner scoped, no demo drift"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("context.refs = %#v, want %#v", got, want)
+	}
+}
+
+func TestBuildLaunchConfigAutoSuffixesConflictingGeneratedRunName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	existingRunDir := goalx.RunDir(projectRoot, goalx.Slugify("ship it"))
+	if err := os.MkdirAll(existingRunDir, 0o755); err != nil {
+		t.Fatalf("mkdir existing run dir: %v", err)
+	}
+
+	cfg, err := buildLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeWorker,
+	})
+	if err != nil {
+		t.Fatalf("buildLaunchConfig: %v", err)
+	}
+	if cfg.Name != "ship-it-2" {
+		t.Fatalf("cfg.Name = %q, want ship-it-2", cfg.Name)
+	}
+}
+
+func TestBuildLaunchConfigSkipsToNextAvailableGeneratedRunName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	for _, name := range []string{"ship-it", "ship-it-2"} {
+		if err := os.MkdirAll(goalx.RunDir(projectRoot, name), 0o755); err != nil {
+			t.Fatalf("mkdir existing run dir %s: %v", name, err)
+		}
+	}
+
+	cfg, err := buildLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeWorker,
+	})
+	if err != nil {
+		t.Fatalf("buildLaunchConfig: %v", err)
+	}
+	if cfg.Name != "ship-it-3" {
+		t.Fatalf("cfg.Name = %q, want ship-it-3", cfg.Name)
+	}
+}
+
+func TestBuildLaunchConfigKeepsExplicitNameEvenWhenConflictExists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	existingRunDir := goalx.RunDir(projectRoot, "chosen-name")
+	if err := os.MkdirAll(existingRunDir, 0o755); err != nil {
+		t.Fatalf("mkdir existing run dir: %v", err)
+	}
+
+	cfg, err := buildLaunchConfig(projectRoot, launchOptions{
+		Objective: "ship it",
+		Mode:      goalx.ModeWorker,
+		Name:      "chosen-name",
+	})
+	if err != nil {
+		t.Fatalf("buildLaunchConfig: %v", err)
+	}
+	if cfg.Name != "chosen-name" {
+		t.Fatalf("cfg.Name = %q, want chosen-name", cfg.Name)
+	}
+}
+
 func TestBuildLaunchConfigPreviewLeavesTargetAndLocalValidationUnsetWhenUnconfigured(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -129,6 +129,26 @@ func TestParseLaunchOptionsSupportsRepeatedDimensions(t *testing.T) {
 	}
 }
 
+func TestParseLaunchOptionsPreservesSingleContextValueWithCommas(t *testing.T) {
+	opts, err := parseLaunchOptions([]string{
+		"audit auth",
+		"--context", "note:program centric owner scoped no demo drift",
+		"--context", "note:commas, should, stay, inside",
+	}, goalx.ModeWorker, true)
+	if err != nil {
+		t.Fatalf("parseLaunchOptions: %v", err)
+	}
+	if got, want := len(opts.ContextPaths), 2; got != want {
+		t.Fatalf("context paths len = %d, want %d: %#v", got, want, opts.ContextPaths)
+	}
+	if opts.ContextPaths[0] != "note:program centric owner scoped no demo drift" {
+		t.Fatalf("context[0] = %q", opts.ContextPaths[0])
+	}
+	if opts.ContextPaths[1] != "note:commas, should, stay, inside" {
+		t.Fatalf("context[1] = %q", opts.ContextPaths[1])
+	}
+}
+
 func TestParseLaunchOptionsRejectsRemovedLegacySelectionFlags(t *testing.T) {
 	t.Parallel()
 

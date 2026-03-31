@@ -147,10 +147,18 @@ Boundary flag:
 
 Context injection:
 
+- repeat `--context` for multiple items; each flag carries one complete item
 - use `--context` for extra evidence at launch or phase continuation
 - existing files/dirs are recorded in `context.files`
 - URLs and explicit `ref:` / `note:` items are recorded in `context.refs`
+- values are not comma-split; if you need commas inside a `note:` item, keep them in the same single `--context` value
 - phase runs preserve saved-run boundary/evidence surfaces and merge any extra `--context` items on top
+
+Run naming:
+
+- default run names are derived from the goal text
+- when that generated name already exists, GoalX auto-suffixes `-2`, `-3`, and so on
+- explicit `--name` stays exact; do not promise automatic renaming for user-provided names
 
 ## Evolve
 

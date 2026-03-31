@@ -18,7 +18,8 @@ func TestParsePhaseOptions(t *testing.T) {
 		"--worker-effort", "low",
 		"--dimension", "depth,adversarial",
 		"--effort", "minimal",
-		"--context", "README.md,docs/arch.md",
+		"--context", "README.md",
+		"--context", "docs/arch.md",
 		"--budget", "15m",
 		"--readonly",
 		"--write-config",
@@ -56,6 +57,9 @@ func TestParsePhaseOptions(t *testing.T) {
 	if opts.Budget != 15*time.Minute {
 		t.Fatalf("budget = %v, want 15m", opts.Budget)
 	}
+	if got, want := opts.ContextPaths, []string{"README.md", "docs/arch.md"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("context = %#v, want %#v", got, want)
+	}
 	if !opts.Readonly {
 		t.Fatal("readonly = false, want true")
 	}
@@ -67,6 +71,19 @@ func TestParsePhaseOptions(t *testing.T) {
 func TestParsePhaseOptionsRequiresFrom(t *testing.T) {
 	if _, err := parsePhaseOptions("debate", nil); err == nil {
 		t.Fatal("expected missing --from error")
+	}
+}
+
+func TestParsePhaseOptionsPreservesSingleContextValueWithCommas(t *testing.T) {
+	opts, err := parsePhaseOptions("debate", []string{
+		"--from", "research-a",
+		"--context", "note:program centric, owner scoped, no demo drift",
+	})
+	if err != nil {
+		t.Fatalf("parsePhaseOptions: %v", err)
+	}
+	if got, want := opts.ContextPaths, []string{"note:program centric, owner scoped, no demo drift"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("context = %#v, want %#v", got, want)
 	}
 }
 

@@ -32,7 +32,7 @@ func phaseUsage(command string) string {
 
 notes:
   --from RUN is required and must reference a saved run.
-  --context accepts existing files/dirs, URLs, and explicit ref:/note: items.
+  repeat --context for multiple items; each value may be a file/dir, URL, or explicit ref:/note: item.
   --parallel is optional initial fan-out for the new phase run.
   saved run selection snapshot stays in effect unless you request an explicit CLI selection override.
   direct start is the default; use --write-config only for advanced config-first control.`, command)
@@ -75,7 +75,7 @@ func parsePhaseOptions(command string, args []string) (phaseOptions, error) {
 				return opts, fmt.Errorf("missing value for --context")
 			}
 			i++
-			opts.ContextPaths = strings.Split(args[i], ",")
+			opts.ContextPaths = append(opts.ContextPaths, args[i])
 		case "--dimension":
 			if i+1 >= len(args) {
 				return opts, fmt.Errorf("missing value for --dimension")
