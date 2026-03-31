@@ -103,6 +103,7 @@ goalx run "goal" --intent evolve --budget 8h
 
 - run root worktree = the integration boundary for the run
 - session worktree = an isolated worker boundary
+- project config can set `worktree_root: .worktrees` if you want those boundaries to live under the repo instead of `~/.goalx/runs/.../worktrees/`
 - `goalx keep --run NAME session-N` merges session work into the run root
 - `goalx integrate --run NAME --method ... --from ...` records a manual run-root integration after master merged or cherry-picked work there
 - `goalx keep --run NAME` merges the run root back into your source root

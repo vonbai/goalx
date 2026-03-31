@@ -35,6 +35,8 @@ goalx replace --run NAME session-2 --engine claude-code --model opus --effort hi
 Use:
 
 - `add` to create a new durable session
+- `add --worktree` to give that session its own git worktree boundary
+- if project config sets `worktree_root: .worktrees`, dedicated worktrees are created under that path
 - `replace` to hand the slice to a fresh owner, optionally with an explicit engine/model override
 
 ## Live Runtime Adjustments
@@ -63,6 +65,7 @@ goalx archive --run NAME session-4
 - `integrate --run NAME --method ... --from ...` records the lineage of a manual run-root integration that master already completed
 - `keep --run NAME` merges the run worktree into the source root when lineage is still valid
 - `archive` preserves a session branch
+- relocating worktrees with `worktree_root` changes placement only; the same lifecycle and merge rules still apply
 
 ## Finish Or Clean Up
 
@@ -79,6 +82,7 @@ goalx drop --run NAME
 - `save` exports durable artifacts for a later phase
 - `stop` preserves the run directory
 - `drop` removes the run completely
+- if `worktree_root` points into the project, `drop` also removes GoalX-managed entries from that directory
 - `save` plus `goalx run --from NAME --intent ...` creates a new phase; it does not recover the same run
 
 ## What Not To Do
