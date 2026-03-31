@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 const claudeHookUsage = "usage: goalx claude-hook permission-request|elicitation|notification"
@@ -158,24 +160,61 @@ func resolveClaudeHookRunContext(cwd string) (runDir, target string, ok bool) {
 	if err != nil || strings.TrimSpace(absCWD) == "" {
 		return "", "", false
 	}
-	runDir, ok = enclosingRunDirFromWorktree(absCWD)
-	if !ok {
+	if runDir, ok = enclosingRunDirFromWorktree(absCWD); ok {
+		return resolveClaudeHookRunContextForRun(absCWD, runDir)
+	}
+
+	projectRoot := CanonicalProjectRoot(absCWD)
+	if strings.TrimSpace(projectRoot) != "" {
+		if reg, err := LoadProjectRegistry(projectRoot); err == nil && reg != nil {
+			runNames := make([]string, 0, len(reg.ActiveRuns))
+			if focused := strings.TrimSpace(reg.FocusedRun); focused != "" {
+				if _, ok := reg.ActiveRuns[focused]; ok {
+					runNames = append(runNames, focused)
+				}
+			}
+			for name := range reg.ActiveRuns {
+				if name == reg.FocusedRun {
+					continue
+				}
+				runNames = append(runNames, name)
+			}
+			for _, runName := range runNames {
+				candidateRunDir := goalx.RunDir(projectRoot, runName)
+				if runDir, target, ok := resolveClaudeHookRunContextForRun(absCWD, candidateRunDir); ok {
+					return runDir, target, true
+				}
+			}
+		}
+	}
+
+	if global, err := LoadGlobalRunRegistry(); err == nil && global != nil {
+		for _, ref := range global.Runs {
+			if strings.TrimSpace(ref.RunDir) == "" {
+				continue
+			}
+			if runDir, target, ok := resolveClaudeHookRunContextForRun(absCWD, ref.RunDir); ok {
+				return runDir, target, true
+			}
+		}
+	}
+	return "", "", false
+}
+
+func resolveClaudeHookRunContextForRun(absCWD, runDir string) (runDirOut, target string, ok bool) {
+	if !pathHasPrefix(absCWD, RunWorktreePath(runDir)) {
+		sessionsState, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+		if err == nil && sessionsState != nil {
+			for name, session := range sessionsState.Sessions {
+				if strings.TrimSpace(session.WorktreePath) == "" {
+					continue
+				}
+				if pathHasPrefix(absCWD, session.WorktreePath) {
+					return runDir, name, true
+				}
+			}
+		}
 		return "", "", false
-	}
-	if pathHasPrefix(absCWD, RunWorktreePath(runDir)) {
-		return runDir, "master", true
-	}
-	sessionsState, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
-	if err != nil || sessionsState == nil {
-		return runDir, "master", true
-	}
-	for name, session := range sessionsState.Sessions {
-		if strings.TrimSpace(session.WorktreePath) == "" {
-			continue
-		}
-		if pathHasPrefix(absCWD, session.WorktreePath) {
-			return runDir, name, true
-		}
 	}
 	return runDir, "master", true
 }

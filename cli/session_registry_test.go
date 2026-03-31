@@ -94,3 +94,33 @@ func TestNextAvailableSessionIndexSkipsSessionIdentityWithoutWorktree(t *testing
 		t.Fatalf("nextAvailableSessionIndex = %d, want 2", got)
 	}
 }
+
+func TestNextAvailableSessionIndexSkipsConfiguredProjectWorktreeSlot(t *testing.T) {
+	projectRoot := initGitRepo(t)
+	writeAndCommit(t, projectRoot, "base.txt", "base", "base commit")
+
+	runName := "slot-run"
+	cfg := &goalx.Config{
+		Name:         runName,
+		Mode:         goalx.ModeWorker,
+		Objective:    "ship feature",
+		WorktreeRoot: ".worktrees",
+		Master:       goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	runDir := writeRunSpecFixture(t, projectRoot, cfg)
+	if _, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective); err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+
+	if err := os.MkdirAll(WorktreePath(runDir, runName, 2), 0o755); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+
+	got, err := nextAvailableSessionIndex(projectRoot, runDir, runName)
+	if err != nil {
+		t.Fatalf("nextAvailableSessionIndex: %v", err)
+	}
+	if got != 3 {
+		t.Fatalf("nextAvailableSessionIndex = %d, want 3", got)
+	}
+}

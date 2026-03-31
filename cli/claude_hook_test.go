@@ -115,3 +115,43 @@ func TestRecordClaudeElicitationFactWritesUrgentMasterInboxMessage(t *testing.T)
 		}
 	}
 }
+
+func TestResolveClaudeHookRunContextMatchesConfiguredProjectWorktrees(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	cfg.WorktreeRoot = ".worktrees"
+	if err := SaveRunSpec(runDir, cfg); err != nil {
+		t.Fatalf("SaveRunSpec: %v", err)
+	}
+	if err := SaveGlobalRunRegistry(&GlobalRunRegistry{
+		Version: 1,
+		Runs: map[string]GlobalRunRef{
+			"guidance": {
+				Key:         "guidance",
+				Name:        cfg.Name,
+				ProjectRoot: repo,
+				RunDir:      runDir,
+				State:       "active",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGlobalRunRegistry: %v", err)
+	}
+
+	runWT := RunWorktreePath(runDir)
+	if err := os.MkdirAll(runWT, 0o755); err != nil {
+		t.Fatalf("mkdir run worktree: %v", err)
+	}
+	if gotRunDir, target, ok := resolveClaudeHookRunContext(runWT); !ok || gotRunDir != runDir || target != "master" {
+		t.Fatalf("resolveClaudeHookRunContext(runWT) = (%q, %q, %v), want (%q, master, true)", gotRunDir, target, ok, runDir)
+	}
+
+	seedGuidanceSessionFixture(t, runDir, cfg)
+	sessionWT := WorktreePath(runDir, cfg.Name, 1)
+	if gotRunDir, target, ok := resolveClaudeHookRunContext(sessionWT); !ok || gotRunDir != runDir || target != "session-1" {
+		t.Fatalf("resolveClaudeHookRunContext(sessionWT) = (%q, %q, %v), want (%q, session-1, true)", gotRunDir, target, ok, runDir)
+	}
+
+	if got := CanonicalProjectRoot(runWT); got != repo {
+		t.Fatalf("CanonicalProjectRoot(runWT) = %q, want %q", got, repo)
+	}
+}

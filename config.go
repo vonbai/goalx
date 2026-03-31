@@ -28,6 +28,7 @@ type Config struct {
 	Mode            Mode                  `yaml:"mode"`
 	Objective       string                `yaml:"objective"`
 	Description     string                `yaml:"description,omitempty"`
+	WorktreeRoot    string                `yaml:"worktree_root,omitempty"`
 	Selection       SelectionConfig       `yaml:"selection,omitempty"`
 	Preferences     PreferencesConfig     `yaml:"preferences,omitempty"`
 	Roles           RoleDefaultsConfig    `yaml:"roles,omitempty"`
@@ -752,6 +753,9 @@ func mergeConfig(base, overlay *Config) {
 	}
 	if overlay.Description != "" {
 		base.Description = overlay.Description
+	}
+	if overlay.WorktreeRoot != "" {
+		base.WorktreeRoot = overlay.WorktreeRoot
 	}
 	if hasSelectionConfig(overlay.Selection) {
 		base.Selection = copySelectionConfig(overlay.Selection)

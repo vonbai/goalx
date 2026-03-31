@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 const (
@@ -13,6 +15,14 @@ const (
 )
 
 func EnsureProjectGoalxIgnored(projectRoot string) error {
+	var cfg *goalx.Config
+	if layers, err := goalx.LoadConfigLayers(projectRoot); err == nil {
+		cfg = &layers.Config
+	}
+	return EnsureProjectGoalxIgnoredWithConfig(projectRoot, cfg)
+}
+
+func EnsureProjectGoalxIgnoredWithConfig(projectRoot string, cfg *goalx.Config) error {
 	gitDirOut, err := exec.Command("git", "-C", projectRoot, "rev-parse", "--git-dir").CombinedOutput()
 	if err != nil {
 		return nil
@@ -38,8 +48,11 @@ func EnsureProjectGoalxIgnored(projectRoot string) error {
 		goalxExcludeBegin,
 		".goalx/goalx.yaml",
 		".gitnexus/",
-		goalxExcludeEnd,
 	}
+	if worktreeIgnore := worktreeIgnorePattern(projectRoot, cfg); worktreeIgnore != "" {
+		managed = append(managed, worktreeIgnore)
+	}
+	managed = append(managed, goalxExcludeEnd)
 	out := make([]string, 0, len(lines)+len(managed))
 	skippingManaged := false
 	inserted := false
@@ -78,4 +91,26 @@ func EnsureProjectGoalxIgnored(projectRoot string) error {
 	}
 	text := strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
 	return os.WriteFile(excludePath, []byte(text), 0o644)
+}
+
+func worktreeIgnorePattern(projectRoot string, cfg *goalx.Config) string {
+	if cfg == nil || strings.TrimSpace(cfg.WorktreeRoot) == "" {
+		return ""
+	}
+	root := strings.TrimSpace(cfg.WorktreeRoot)
+	if filepath.IsAbs(root) {
+		rel, err := filepath.Rel(projectRoot, root)
+		if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return ""
+		}
+		root = rel
+	}
+	root = filepath.ToSlash(filepath.Clean(root))
+	if root == "." || root == "" || strings.HasPrefix(root, "../") {
+		return ""
+	}
+	if !strings.HasSuffix(root, "/") {
+		root += "/"
+	}
+	return root
 }

@@ -76,15 +76,19 @@ type startRunState struct {
 	runtimeStarted     bool
 }
 
-func newStartRunState(projectRoot, runName string) *startRunState {
-	runDir := goalx.RunDir(projectRoot, runName)
+func newStartRunState(projectRoot string, cfg *goalx.Config) *startRunState {
+	runName := ""
+	if cfg != nil {
+		runName = cfg.Name
+	}
+	runDir := goalx.ResolveRunDir(projectRoot, runName, cfg)
 	tmuxSession := resolveRunTmuxSession(projectRoot, runDir, runName)
 	return &startRunState{
 		projectRoot:    projectRoot,
 		runDir:         runDir,
 		tmuxSession:    tmuxSession,
 		absProjectRoot: mustAbsPath(projectRoot),
-		runWorktree:    RunWorktreePath(runDir),
+		runWorktree:    runWorktreePathForConfig(projectRoot, runDir, cfg),
 		runBranch:      fmt.Sprintf("goalx/%s/root", runName),
 	}
 }
@@ -135,7 +139,7 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		return fmt.Errorf("invalid config: %w", err)
 	}
 
-	state := newStartRunState(projectRoot, cfg.Name)
+	state := newStartRunState(projectRoot, cfg)
 	defer state.cleanup(&err)
 
 	if err := ensureStartAvailable(state); err != nil {
@@ -208,7 +212,7 @@ func bootstrapStartScaffold(projectRoot string, state *startRunState, cfg *goalx
 			return nil, fmt.Errorf("mkdir %s: %w", d, err)
 		}
 	}
-	if err := EnsureProjectGoalxIgnored(state.projectRoot); err != nil {
+	if err := EnsureProjectGoalxIgnoredWithConfig(state.projectRoot, cfg); err != nil {
 		return nil, fmt.Errorf("bootstrap .goalx ignore: %w", err)
 	}
 	if _, err := ensureRunTmuxLocator(state.projectRoot, state.runDir, cfg.Name); err != nil {
