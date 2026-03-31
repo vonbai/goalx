@@ -18,6 +18,9 @@ import (
 // delete branches that are still checked out in another worktree.
 func CreateWorktree(projectRoot, worktreePath, branch string, baseBranch ...string) error {
 	exec.Command("git", "-C", projectRoot, "worktree", "prune").Run()
+	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
+		return fmt.Errorf("mkdir worktree parent for %s: %w", worktreePath, err)
+	}
 	exists, err := branchExists(projectRoot, branch)
 	if err != nil {
 		return err

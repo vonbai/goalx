@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 // SessionName returns the canonical session name for a 1-based index.
@@ -17,9 +20,79 @@ func JournalPath(runDir, sessionName string) string {
 	return filepath.Join(runDir, "journals", sessionName+".jsonl")
 }
 
+func legacyWorktreesDir(runDir string) string {
+	return filepath.Join(runDir, "worktrees")
+}
+
+func configuredWorktreesDir(runDir string) string {
+	root, _, ok := loadConfiguredWorktreeRoot(runDir)
+	if !ok {
+		return legacyWorktreesDir(runDir)
+	}
+	return root
+}
+
+func loadConfiguredWorktreeRoot(runDir string) (root string, configured bool, ok bool) {
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil || cfg == nil {
+		return "", false, false
+	}
+	raw := strings.TrimSpace(cfg.WorktreeRoot)
+	if raw == "" {
+		return legacyWorktreesDir(runDir), false, true
+	}
+	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
+	if err != nil || meta == nil || strings.TrimSpace(meta.ProjectRoot) == "" {
+		return "", true, false
+	}
+	return resolveConfiguredWorktreeRoot(strings.TrimSpace(meta.ProjectRoot), raw), true, true
+}
+
+func resolveConfiguredWorktreeRoot(projectRoot, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if filepath.IsAbs(raw) {
+		return filepath.Clean(raw)
+	}
+	return filepath.Clean(filepath.Join(projectRoot, raw))
+}
+
+func runWorktreePathForConfig(projectRoot, runDir string, cfg *goalx.Config) string {
+	root := legacyWorktreesDir(runDir)
+	if cfg != nil && strings.TrimSpace(cfg.WorktreeRoot) != "" {
+		root = resolveConfiguredWorktreeRoot(projectRoot, cfg.WorktreeRoot)
+		return filepath.Join(root, cfg.Name+"-root")
+	}
+	return filepath.Join(root, "root")
+}
+
+func sessionWorktreePathForConfig(projectRoot, runDir string, cfg *goalx.Config, num int) string {
+	name := ""
+	if cfg != nil {
+		name = cfg.Name
+	}
+	root := legacyWorktreesDir(runDir)
+	if cfg != nil && strings.TrimSpace(cfg.WorktreeRoot) != "" {
+		root = resolveConfiguredWorktreeRoot(projectRoot, cfg.WorktreeRoot)
+	}
+	return filepath.Join(root, name+"-"+strconv.Itoa(num))
+}
+
 // RunWorktreePath returns the run-scoped root worktree path.
 func RunWorktreePath(runDir string) string {
-	return filepath.Join(runDir, "worktrees", "root")
+	root, configured, ok := loadConfiguredWorktreeRoot(runDir)
+	if !ok {
+		return filepath.Join(legacyWorktreesDir(runDir), "root")
+	}
+	if configured {
+		cfg, err := LoadRunSpec(runDir)
+		if err == nil && cfg != nil {
+			return filepath.Join(root, cfg.Name+"-root")
+		}
+	}
+	return filepath.Join(root, "root")
 }
 
 // ReportsDir returns the run-scoped reports directory.
@@ -39,7 +112,7 @@ func ExperimentsLogPath(runDir string) string {
 
 // WorktreePath returns the worktree directory for a session.
 func WorktreePath(runDir, cfgName string, num int) string {
-	return filepath.Join(runDir, "worktrees", cfgName+"-"+strconv.Itoa(num))
+	return filepath.Join(configuredWorktreesDir(runDir), cfgName+"-"+strconv.Itoa(num))
 }
 
 func sessionStateWorktreePath(state *SessionsRuntimeState, sessionName string) (string, bool) {
@@ -64,6 +137,15 @@ func resolvedSessionWorktreePath(runDir, runName, sessionName string, state *Ses
 	legacyPath := WorktreePath(runDir, runName, idx)
 	if info, err := os.Stat(legacyPath); err == nil && info.IsDir() {
 		return legacyPath
+	}
+	if configured, isConfigured, ok := loadConfiguredWorktreeRoot(runDir); ok && isConfigured {
+		legacyPath = filepath.Join(legacyWorktreesDir(runDir), runName+"-"+strconv.Itoa(idx))
+		if info, err := os.Stat(legacyPath); err == nil && info.IsDir() {
+			return legacyPath
+		}
+		if info, err := os.Stat(filepath.Join(configured, runName+"-"+strconv.Itoa(idx))); err == nil && info.IsDir() {
+			return filepath.Join(configured, runName+"-"+strconv.Itoa(idx))
+		}
 	}
 	return ""
 }

@@ -25,12 +25,23 @@ func CanonicalProjectRoot(projectRoot string) string {
 		}
 		return abs
 	}
+	if runDir, ok := resolveRunDirFromGlobalRegistry(abs); ok {
+		if meta, err := LoadRunMetadata(RunMetadataPath(runDir)); err == nil && meta != nil && strings.TrimSpace(meta.ProjectRoot) != "" {
+			return filepath.Clean(meta.ProjectRoot)
+		}
+		if identity, err := LoadControlRunIdentity(ControlRunIdentityPath(runDir)); err == nil && identity != nil && strings.TrimSpace(identity.ProjectRoot) != "" {
+			return filepath.Clean(identity.ProjectRoot)
+		}
+	}
 
 	goalxRoot := enclosingConfiguredProjectRoot(abs)
+	gitCommonRoot := gitCommonProjectRoot(abs)
 	gitRoot := gitTopLevelProjectRoot(abs)
 	switch {
-	case goalxRoot != "" && (gitRoot == "" || pathHasPrefix(goalxRoot, gitRoot)):
+	case goalxRoot != "":
 		return goalxRoot
+	case gitCommonRoot != "":
+		return gitCommonRoot
 	case gitRoot != "":
 		return gitRoot
 	case goalxRoot != "":
@@ -38,6 +49,42 @@ func CanonicalProjectRoot(projectRoot string) string {
 	default:
 		return abs
 	}
+}
+
+func resolveRunDirFromGlobalRegistry(path string) (string, bool) {
+	reg, err := LoadGlobalRunRegistry()
+	if err != nil || reg == nil {
+		return "", false
+	}
+	for _, ref := range reg.Runs {
+		runDir := strings.TrimSpace(ref.RunDir)
+		if runDir == "" {
+			continue
+		}
+		if pathWithinRunWorktree(path, runDir) {
+			return runDir, true
+		}
+	}
+	return "", false
+}
+
+func pathWithinRunWorktree(path, runDir string) bool {
+	if pathHasPrefix(path, RunWorktreePath(runDir)) {
+		return true
+	}
+	sessionsState, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
+	if err != nil || sessionsState == nil {
+		return false
+	}
+	for _, session := range sessionsState.Sessions {
+		if strings.TrimSpace(session.WorktreePath) == "" {
+			continue
+		}
+		if pathHasPrefix(path, session.WorktreePath) {
+			return true
+		}
+	}
+	return false
 }
 
 func enclosingRunDirFromWorktree(path string) (string, bool) {
@@ -79,6 +126,7 @@ func hasProjectGoalxMarker(projectRoot string) bool {
 	for _, rel := range []string{
 		filepath.Join(".goalx", "config.yaml"),
 		filepath.Join(".goalx", "goalx.yaml"),
+		filepath.Join(".goalx", "data", "registry.json"),
 	} {
 		if info, err := os.Stat(filepath.Join(projectRoot, rel)); err == nil && !info.IsDir() {
 			return true
@@ -97,4 +145,19 @@ func gitTopLevelProjectRoot(path string) string {
 		return ""
 	}
 	return root
+}
+
+func gitCommonProjectRoot(path string) string {
+	out, err := exec.Command("git", "-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		return ""
+	}
+	gitDir := filepath.Clean(strings.TrimSpace(string(out)))
+	if gitDir == "" {
+		return ""
+	}
+	if filepath.Base(gitDir) != ".git" {
+		return ""
+	}
+	return filepath.Dir(gitDir)
 }

@@ -29,7 +29,7 @@ func initWithOptions(projectRoot string, opts launchOptions) error {
 
 	goalxDir := filepath.Join(projectRoot, ".goalx")
 	os.MkdirAll(goalxDir, 0755)
-	if err := EnsureProjectGoalxIgnored(projectRoot); err != nil {
+	if err := EnsureProjectGoalxIgnoredWithConfig(projectRoot, cfg); err != nil {
 		return fmt.Errorf("bootstrap .goalx ignore: %w", err)
 	}
 	outPath := ManualDraftConfigPath(projectRoot)

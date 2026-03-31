@@ -85,14 +85,18 @@ func Drop(projectRoot string, args []string) error {
 			removeSessionBranch(branch)
 		}
 
-		worktreesDir := filepath.Join(rc.RunDir, "worktrees")
+		worktreesDir := configuredWorktreesDir(rc.RunDir)
 		if entries, err := os.ReadDir(worktreesDir); err == nil {
+			prefix := rc.Config.Name + "-"
 			for _, entry := range entries {
 				if !entry.IsDir() {
 					continue
 				}
 				name := entry.Name()
-				if name == "root" {
+				if name == "root" || name == rc.Config.Name+"-root" {
+					continue
+				}
+				if filepath.Clean(worktreesDir) != filepath.Clean(legacyWorktreesDir(rc.RunDir)) && !strings.HasPrefix(name, prefix) {
 					continue
 				}
 				wtPath := filepath.Join(worktreesDir, name)

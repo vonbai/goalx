@@ -219,6 +219,33 @@ func TestEnsureProjectGoalxIgnoredOnlyIgnoresManualScratchConfig(t *testing.T) {
 	}
 }
 
+func TestEnsureProjectGoalxIgnoredAddsConfiguredProjectWorktreeRoot(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	cfg := &goalx.Config{WorktreeRoot: ".worktrees"}
+	if err := EnsureProjectGoalxIgnoredWithConfig(repo, cfg); err != nil {
+		t.Fatalf("EnsureProjectGoalxIgnoredWithConfig: %v", err)
+	}
+
+	gitDirOut, err := exec.Command("git", "-C", repo, "rev-parse", "--git-dir").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse --git-dir: %v\n%s", err, string(gitDirOut))
+	}
+	excludePath := filepath.Join(strings.TrimSpace(string(gitDirOut)), "info", "exclude")
+	if !filepath.IsAbs(excludePath) {
+		excludePath = filepath.Join(repo, excludePath)
+	}
+	data, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatalf("read exclude: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, ".worktrees/") {
+		t.Fatalf("exclude missing configured worktree root:\n%s", text)
+	}
+}
+
 func TestEnsureProjectGoalxIgnoredMigratesLegacyBlanketRule(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "base.txt", "base", "base commit")
