@@ -126,6 +126,46 @@ If you use GoalX through Claude or Codex, the skill should help you edit this us
 - "disable sonnet for now"
 - "keep gpt-5.4-mini in the worker pool for cheap implementation slices"
 
+## Project Config
+
+Shared repo facts live in `.goalx/config.yaml`.
+
+Typical example:
+
+```yaml
+worktree_root: .worktrees
+
+master:
+  check_interval: 2m
+
+preferences:
+  worker:
+    guidance: "Prefer broad evidence before proposing a fix plan."
+  simple:
+    guidance: "Bias toward small, mergeable implementation slices."
+
+local_validation:
+  command: "go build ./... && go test ./... && go vet ./..."
+```
+
+What `worktree_root` does:
+
+- relocates the run root worktree and dedicated session worktrees under the given directory
+- accepts a project-relative path like `.worktrees` or an absolute path
+- keeps durable run state in `~/.goalx/runs/...`; only worktree placement changes
+- is captured into the run spec at launch, so existing runs keep their original layout
+- adds the configured project-local worktree directory to `.git/info/exclude` automatically
+
+With `worktree_root: .worktrees`, a run named `demo` looks like this:
+
+```text
+project-root/
+  .worktrees/
+    demo-root
+    demo-1
+    demo-2
+```
+
 ## Core Workflows
 
 ### Default Deliver Workflow
@@ -241,6 +281,9 @@ The merge boundaries are explicit:
 
 This matters because GoalX is built for parallel investigation and implementation without losing merge discipline.
 
+Default placement keeps worktrees under the run directory in `~/.goalx/runs/<project>/<run>/worktrees/`.
+If project config sets `worktree_root`, GoalX still manages the same run-root/session boundaries, but places the actual git worktrees at the configured path instead.
+
 ## Run Architecture
 
 ```text
@@ -259,7 +302,7 @@ goalx run "goal"
              └── saved run artifacts
 ```
 
-Runtime state lives under `~/.goalx/runs/<project>/<run>/`.
+Runtime state lives under `~/.goalx/runs/<project>/<run>/` even when worktrees are relocated with `worktree_root`.
 
 GoalX the framework is intentionally narrow:
 

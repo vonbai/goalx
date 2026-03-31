@@ -54,7 +54,7 @@ Notes:
   --parallel is optional initial fan-out, not a permanent cap on later dispatch.
   Use --master and --worker for role-specific engine/model defaults.
   goalx run --intent debate|implement requires --from RUN.
-  .goalx/config.yaml is the shared project config; .goalx/goalx.yaml is an explicit manual draft only.
+  .goalx/config.yaml is the shared project config and can set worktree_root; .goalx/goalx.yaml is an explicit manual draft only.
 
 Run 'goalx <command> --help' for details.`
 
