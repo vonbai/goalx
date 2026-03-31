@@ -11,7 +11,8 @@ import (
 func tmuxCommandWithSocketDir(socketDir string, args ...string) *exec.Cmd {
 	cmd := exec.Command("tmux", args...)
 	if strings.TrimSpace(socketDir) != "" {
-		cmd.Env = append(os.Environ(), "TMUX_TMPDIR="+socketDir)
+		_ = os.MkdirAll(socketDir, 0o755)
+		cmd.Env = tmuxRunEnvironment(socketDir)
 	}
 	return cmd
 }
@@ -40,7 +41,8 @@ func NewSessionWithCommand(name, firstWindow, workdir, command string) error {
 }
 
 func NewSessionWithCommandInRun(runDir, name, firstWindow, workdir, command string) error {
-	if err := syncTmuxGlobalPath(); err != nil {
+	socketDir := resolveRunTmuxSocketDir("", runDir, "")
+	if err := syncTmuxPath(socketDir); err != nil {
 		return err
 	}
 	args := []string{"new-session", "-d", "-s", name, "-n", firstWindow}
@@ -50,7 +52,7 @@ func NewSessionWithCommandInRun(runDir, name, firstWindow, workdir, command stri
 	if command != "" {
 		args = append(args, command)
 	}
-	return tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), args...).Run()
+	return tmuxCommandWithSocketDir(socketDir, args...).Run()
 }
 
 // NewWindow creates a new window in the given tmux session.
@@ -64,7 +66,8 @@ func NewWindowWithCommand(session, window, workdir, command string) error {
 }
 
 func NewWindowWithCommandInRun(runDir, session, window, workdir, command string) error {
-	if err := syncTmuxGlobalPath(); err != nil {
+	socketDir := resolveRunTmuxSocketDir("", runDir, "")
+	if err := syncTmuxPath(socketDir); err != nil {
 		return err
 	}
 	args := []string{"new-window", "-t", session, "-n", window}
@@ -74,7 +77,7 @@ func NewWindowWithCommandInRun(runDir, session, window, workdir, command string)
 	if command != "" {
 		args = append(args, command)
 	}
-	return tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), args...).Run()
+	return tmuxCommandWithSocketDir(socketDir, args...).Run()
 }
 
 // RenameWindow renames a window by index in the given tmux session.
@@ -94,6 +97,10 @@ func SendEscape(target string) error {
 	return tmuxCommandWithSocketDir("", "send-keys", "-t", target, "Escape").Run()
 }
 
+func SendEscapeInRun(runDir, target string) error {
+	return tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "send-keys", "-t", target, "Escape").Run()
+}
+
 func sendKeysWithSubmit(target, keys, submitKey string) error {
 	time.Sleep(200 * time.Millisecond)
 	args := []string{"send-keys", "-t", target}
@@ -104,6 +111,18 @@ func sendKeysWithSubmit(target, keys, submitKey string) error {
 		args = append(args, submitKey)
 	}
 	return tmuxCommandWithSocketDir("", args...).Run()
+}
+
+func sendKeysWithSubmitInRun(runDir, target, keys, submitKey string) error {
+	time.Sleep(200 * time.Millisecond)
+	args := []string{"send-keys", "-t", target}
+	if keys != "" {
+		args = append(args, keys)
+	}
+	if submitKey != "" {
+		args = append(args, submitKey)
+	}
+	return tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), args...).Run()
 }
 
 // AttachSession attaches to a tmux session at the specified window.
@@ -216,16 +235,33 @@ func CapturePaneTargetOutputInRun(runDir, target string) (string, error) {
 	return string(out), nil
 }
 
-func syncTmuxGlobalPath() error {
+func syncTmuxPath(socketDir string) error {
 	path := strings.TrimSpace(os.Getenv("PATH"))
 	if path == "" {
 		return nil
 	}
-	output, err := exec.Command("tmux", "set-environment", "-g", "PATH", path).CombinedOutput()
+	output, err := tmuxCommandWithSocketDir(socketDir, "set-environment", "-g", "PATH", path).CombinedOutput()
 	if err != nil && tmuxNoServerError(string(output)) {
 		return nil
 	}
 	return err
+}
+
+func tmuxRunEnvironment(socketDir string) []string {
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "TMUX=") {
+			continue
+		}
+		if strings.HasPrefix(entry, "TMUX_TMPDIR=") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	if strings.TrimSpace(socketDir) != "" {
+		env = append(env, "TMUX_TMPDIR="+socketDir)
+	}
+	return env
 }
 
 func tmuxNoServerError(output string) bool {

@@ -126,10 +126,10 @@ func TestRunRuntimeHostTickUsesWakeSubmitForPromptCapableUrgentMaster(t *testing
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	writeFakeRuntimeHostTmux(t, logPath, "")
 
-	origDetailed := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	origDetailed := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var gotTarget, gotEngine string
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		gotTarget, gotEngine = target, engine
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "queued"}, nil
 	}
@@ -264,9 +264,9 @@ func TestRunRuntimeHostTickWritesTargetScopedRecoveryForUrgentSession(t *testing
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	writeFakeRuntimeHostTmux(t, logPath, "")
 
-	origDetailed := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	origDetailed := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "queued"}, nil
 	}
 
@@ -332,12 +332,12 @@ exit 0
 	}
 	logText := string(logData)
 	wantSession := goalx.TmuxSessionName(repo, cfg.Name)
-		for _, want := range []string{
-			"kill-window -t " + wantSession + ":master",
-			"new-window -t " + wantSession + " -n master -c " + RunWorktreePath(runDir),
-			"target-runner --run",
-			filepath.Join(runDir, "master.md"),
-		} {
+	for _, want := range []string{
+		"kill-window -t " + wantSession + ":master",
+		"new-window -t " + wantSession + " -n master -c " + RunWorktreePath(runDir),
+		"target-runner --run",
+		filepath.Join(runDir, "master.md"),
+	} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("tmux log missing %q:\n%s", want, logText)
 		}
@@ -380,9 +380,9 @@ func TestRunRuntimeHostTickDoesNotRelaunchMasterForUrgentUnreadAlone(t *testing.
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	writeFakeRuntimeHostTmux(t, logPath, "")
 
-	origDetailed := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	origDetailed := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "queued"}, nil
 	}
 

@@ -82,7 +82,9 @@ func Park(projectRoot string, args []string) error {
 			}
 		}
 		if _, err := AppendMasterInboxMessage(rc.RunDir, "session_parked", "goalx park", fmt.Sprintf("%s was parked for reuse.", sessionName)); err == nil {
-			_, _ = DeliverControlNudge(rc.RunDir, "session-parked:"+sessionName, "session-parked:"+sessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed)
+			_, _ = DeliverControlNudge(rc.RunDir, "session-parked:"+sessionName, "session-parked:"+sessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, func(target, engine string) (TransportDeliveryOutcome, error) {
+				return sendAgentNudgeDetailedInRunFunc(rc.RunDir, target, engine)
+			})
 		}
 	}
 	_ = ExpireControlLease(rc.RunDir, sessionName)
@@ -144,7 +146,7 @@ func Resume(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-		if WindowExistsInRun(rc.RunDir, rc.TmuxSession, windowName) {
+	if WindowExistsInRun(rc.RunDir, rc.TmuxSession, windowName) {
 		return fmt.Errorf("%s is already active", sessionName)
 	}
 
@@ -248,7 +250,7 @@ func Resume(projectRoot string, args []string) error {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
 	if err := waitForSessionLaunchReady(rc.TmuxSession, sessionName, windowName, sessionIdentity.Engine); err != nil {
-			_ = cleanupSessionWindow(rc.RunDir, rc.TmuxSession, windowName)
+		_ = cleanupSessionWindow(rc.RunDir, rc.TmuxSession, windowName)
 		return err
 	}
 
@@ -265,7 +267,9 @@ func Resume(projectRoot string, args []string) error {
 		return fmt.Errorf("update session runtime state: %w", err)
 	}
 	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_resumed", "goalx resume", fmt.Sprintf("%s was resumed for reuse.", sessionName)); err == nil {
-		_, _ = DeliverControlNudge(rc.RunDir, "session-resumed:"+sessionName, "session-resumed:"+sessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed)
+		_, _ = DeliverControlNudge(rc.RunDir, "session-resumed:"+sessionName, "session-resumed:"+sessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, func(target, engine string) (TransportDeliveryOutcome, error) {
+			return sendAgentNudgeDetailedInRunFunc(rc.RunDir, target, engine)
+		})
 	}
 	if _, err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
@@ -644,7 +648,9 @@ func Replace(projectRoot string, args []string) (err error) {
 		fmt.Fprintf(os.Stderr, "warning: persist %s pane pid: %v\n", newSessionName, err)
 	}
 	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_replaced", "goalx replace", fmt.Sprintf("%s was replaced by %s.", oldSessionName, newSessionName)); err == nil {
-		if _, err := DeliverControlNudge(rc.RunDir, "session-replaced:"+oldSessionName, "session-replaced:"+newSessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed); err != nil {
+		if _, err := DeliverControlNudge(rc.RunDir, "session-replaced:"+oldSessionName, "session-replaced:"+newSessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, func(target, engine string) (TransportDeliveryOutcome, error) {
+			return sendAgentNudgeDetailedInRunFunc(rc.RunDir, target, engine)
+		}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: nudge master: %v\n", err)
 		}
 	} else {

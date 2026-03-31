@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -219,5 +220,64 @@ func TestAckControlInboxReconcilesPendingSessionDelivery(t *testing.T) {
 	}
 	if got.AcceptedAt == "" {
 		t.Fatalf("accepted_at empty after cursor reconciliation: %+v", got)
+	}
+}
+
+func TestSendAgentNudgeDetailedInRunUsesRunScopedTmux(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	runDir := t.TempDir()
+	socketDir := filepath.Join(os.TempDir(), "goalx-tmux", "delivery-test")
+	if err := SaveTmuxLocator(TmuxLocatorPath(runDir), &TmuxLocator{
+		Version:   1,
+		Session:   "gx-demo",
+		SocketDir: socketDir,
+	}); err != nil {
+		t.Fatalf("SaveTmuxLocator: %v", err)
+	}
+
+	fakeBin := t.TempDir()
+	logPath := filepath.Join(fakeBin, "tmux.log")
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := `#!/bin/sh
+echo "TMUX=${TMUX-} TMPDIR=${TMUX_TMPDIR-} $@" >> "$TMUX_LOG"
+case "$1" in
+  capture-pane)
+    printf '› ready\n'
+    exit 0
+    ;;
+  send-keys)
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("TMUX_LOG", logPath)
+	t.Setenv("TMUX", "/tmp/tmux-0/default,999,0")
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if _, err := SendAgentNudgeDetailedInRun(runDir, "gx-demo:master", "codex"); err != nil {
+		t.Fatalf("SendAgentNudgeDetailedInRun: %v", err)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	logText := string(logData)
+	if strings.Contains(logText, "TMUX=/tmp/tmux-0/default,999,0") {
+		t.Fatalf("ambient TMUX leaked into run-scoped nudge:\n%s", logText)
+	}
+	if !strings.Contains(logText, "TMPDIR="+socketDir) {
+		t.Fatalf("run-scoped nudge did not use locator socket dir:\n%s", logText)
+	}
+	if !strings.Contains(logText, "send-keys -t gx-demo:master") {
+		t.Fatalf("run-scoped nudge did not submit to target:\n%s", logText)
 	}
 }

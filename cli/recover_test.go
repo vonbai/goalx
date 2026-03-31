@@ -139,6 +139,75 @@ func TestRecoverRejectsAlreadyActiveRun(t *testing.T) {
 	}
 }
 
+func TestRecoverRewritesLegacyLongTmuxLocator(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	_, stateDir := installRecoverFakeTmux(t, false)
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	runWT := RunWorktreePath(runDir)
+	if err := os.MkdirAll(runWT, 0o755); err != nil {
+		t.Fatalf("mkdir run worktree: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "stopped",
+		UpdatedAt:       "2026-03-29T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(goalx.ModeWorker),
+		Active:    false,
+		StartedAt: "2026-03-29T00:00:00Z",
+		StoppedAt: "2026-03-29T00:10:00Z",
+		UpdatedAt: "2026-03-29T00:10:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+	legacySocketDir := filepath.Join(ControlDir(runDir), "tmux")
+	if err := SaveTmuxLocator(TmuxLocatorPath(runDir), &TmuxLocator{
+		Version:   1,
+		Session:   goalx.TmuxSessionName(repo, runName),
+		SocketDir: legacySocketDir,
+	}); err != nil {
+		t.Fatalf("SaveTmuxLocator legacy: %v", err)
+	}
+
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	supervisor := &runtimeSupervisorStub{}
+	runtimeSupervisor = supervisor
+
+	if err := Recover(repo, []string{"--run", runName}); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	locator, err := LoadTmuxLocator(TmuxLocatorPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadTmuxLocator: %v", err)
+	}
+	if locator == nil {
+		t.Fatal("locator missing after recover")
+	}
+	if locator.SocketDir == legacySocketDir {
+		t.Fatalf("recover did not rewrite legacy tmux socket dir: %+v", locator)
+	}
+	if !strings.HasPrefix(locator.SocketDir, filepath.Join(os.TempDir(), "goalx-tmux")+string(os.PathSeparator)) {
+		t.Fatalf("recover wrote unexpected tmux socket dir: %+v", locator)
+	}
+
+	if _, err := os.Stat(filepath.Join(stateDir, "session_"+goalx.TmuxSessionName(repo, runName))); err != nil {
+		t.Fatalf("tmux session marker missing after recover: %v", err)
+	}
+}
+
 func TestRecoverRequiresExistingRun(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

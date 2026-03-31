@@ -44,12 +44,12 @@ func BuildRunCloseoutFacts(runDir string) (RunCloseoutFacts, error) {
 		return RunCloseoutFacts{}, err
 	}
 	facts := RunCloseoutFacts{
-		SummaryExists:    fileExists(SummaryPath(runDir)),
-		CompletionExists: fileExists(CompletionStatePath(runDir)),
-		MasterUnread:     unreadControlInboxCount(MasterInboxPath(runDir), MasterCursorPath(runDir)),
-		SuccessModelExists:  fileExists(SuccessModelPath(runDir)),
-		ProofPlanExists:     fileExists(ProofPlanPath(runDir)),
-		WorkflowPlanExists:  fileExists(WorkflowPlanPath(runDir)),
+		SummaryExists:      fileExists(SummaryPath(runDir)),
+		CompletionExists:   fileExists(CompletionStatePath(runDir)),
+		MasterUnread:       unreadControlInboxCount(MasterInboxPath(runDir), MasterCursorPath(runDir)),
+		SuccessModelExists: fileExists(SuccessModelPath(runDir)),
+		ProofPlanExists:    fileExists(ProofPlanPath(runDir)),
+		WorkflowPlanExists: fileExists(WorkflowPlanPath(runDir)),
 	}
 	facts.SuccessPlanePresent = facts.SuccessModelExists || facts.ProofPlanExists || facts.WorkflowPlanExists
 	if status != nil {
@@ -100,7 +100,7 @@ func BuildRunCloseoutFacts(runDir string) (RunCloseoutFacts, error) {
 }
 
 func (facts RunCloseoutFacts) ReadyToFinalize() bool {
-	return facts.Complete && facts.MasterUnread == 0 && facts.objectiveCloseoutReady() && facts.evolveCloseoutReady() && facts.successCloseoutReady()
+	return facts.Complete && facts.MasterUnread == 0 && facts.objectiveCloseoutReady() && facts.evolveCloseoutReady()
 }
 
 func (facts RunCloseoutFacts) objectiveCloseoutReady() bool {
@@ -120,7 +120,7 @@ func (facts RunCloseoutFacts) needsMasterFollowup() bool {
 	if facts.MasterUnread > 0 {
 		return true
 	}
-	return !facts.objectiveCloseoutReady() || !facts.evolveCloseoutReady() || !facts.successCloseoutReady()
+	return !facts.objectiveCloseoutReady() || !facts.evolveCloseoutReady()
 }
 
 func (facts RunCloseoutFacts) MaintenanceAction(master TargetPresenceFacts) RunCloseoutMaintenanceAction {
@@ -144,17 +144,4 @@ func (facts RunCloseoutFacts) evolveCloseoutReady() bool {
 		return false
 	}
 	return facts.EvolveOpenCandidateCount == 0
-}
-
-func (facts RunCloseoutFacts) successCloseoutReady() bool {
-	if !facts.SuccessPlanePresent {
-		return true
-	}
-	if !facts.SuccessModelExists || !facts.ProofPlanExists || !facts.WorkflowPlanExists {
-		return false
-	}
-	if !facts.QualityDebtPresent {
-		return false
-	}
-	return facts.QualityDebtZero
 }

@@ -488,7 +488,7 @@ esac
 	}
 }
 
-func TestRefreshDisplayFactsDoesNotRepairCompletedRunWhenQualityDebtRemains(t *testing.T) {
+func TestRefreshDisplayFactsRepairsCompletedRunDespiteQualityDebt(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -517,7 +517,7 @@ func TestRefreshDisplayFactsDoesNotRepairCompletedRunWhenQualityDebtRemains(t *t
 		t.Fatalf("SaveGoalState: %v", err)
 	}
 	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
-		Version: 1,
+		Version:  1,
 		Required: map[string]CoordinationRequiredItem{},
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
@@ -611,8 +611,8 @@ esac
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState.GoalState != "open" || controlState.ContinuityState != "stopped" {
-		t.Fatalf("control state = %+v, want open/stopped when quality debt remains", controlState)
+	if controlState.GoalState != "completed" || controlState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want completed/stopped despite quality debt", controlState)
 	}
 }
 

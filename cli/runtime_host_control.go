@@ -270,6 +270,9 @@ func refreshTransportFactsForRuntimeHost(runDir, tmuxSession, masterEngine strin
 }
 
 func runRuntimeHostMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string, cfg *goalx.Config, interval time.Duration, presence map[string]TargetPresenceFacts, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
+	nudgeDeliver := func(target, engine string) (TransportDeliveryOutcome, error) {
+		return sendAgentNudgeDetailedInRunFunc(runDir, target, engine)
+	}
 	if err := refreshRuntimeHostTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "pre-queue"); err != nil {
 		return err
 	}
@@ -282,7 +285,7 @@ func runRuntimeHostMaintenanceCycle(projectRoot, runName, runDir, tmuxSession st
 	if err := queueMasterWakeReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
 		return err
 	}
-	if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudgeDetailed); err != nil {
+	if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, nudgeDeliver); err != nil {
 		return err
 	}
 	if err := refreshRuntimeHostTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "snapshot"); err != nil {
@@ -349,7 +352,9 @@ func reconcileProviderDialogAlerts(runDir, tmuxSession, masterEngine string, con
 				return err
 			}
 			dedupeKey := fmt.Sprintf("provider-dialog:%s:%s", target, current[target])
-			if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, sendAgentNudgeDetailed); err != nil {
+			if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, func(target, engine string) (TransportDeliveryOutcome, error) {
+				return sendAgentNudgeDetailedInRunFunc(runDir, target, engine)
+			}); err != nil {
 				return err
 			}
 		}
@@ -488,7 +493,9 @@ func processTargetAttentionAlerts(runDir, tmuxSession, masterEngine string, pres
 			return false, err
 		}
 		dedupeKey := fmt.Sprintf("master-attention:%s:%s", target, state)
-		if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, sendAgentNudgeDetailed); err != nil {
+		if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, func(target, engine string) (TransportDeliveryOutcome, error) {
+			return sendAgentNudgeDetailedInRunFunc(runDir, target, engine)
+		}); err != nil {
 			return false, err
 		}
 		alerted = true
@@ -561,11 +568,13 @@ func processMasterAlerts(runDir, tmuxSession, masterEngine string, presence map[
 			continue
 		}
 		appendAuditLog(runDir, "master_alert key=%s fingerprint=%s", alert.Key, alert.Fingerprint)
-			if _, err := appendControlInboxMessage(runDir, "master", "master-alert", "goalx runtime-host", alert.Body, true); err != nil {
+		if _, err := appendControlInboxMessage(runDir, "master", "master-alert", "goalx runtime-host", alert.Body, true); err != nil {
 			return false, err
 		}
 		dedupeKey := "master-alert:" + alert.Key + ":" + alert.Fingerprint
-		if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, sendAgentNudgeDetailed); err != nil {
+		if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, func(target, engine string) (TransportDeliveryOutcome, error) {
+			return sendAgentNudgeDetailedInRunFunc(runDir, target, engine)
+		}); err != nil {
 			return false, err
 		}
 		alerted = true
@@ -915,7 +924,7 @@ func processUrgentTransportTargets(runDir, runName, tmuxSession string, cfg *goa
 		case TUIStateProviderDialog, TUIStateBlank:
 			continue
 		case TUIStateInterrupted:
-			outcome, err := EscalateInterruptTransport(target.tmux, target.engine, "urgent_unread")
+			outcome, err := escalateInterruptTransportInRunFunc(runDir, target.tmux, target.engine, "urgent_unread")
 			if err != nil {
 				return err
 			}
@@ -923,7 +932,7 @@ func processUrgentTransportTargets(runDir, runName, tmuxSession string, cfg *goa
 				return err
 			}
 		default:
-			outcome, err := sendAgentNudgeDetailed(target.tmux, target.engine)
+			outcome, err := sendAgentNudgeDetailedInRunFunc(runDir, target.tmux, target.engine)
 			if err != nil {
 				return err
 			}
@@ -948,17 +957,30 @@ func reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession string, cf
 		}
 	}
 	masterFacts := presence["master"]
-	if masterFacts.SessionExists && targetPresenceMissing(masterFacts) {
+	if targetPresenceMissing(masterFacts) {
 		recovery := loadTransportRecoveryTarget(runDir, "master")
 		if recovery.CurrentMissingLastRelaunchAt == "" || recovery.CurrentMissingLastRelaunchResult != "success" {
 			if err := recordMissingTargetRelaunchAttempt(runDir, "master", masterFacts.State); err != nil {
 				return nil, err
 			}
-			if err := relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession, cfg); err != nil {
-				if recordErr := recordMissingTargetRelaunchResult(runDir, "master", masterFacts.State, "failure", err); recordErr != nil {
+			var relaunchErr error
+			if masterFacts.SessionExists {
+				relaunchErr = relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession, cfg)
+			} else {
+				appendAuditLog(runDir, "target_relaunch_attempt target=master cause=%s session_exists=%t window_exists=%t", blankAsUnknown(masterFacts.State), masterFacts.SessionExists, masterFacts.WindowExists)
+				relaunchErr = relaunchMaster(projectRoot, runDir, tmuxSession, cfg)
+			}
+			if relaunchErr != nil {
+				if !masterFacts.SessionExists {
+					appendAuditLog(runDir, "target_relaunch_result target=master result=failure cause=%s err=%v", blankAsUnknown(masterFacts.State), relaunchErr)
+				}
+				if recordErr := recordMissingTargetRelaunchResult(runDir, "master", masterFacts.State, "failure", relaunchErr); recordErr != nil {
 					return nil, recordErr
 				}
-				return nil, err
+				return nil, relaunchErr
+			}
+			if !masterFacts.SessionExists {
+				appendAuditLog(runDir, "target_relaunch_result target=master result=success cause=%s", blankAsUnknown(masterFacts.State))
 			}
 			if err := recordMissingTargetRelaunchResult(runDir, "master", masterFacts.State, "success", nil); err != nil {
 				return nil, err
@@ -993,7 +1015,7 @@ func reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession string, cf
 		reason := fmt.Sprintf("target missing: %s state=%s first_seen=%s", sessionName, sessionFacts.State, blankAsUnknown(recovery.CurrentMissingFirstSeenAt))
 		appendAuditLog(runDir, "target_missing_alert target=%s cause=%s first_seen=%s", sessionName, sessionFacts.State, blankAsUnknown(recovery.CurrentMissingFirstSeenAt))
 		body := fmt.Sprintf("Target missing in active GoalX run; target=%s state=%s first_seen=%s action=do_not_respawn_worker", sessionName, sessionFacts.State, blankAsUnknown(recovery.CurrentMissingFirstSeenAt))
-			if _, err := appendControlInboxMessage(runDir, "master", "target-missing", "goalx runtime-host", body, true); err != nil {
+		if _, err := appendControlInboxMessage(runDir, "master", "target-missing", "goalx runtime-host", body, true); err != nil {
 			return nil, err
 		}
 		if err := recordMissingTargetAlert(runDir, sessionName, sessionFacts.State, reason); err != nil {

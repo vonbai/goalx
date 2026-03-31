@@ -415,7 +415,9 @@ func Add(projectRoot string, args []string) (err error) {
 	}
 	sessionCommitted = true
 	cleanup.Commit()
-	if _, err := DeliverControlNudge(rc.RunDir, "session-added:"+sName, "session-added:"+sName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed); err != nil {
+	if _, err := DeliverControlNudge(rc.RunDir, "session-added:"+sName, "session-added:"+sName, rc.TmuxSession+":master", rc.Config.Master.Engine, func(target, engine string) (TransportDeliveryOutcome, error) {
+		return sendAgentNudgeDetailedInRunFunc(rc.RunDir, target, engine)
+	}); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: nudge master: %v\n", err)
 		masterNotified = true
 	} else {

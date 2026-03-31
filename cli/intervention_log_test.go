@@ -73,11 +73,11 @@ func TestTellAppendsSuccessDeltaInterventionEvent(t *testing.T) {
 	}
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	sendAgentNudge = func(target, engine string) error { return nil }
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "queued"}, nil
 	}
 

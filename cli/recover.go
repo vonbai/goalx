@@ -56,6 +56,11 @@ func Recover(projectRoot string, args []string) error {
 	if err := PromoteMemoryProposals(); err != nil {
 		return fmt.Errorf("promote memory proposals: %w", err)
 	}
+	if tmuxSession, err := ensureRunTmuxLocator(rc.ProjectRoot, rc.RunDir, rc.Name); err != nil {
+		return fmt.Errorf("rewrite tmux locator: %w", err)
+	} else if tmuxSession != "" {
+		rc.TmuxSession = tmuxSession
+	}
 
 	if err := relaunchMaster(rc.ProjectRoot, rc.RunDir, rc.TmuxSession, rc.Config); err != nil {
 		return err

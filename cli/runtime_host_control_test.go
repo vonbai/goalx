@@ -286,15 +286,15 @@ func TestRunRuntimeHostTickDeliversDueMasterWakeReminder(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var gotTarget, gotEngine string
 	sendAgentNudge = func(target, engine string) error {
 		gotTarget, gotEngine = target, engine
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		gotTarget, gotEngine = target, engine
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
@@ -537,6 +537,73 @@ func TestRunRuntimeHostTickAlertsMasterOnceWhenSessionWindowMissing(t *testing.T
 		if !strings.Contains(recoveryText, want) {
 			t.Fatalf("transport recovery missing %q:\n%s", want, recoveryText)
 		}
+	}
+}
+
+func TestRunRuntimeHostTickRelaunchesMissingMasterSession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "base", "base commit")
+	cfg := &goalx.Config{
+		Name:      "runtime-host-run",
+		Mode:      goalx.ModeWorker,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	runDir := writeRunSpecFixture(t, repo, cfg)
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+
+	fakeBin := t.TempDir()
+	logPath := filepath.Join(fakeBin, "tmux.log")
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := "#!/bin/sh\n" +
+		"echo \"$@\" >> \"$TMUX_LOG\"\n" +
+		"if [ \"$1\" = \"has-session\" ]; then exit 1; fi\n" +
+		"if [ \"$1\" = \"new-session\" ]; then exit 0; fi\n" +
+		"if [ \"$1\" = \"capture-pane\" ]; then exit 0; fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("TMUX_LOG", logPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	logText := string(logData)
+	wantSession := goalx.TmuxSessionName(repo, cfg.Name)
+	if !strings.Contains(logText, "new-session -d -s "+wantSession+" -n master -c "+RunWorktreePath(runDir)) {
+		t.Fatalf("tmux log missing master session relaunch:\n%s", logText)
+	}
+
+	auditData, err := os.ReadFile(filepath.Join(runDir, "runtime-host.log"))
+	if err != nil {
+		t.Fatalf("read runtime-host audit log: %v", err)
+	}
+	auditText := string(auditData)
+	if !strings.Contains(auditText, "target_relaunch_attempt target=master cause=session_missing") {
+		t.Fatalf("runtime-host audit log missing session_missing relaunch attempt:\n%s", auditText)
 	}
 }
 
@@ -1754,9 +1821,9 @@ func TestRunRuntimeHostTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
 		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
 	}
 
-	orig := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = orig }()
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
@@ -1857,9 +1924,9 @@ func TestRunRuntimeHostTickRealertsRequiredFrontierWhenStateChanges(t *testing.T
 		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
 	}
 
-	orig := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = orig }()
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
@@ -1968,9 +2035,9 @@ func TestRunRuntimeHostTickAlertsControlGapFacts(t *testing.T) {
 		}
 	}
 
-	orig := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = orig }()
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
@@ -2068,9 +2135,9 @@ func TestRunRuntimeHostTickRealertsControlGapWhenFingerprintChanges(t *testing.T
 		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
 	}
 
-	orig := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = orig }()
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
@@ -2325,9 +2392,9 @@ func TestRunRuntimeHostTickAlertsQualityDebtAndEvolveManagementGap(t *testing.T)
 	}
 	appendExperimentEventForTest(t, runDir, `{"version":1,"kind":"experiment.created","at":"2026-03-31T10:00:00Z","actor":"master","body":{"experiment_id":"exp-1","created_at":"2026-03-31T10:00:00Z"}}`)
 
-	orig := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = orig }()
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
@@ -2401,15 +2468,15 @@ func TestRunRuntimeHostTickQueuesSessionWakeForUnreadSessionInbox(t *testing.T) 
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var nudges []string
 	sendAgentNudge = func(target, engine string) error {
 		nudges = append(nudges, target+"|"+engine)
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		nudges = append(nudges, target+"|"+engine)
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
@@ -2488,15 +2555,15 @@ func TestRunRuntimeHostTickDoesNotQueueSessionWakeWhenCursorCaughtUp(t *testing.
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var nudges []string
 	sendAgentNudge = func(target, engine string) error {
 		nudges = append(nudges, target+"|"+engine)
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		nudges = append(nudges, target+"|"+engine)
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
@@ -2559,15 +2626,15 @@ func TestRunRuntimeHostTickSkipsSessionWakeWhenWindowMissing(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var nudges []string
 	sendAgentNudge = func(target, engine string) error {
 		nudges = append(nudges, target+"|"+engine)
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		nudges = append(nudges, target+"|"+engine)
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
@@ -2647,15 +2714,15 @@ func TestRunRuntimeHostTickSkipsSessionWakeDuringRecentSuccessfulTellGrace(t *te
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var nudges []string
 	sendAgentNudge = func(target, engine string) error {
 		nudges = append(nudges, target+"|"+engine)
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		nudges = append(nudges, target+"|"+engine)
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
@@ -2956,10 +3023,10 @@ func TestRunRuntimeHostTickImmediatelyNudgesMasterOnceForProviderDialog(t *testi
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	orig := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = orig }()
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
 	var nudges []string
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		nudges = append(nudges, target+"|"+engine)
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}

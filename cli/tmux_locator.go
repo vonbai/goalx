@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -57,12 +59,15 @@ func resolveRunTmuxSession(projectRoot, runDir, runName string) string {
 }
 
 func resolveRunTmuxSocketDir(_ string, runDir, _ string) string {
+	if strings.TrimSpace(runDir) == "" {
+		return ""
+	}
 	if locator, err := LoadTmuxLocator(TmuxLocatorPath(runDir)); err == nil && locator != nil {
-		if socketDir := strings.TrimSpace(locator.SocketDir); socketDir != "" {
+		if socketDir := strings.TrimSpace(locator.SocketDir); socketDir != "" && !tmuxSocketPathTooLong(socketDir) {
 			return socketDir
 		}
 	}
-	return filepath.Join(ControlDir(runDir), "tmux")
+	return defaultRunTmuxSocketDir(runDir)
 }
 
 func ensureRunTmuxLocator(projectRoot, runDir, runName string) (string, error) {
@@ -82,4 +87,24 @@ func ensureRunTmuxLocator(projectRoot, runDir, runName string) (string, error) {
 		return "", err
 	}
 	return session, nil
+}
+
+func defaultRunTmuxSocketDir(runDir string) string {
+	cleanRunDir := filepath.Clean(strings.TrimSpace(runDir))
+	if cleanRunDir == "" || cleanRunDir == "." {
+		return ""
+	}
+	sum := sha1.Sum([]byte(cleanRunDir))
+	key := hex.EncodeToString(sum[:8])
+	// Keep the transport root short enough for the eventual tmux socket path.
+	return filepath.Join(os.TempDir(), "goalx-tmux", key)
+}
+
+func tmuxSocketPathTooLong(socketDir string) bool {
+	socketDir = strings.TrimSpace(socketDir)
+	if socketDir == "" {
+		return false
+	}
+	socketPath := filepath.Join(socketDir, "tmux-0", "default")
+	return len(socketPath) >= 100
 }

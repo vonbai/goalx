@@ -17,7 +17,7 @@ func Tell(projectRoot string, args []string) error {
 	if target == "" && message == "" {
 		return nil
 	}
-	resolvedRun, deliveredTarget, err := deliverTell(projectRoot, runName, target, message, urgent, sendAgentNudgeDetailed)
+	resolvedRun, deliveredTarget, err := deliverTell(projectRoot, runName, target, message, urgent, nil)
 	if err != nil {
 		return err
 	}
@@ -99,6 +99,11 @@ func deliverTell(projectRoot, runName, target, message string, urgent bool, nudg
 		return "", "", err
 	} else if stopped {
 		return "", "", fmt.Errorf("run %q is %s; start a new run before sending tell", rc.Name, lifecycle)
+	}
+	if nudge == nil {
+		nudge = func(target, engine string) (TransportDeliveryOutcome, error) {
+			return sendAgentNudgeDetailedInRunFunc(rc.RunDir, target, engine)
+		}
 	}
 	if target == "" || target == "master" {
 		msg, err := appendControlInboxMessage(rc.RunDir, "master", "tell", "user", message, urgent)

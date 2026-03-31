@@ -25,15 +25,15 @@ func TestRunCloseoutFactsReadyToFinalize(t *testing.T) {
 		{
 			name: "complete closeout with success plane present and zero quality debt is ready",
 			facts: RunCloseoutFacts{
-				Complete:            true,
-				MasterUnread:        0,
+				Complete:             true,
+				MasterUnread:         0,
 				ObjectiveIntegrityOK: true,
-				SuccessPlanePresent: true,
-				SuccessModelExists:  true,
-				ProofPlanExists:     true,
-				WorkflowPlanExists:  true,
-				QualityDebtPresent:  true,
-				QualityDebtZero:     true,
+				SuccessPlanePresent:  true,
+				SuccessModelExists:   true,
+				ProofPlanExists:      true,
+				WorkflowPlanExists:   true,
+				QualityDebtPresent:   true,
+				QualityDebtZero:      true,
 			},
 			want: true,
 		},
@@ -53,19 +53,19 @@ func TestRunCloseoutFactsReadyToFinalize(t *testing.T) {
 			want:  false,
 		},
 		{
-			name: "complete closeout with success-plane quality debt stays open",
+			name: "complete closeout with success-plane quality debt still finalizes lifecycle",
 			facts: RunCloseoutFacts{
-				Complete:            true,
-				MasterUnread:        0,
+				Complete:             true,
+				MasterUnread:         0,
 				ObjectiveIntegrityOK: true,
-				SuccessPlanePresent: true,
-				SuccessModelExists:  true,
-				ProofPlanExists:     true,
-				WorkflowPlanExists:  true,
-				QualityDebtPresent:  true,
-				QualityDebtZero:     false,
+				SuccessPlanePresent:  true,
+				SuccessModelExists:   true,
+				ProofPlanExists:      true,
+				WorkflowPlanExists:   true,
+				QualityDebtPresent:   true,
+				QualityDebtZero:      false,
 			},
-			want: false,
+			want: true,
 		},
 	}
 
@@ -116,20 +116,20 @@ func TestRunCloseoutFactsMaintenanceAction(t *testing.T) {
 			want:   RunCloseoutMaintenanceActionRecoverMaster,
 		},
 		{
-			name: "success-plane debt with missing master requests recovery",
+			name: "success-plane debt with missing master still finalizes",
 			facts: RunCloseoutFacts{
-				Complete:            true,
-				MasterUnread:        0,
+				Complete:             true,
+				MasterUnread:         0,
 				ObjectiveIntegrityOK: true,
-				SuccessPlanePresent: true,
-				SuccessModelExists:  true,
-				ProofPlanExists:     true,
-				WorkflowPlanExists:  true,
-				QualityDebtPresent:  true,
-				QualityDebtZero:     false,
+				SuccessPlanePresent:  true,
+				SuccessModelExists:   true,
+				ProofPlanExists:      true,
+				WorkflowPlanExists:   true,
+				QualityDebtPresent:   true,
+				QualityDebtZero:      false,
 			},
 			master: TargetPresenceFacts{State: TargetPresenceWindowMissing},
-			want:   RunCloseoutMaintenanceActionRecoverMaster,
+			want:   RunCloseoutMaintenanceActionFinalize,
 		},
 	}
 
@@ -174,7 +174,7 @@ func TestBuildRunCloseoutFactsBlocksEvolveFinalizeWithoutManagedStop(t *testing.
 	}
 }
 
-func TestBuildRunCloseoutFactsBlocksFinalizeWhenQualityDebtRemains(t *testing.T) {
+func TestBuildRunCloseoutFactsAllowsFinalizeWhenOnlyQualityDebtRemains(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
 	if err := SaveGoalState(GoalPath(runDir), &GoalState{
 		Version: 1,
@@ -267,7 +267,7 @@ func TestBuildRunCloseoutFactsBlocksFinalizeWhenQualityDebtRemains(t *testing.T)
 	if facts.QualityDebtZero {
 		t.Fatalf("QualityDebtZero = true, want false: %+v", facts)
 	}
-	if facts.ReadyToFinalize() {
-		t.Fatalf("ReadyToFinalize() = true, want false when quality debt remains: %+v", facts)
+	if !facts.ReadyToFinalize() {
+		t.Fatalf("ReadyToFinalize() = false, want true when only quality debt remains: %+v", facts)
 	}
 }
