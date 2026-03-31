@@ -59,11 +59,23 @@ func resolveConfiguredWorktreeRoot(projectRoot, raw string) string {
 	return filepath.Clean(filepath.Join(projectRoot, raw))
 }
 
+func configuredRunWorktreePath(root, runName string) string {
+	return filepath.Join(root, runName)
+}
+
+func legacyConfiguredRunWorktreePath(root, runName string) string {
+	return filepath.Join(root, runName+"-root")
+}
+
+func isConfiguredRunWorktreeName(runName, name string) bool {
+	return name == runName || name == runName+"-root"
+}
+
 func runWorktreePathForConfig(projectRoot, runDir string, cfg *goalx.Config) string {
 	root := legacyWorktreesDir(runDir)
 	if cfg != nil && strings.TrimSpace(cfg.WorktreeRoot) != "" {
 		root = resolveConfiguredWorktreeRoot(projectRoot, cfg.WorktreeRoot)
-		return filepath.Join(root, cfg.Name+"-root")
+		return configuredRunWorktreePath(root, cfg.Name)
 	}
 	return filepath.Join(root, "root")
 }
@@ -89,7 +101,15 @@ func RunWorktreePath(runDir string) string {
 	if configured {
 		cfg, err := LoadRunSpec(runDir)
 		if err == nil && cfg != nil {
-			return filepath.Join(root, cfg.Name+"-root")
+			current := configuredRunWorktreePath(root, cfg.Name)
+			if _, err := os.Stat(current); err == nil {
+				return current
+			}
+			legacy := legacyConfiguredRunWorktreePath(root, cfg.Name)
+			if _, err := os.Stat(legacy); err == nil {
+				return legacy
+			}
+			return current
 		}
 	}
 	return filepath.Join(root, "root")

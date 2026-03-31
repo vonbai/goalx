@@ -177,7 +177,7 @@ var durableSurfaceRegistry = map[DurableSurfaceName]DurableSurfaceSpec{
 			AuthoringFormat: DurableSurfaceSchemaFormatJSON,
 			StorageFormat:   DurableSurfaceSchemaFormatJSONL,
 			Summary:         "Append-only experiment lineage events. The framework serializes the canonical JSONL envelope and per-kind event timestamp fields.",
-			Example:         `{"experiment_id":"exp-1","session":"session-1","branch":"goalx/demo/root","worktree":"/abs/run/worktrees/demo-root","intent":"evolve","base_ref":"goalx/demo/root"}`,
+			Example:         `{"experiment_id":"exp-1","session":"session-1","branch":"goalx/demo/root","worktree":"/abs/project/.worktrees/demo","intent":"evolve","base_ref":"goalx/demo/root"}`,
 			FieldNotes: []string{
 				"`--kind` and `--actor` are required on the write command.",
 				"`--body-file` must contain one JSON object matching the chosen experiment event kind.",

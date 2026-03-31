@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -153,5 +154,25 @@ func TestResolveClaudeHookRunContextMatchesConfiguredProjectWorktrees(t *testing
 
 	if got := CanonicalProjectRoot(runWT); got != repo {
 		t.Fatalf("CanonicalProjectRoot(runWT) = %q, want %q", got, repo)
+	}
+}
+
+func TestRunWorktreePathFallsBackToLegacyConfiguredRootName(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	cfg.WorktreeRoot = ".worktrees"
+	if err := SaveRunSpec(runDir, cfg); err != nil {
+		t.Fatalf("SaveRunSpec: %v", err)
+	}
+	if _, err := EnsureRunMetadata(runDir, repo, cfg.Objective); err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+
+	legacyRoot := filepath.Join(repo, ".worktrees", cfg.Name+"-root")
+	if err := os.MkdirAll(legacyRoot, 0o755); err != nil {
+		t.Fatalf("mkdir legacy run worktree: %v", err)
+	}
+
+	if got := RunWorktreePath(runDir); got != legacyRoot {
+		t.Fatalf("RunWorktreePath = %q, want legacy fallback %q", got, legacyRoot)
 	}
 }

@@ -161,7 +161,7 @@ With `worktree_root: .worktrees`, a run named `demo` looks like this:
 ```text
 project-root/
   .worktrees/
-    demo-root
+    demo
     demo-1
     demo-2
 ```

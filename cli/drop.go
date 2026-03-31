@@ -93,7 +93,7 @@ func Drop(projectRoot string, args []string) error {
 					continue
 				}
 				name := entry.Name()
-				if name == "root" || name == rc.Config.Name+"-root" {
+				if name == "root" || isConfiguredRunWorktreeName(rc.Config.Name, name) {
 					continue
 				}
 				if filepath.Clean(worktreesDir) != filepath.Clean(legacyWorktreesDir(rc.RunDir)) && !strings.HasPrefix(name, prefix) {

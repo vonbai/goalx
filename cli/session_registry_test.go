@@ -124,3 +124,26 @@ func TestNextAvailableSessionIndexSkipsConfiguredProjectWorktreeSlot(t *testing.
 		t.Fatalf("nextAvailableSessionIndex = %d, want 3", got)
 	}
 }
+
+func TestRunWorktreePathUsesRunNameForConfiguredProjectWorktreeRoot(t *testing.T) {
+	projectRoot := initGitRepo(t)
+	writeAndCommit(t, projectRoot, "base.txt", "base", "base commit")
+	runName := "slot-run"
+	cfg := &goalx.Config{
+		Name:         runName,
+		Mode:         goalx.ModeWorker,
+		Objective:    "ship feature",
+		WorktreeRoot: ".worktrees",
+		Master:       goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	runDir := writeRunSpecFixture(t, projectRoot, cfg)
+	if _, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective); err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+
+	got := RunWorktreePath(runDir)
+	want := filepath.Join(projectRoot, ".worktrees", runName)
+	if got != want {
+		t.Fatalf("RunWorktreePath = %q, want %q", got, want)
+	}
+}

@@ -55,6 +55,8 @@ local_validation:
 
 - relative values are resolved from the project root, for example `.worktrees`
 - absolute values are allowed when you want a fixed external directory
+- the run-root worktree uses the run name directly, for example `.worktrees/demo`
+- older configured runs that used `.worktrees/demo-root` remain readable for compatibility
 - durable run state still lives under `~/.goalx/runs/...`
 - the chosen path is snapshotted into the run spec at launch, so existing runs keep their original layout
 - project-local roots are added to `.git/info/exclude` automatically so they do not dirty the source tree

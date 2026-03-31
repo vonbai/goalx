@@ -111,7 +111,7 @@ func discoverSessionIndexesFromFS(runDir string) []int {
 	if cfg, err := LoadRunSpec(runDir); err == nil && cfg != nil && strings.TrimSpace(cfg.WorktreeRoot) != "" {
 		appendFromDir(configuredWorktreesDir(runDir), func(name string) string {
 			prefix := cfg.Name + "-"
-			if !strings.HasPrefix(name, prefix) || name == cfg.Name+"-root" {
+			if !strings.HasPrefix(name, prefix) || isConfiguredRunWorktreeName(cfg.Name, name) {
 				return ""
 			}
 			return "session-" + strings.TrimPrefix(name, prefix)
