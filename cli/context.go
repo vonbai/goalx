@@ -173,6 +173,16 @@ func renderContextIndex(index *ContextIndex) string {
 		}
 		writeContextLine("Evidence path", index.Acceptance.EvidencePath)
 	}
+	if index.QualityDebt != nil {
+		b.WriteString("\n## Quality Debt\n\n")
+		writeContextLine("Zero debt", fmt.Sprintf("%t", index.QualityDebt.Zero))
+		writeContextLine("Success dimensions unowned", strings.Join(index.QualityDebt.SuccessDimensionUnowned, ", "))
+		writeContextLine("Proof plan gaps", strings.Join(index.QualityDebt.ProofPlanGap, ", "))
+		writeContextLine("Critic gate missing", fmt.Sprintf("%t", index.QualityDebt.CriticGateMissing))
+		writeContextLine("Finisher gate missing", fmt.Sprintf("%t", index.QualityDebt.FinisherGateMissing))
+		writeContextLine("Only correctness evidence present", fmt.Sprintf("%t", index.QualityDebt.OnlyCorrectnessEvidence))
+		writeContextLine("Domain pack missing", fmt.Sprintf("%t", index.QualityDebt.DomainPackMissing))
+	}
 	if index.Closeout != nil {
 		b.WriteString("\n## Closeout\n\n")
 		writeContextLine("Summary exists", fmt.Sprintf("%t", index.Closeout.SummaryExists))

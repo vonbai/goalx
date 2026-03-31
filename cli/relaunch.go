@@ -39,6 +39,9 @@ func relaunchMaster(projectRoot, runDir, tmuxSession string, cfg *goalx.Config) 
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
 	}
+	if err := EnsureSuccessCompilation(projectRoot, runDir, effectiveCfg, meta); err != nil {
+		return fmt.Errorf("compile success plane: %w", err)
+	}
 	if err := ensureExperimentsSurface(runDir); err != nil {
 		return fmt.Errorf("init experiments surface: %w", err)
 	}
@@ -109,6 +112,10 @@ func relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession string, cfg *g
 	meta, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective)
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
+	}
+	if err := EnsureSuccessCompilation(projectRoot, runDir, effectiveCfg, meta); err != nil {
+		appendAuditLog(runDir, "target_relaunch_result target=master result=failure cause=%s err=%v", blankAsUnknown(masterPresence.State), err)
+		return fmt.Errorf("compile success plane: %w", err)
 	}
 	if err := ensureExperimentsSurface(runDir); err != nil {
 		return fmt.Errorf("init experiments surface: %w", err)

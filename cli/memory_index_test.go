@@ -168,6 +168,32 @@ func TestBuildMemoryTrustIndex(t *testing.T) {
 	}
 }
 
+func TestBuildMemorySelectorIndexIncludesSuccessPrior(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := EnsureMemoryStore(); err != nil {
+		t.Fatalf("EnsureMemoryStore: %v", err)
+	}
+	writeCanonicalMemoryEntries(t, map[MemoryKind][]MemoryEntry{
+		MemoryKindSuccessPrior: {
+			{
+				ID:        "mem-success-prior",
+				Kind:      MemoryKindSuccessPrior,
+				Statement: "frontend product goals require critique and finisher proof before closeout",
+				Selectors: map[string]string{"project_id": "demo", "intent": "worker"},
+			},
+		},
+	})
+
+	index, err := BuildMemorySelectorIndex()
+	if err != nil {
+		t.Fatalf("BuildMemorySelectorIndex: %v", err)
+	}
+	entryID := index.EntryIDs["mem-success-prior"]
+	assertUint32PostingList(t, index.Postings["kind:success_prior"], []uint32{entryID})
+	assertUint32PostingList(t, index.Postings["project_id:demo"], []uint32{entryID})
+}
+
 func TestRebuildMemoryIndexesIgnoresRunLocalFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -231,6 +257,7 @@ func writeCanonicalMemoryEntries(t *testing.T, byKind map[MemoryKind][]MemoryEnt
 		MemoryKindProcedure,
 		MemoryKindPitfall,
 		MemoryKindSecretRef,
+		MemoryKindSuccessPrior,
 	} {
 		entries := byKind[kind]
 		lines := make([]byte, 0)

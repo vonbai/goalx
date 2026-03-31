@@ -200,7 +200,7 @@ func TestStartPreservesExistingRunOnPreflightFailure(t *testing.T) {
 	}
 }
 
-func TestStartLaunchesOnlyMaster(t *testing.T) {
+func TestStartBootstrapsSuccessCompilationBeforeMasterLaunch(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -356,6 +356,10 @@ esac
 		testSelectionSnapshotPath(runDir),
 		filepath.Join(runDir, "acceptance.json"),
 		filepath.Join(runDir, "goal.json"),
+		filepath.Join(runDir, "success-model.json"),
+		filepath.Join(runDir, "proof-plan.json"),
+		filepath.Join(runDir, "workflow-plan.json"),
+		filepath.Join(runDir, "domain-pack.json"),
 		filepath.Join(runDir, "goal-log.jsonl"),
 		filepath.Join(runDir, "reports"),
 		RunMetadataPath(runDir),

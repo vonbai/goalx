@@ -126,6 +126,47 @@ func TestProcedurePromotesAfterFailureAndSuccess(t *testing.T) {
 	}
 }
 
+func TestSuccessPriorPromotesAfterRepeatedRuns(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	now := time.Date(2026, time.March, 31, 10, 0, 0, 0, time.UTC)
+	if err := writeProposalShard(now, []MemoryProposal{
+		{
+			ID:        "prop_success_prior",
+			State:     "proposed",
+			Kind:      MemoryKindSuccessPrior,
+			Statement: "frontend product goals require critique and finisher proof before closeout",
+			Selectors: map[string]string{"project_id": "demo", "intent": "worker"},
+			Evidence: []MemoryEvidence{
+				{Kind: "intervention_log", Path: "/tmp/intervention-log.jsonl"},
+				{Kind: "summary", Path: "/tmp/summary.md"},
+			},
+			SourceRuns: []string{"run-1", "run-2"},
+			CreatedAt:  "2026-03-31T10:00:00Z",
+			UpdatedAt:  "2026-03-31T10:00:00Z",
+		},
+	}); err != nil {
+		t.Fatalf("writeProposalShard: %v", err)
+	}
+
+	if err := PromoteMemoryProposals(); err != nil {
+		t.Fatalf("PromoteMemoryProposals: %v", err)
+	}
+
+	entries := loadCanonicalEntriesByKind(t, MemoryKindSuccessPrior)
+	if len(entries) != 1 {
+		t.Fatalf("success_prior entries len = %d, want 1", len(entries))
+	}
+	entry := entries[0]
+	if entry.VerificationState != "repeated" {
+		t.Fatalf("verification_state = %q, want repeated", entry.VerificationState)
+	}
+	if entry.Statement != "frontend product goals require critique and finisher proof before closeout" {
+		t.Fatalf("statement = %q", entry.Statement)
+	}
+}
+
 func TestSupersedeMemoryEntryMarksPriorEntryInactive(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

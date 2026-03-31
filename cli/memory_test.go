@@ -78,6 +78,17 @@ func TestNormalizeMemoryEntryRejectsSecretRefWithoutSelectors(t *testing.T) {
 	}
 }
 
+func TestNormalizeMemoryEntryRejectsSuccessPriorWithoutSelectors(t *testing.T) {
+	_, err := NormalizeMemoryEntry(&MemoryEntry{
+		ID:        "mem-3b",
+		Kind:      MemoryKindSuccessPrior,
+		Statement: "frontend product goals need critique and finisher passes",
+	})
+	if err == nil {
+		t.Fatal("NormalizeMemoryEntry accepted success_prior without selectors")
+	}
+}
+
 func TestEnsureMemoryControlCreatesRunLocalFiles(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
@@ -243,6 +254,7 @@ func memoryStoreLayoutPaths(home string) []string {
 		filepath.Join(root, "entries", "procedures.jsonl"),
 		filepath.Join(root, "entries", "pitfalls.jsonl"),
 		filepath.Join(root, "entries", "secret_refs.jsonl"),
+		filepath.Join(root, "entries", "success_priors.jsonl"),
 		filepath.Join(root, "proposals"),
 		filepath.Join(root, "indexes", "selectors.json"),
 		filepath.Join(root, "indexes", "tokens.json"),
@@ -258,6 +270,7 @@ func canonicalMemorySentinelPaths(home string) []string {
 		filepath.Join(root, "entries", "procedures.jsonl"),
 		filepath.Join(root, "entries", "pitfalls.jsonl"),
 		filepath.Join(root, "entries", "secret_refs.jsonl"),
+		filepath.Join(root, "entries", "success_priors.jsonl"),
 	}
 }
 
@@ -306,8 +319,18 @@ func writeCanonicalMemorySentinels(t *testing.T, home string) map[string][]byte 
 			CreatedAt:         "2026-03-27T00:00:00Z",
 			UpdatedAt:         "2026-03-27T00:00:00Z",
 		},
+		MemoryKindSuccessPrior: {
+			ID:                "mem_sentinel_success_prior",
+			Kind:              MemoryKindSuccessPrior,
+			Statement:         "frontend product goals require critique before closeout",
+			Selectors:         map[string]string{"project_id": "sentinel", "intent": "worker"},
+			VerificationState: "repeated",
+			Confidence:        "grounded",
+			CreatedAt:         "2026-03-27T00:00:00Z",
+			UpdatedAt:         "2026-03-27T00:00:00Z",
+		},
 	}
-	for _, kind := range []MemoryKind{MemoryKindFact, MemoryKindProcedure, MemoryKindPitfall, MemoryKindSecretRef} {
+	for _, kind := range []MemoryKind{MemoryKindFact, MemoryKindProcedure, MemoryKindPitfall, MemoryKindSecretRef, MemoryKindSuccessPrior} {
 		path := MemoryEntryPath(kind)
 		if !strings.HasPrefix(path, filepath.Join(home, ".goalx", "memory")) {
 			t.Fatalf("unexpected sentinel path %s for home %s", path, home)

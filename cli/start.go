@@ -298,6 +298,9 @@ func bootstrapStartDurables(projectRoot string, state *startRunState, cfg *goalx
 	if err := SaveRunMetadata(RunMetadataPath(state.runDir), meta); err != nil {
 		return "", "", nil, 0, "", fmt.Errorf("write run metadata: %w", err)
 	}
+	if err := EnsureSuccessCompilation(projectRoot, state.runDir, cfg, meta); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("compile success plane: %w", err)
+	}
 	if err := ensureExperimentsSurface(state.runDir); err != nil {
 		return "", "", nil, 0, "", fmt.Errorf("init experiments surface: %w", err)
 	}

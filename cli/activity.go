@@ -14,19 +14,19 @@ import (
 )
 
 type ActivitySnapshot struct {
-	Version   int                             `json:"version"`
-	CheckedAt string                          `json:"checked_at,omitempty"`
-	Run       ActivityRunInfo                 `json:"run"`
-	Lifecycle ActivityLifecycle               `json:"lifecycle"`
-	Queue     ActivityQueue                   `json:"queue"`
-	Budget    ActivityBudget                  `json:"budget,omitempty"`
-	Coverage  RequiredCoverage                `json:"coverage,omitempty"`
+	Version    int                               `json:"version"`
+	CheckedAt  string                            `json:"checked_at,omitempty"`
+	Run        ActivityRunInfo                   `json:"run"`
+	Lifecycle  ActivityLifecycle                 `json:"lifecycle"`
+	Queue      ActivityQueue                     `json:"queue"`
+	Budget     ActivityBudget                    `json:"budget,omitempty"`
+	Coverage   RequiredCoverage                  `json:"coverage,omitempty"`
 	Operations map[string]ControlOperationTarget `json:"operations,omitempty"`
-	Attention map[string]TargetAttentionFacts `json:"attention,omitempty"`
-	Root      WorktreeDiffStat                `json:"root"`
-	Targets   map[string]TargetPresenceFacts  `json:"targets,omitempty"`
-	Actors    map[string]ActivityActor        `json:"actors,omitempty"`
-	Sessions  map[string]ActivitySession      `json:"sessions,omitempty"`
+	Attention  map[string]TargetAttentionFacts   `json:"attention,omitempty"`
+	Root       WorktreeDiffStat                  `json:"root"`
+	Targets    map[string]TargetPresenceFacts    `json:"targets,omitempty"`
+	Actors     map[string]ActivityActor          `json:"actors,omitempty"`
+	Sessions   map[string]ActivitySession        `json:"sessions,omitempty"`
 }
 
 type ActivityRunInfo struct {
@@ -325,6 +325,19 @@ func buildActivityBudget(cfg *goalx.Config, runtimeState *RunRuntimeState, meta 
 	}
 	if checkedTime.Before(startTime) {
 		checkedTime = startTime
+	}
+	if runtimeState != nil {
+		stoppedAt := strings.TrimSpace(runtimeState.StoppedAt)
+		if stoppedAt != "" {
+			if stoppedTime, err := time.Parse(time.RFC3339, stoppedAt); err == nil {
+				if stoppedTime.Before(startTime) {
+					stoppedTime = startTime
+				}
+				if checkedTime.After(stoppedTime) {
+					checkedTime = stoppedTime
+				}
+			}
+		}
 	}
 
 	elapsed := checkedTime.Sub(startTime)

@@ -57,6 +57,8 @@ func MemoryEntryPath(kind MemoryKind) string {
 		return filepath.Join(MemoryEntriesDir(), "pitfalls.jsonl")
 	case MemoryKindSecretRef:
 		return filepath.Join(MemoryEntriesDir(), "secret_refs.jsonl")
+	case MemoryKindSuccessPrior:
+		return filepath.Join(MemoryEntriesDir(), "success_priors.jsonl")
 	default:
 		panic("unknown memory kind")
 	}

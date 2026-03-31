@@ -19,8 +19,13 @@ const (
 	DurableSurfaceAcceptance        DurableSurfaceName = "acceptance"
 	DurableSurfaceCoordination      DurableSurfaceName = "coordination"
 	DurableSurfaceStatus            DurableSurfaceName = "status"
+	DurableSurfaceSuccessModel      DurableSurfaceName = "success-model"
+	DurableSurfaceProofPlan         DurableSurfaceName = "proof-plan"
+	DurableSurfaceWorkflowPlan      DurableSurfaceName = "workflow-plan"
+	DurableSurfaceDomainPack        DurableSurfaceName = "domain-pack"
 	DurableSurfaceGoalLog           DurableSurfaceName = "goal-log"
 	DurableSurfaceExperiments       DurableSurfaceName = "experiments"
+	DurableSurfaceInterventionLog   DurableSurfaceName = "intervention-log"
 	DurableSurfaceSummary           DurableSurfaceName = "summary"
 	DurableSurfaceCompletionProof   DurableSurfaceName = "completion-proof"
 )
@@ -146,6 +151,85 @@ var durableSurfaceRegistry = map[DurableSurfaceName]DurableSurfaceSpec{
 		},
 		Path: RunStatusPath,
 	},
+	DurableSurfaceSuccessModel: {
+		Name:               DurableSurfaceSuccessModel,
+		Class:              DurableSurfaceClassStructuredState,
+		WriteMode:          DurableSurfaceWriteModeReplace,
+		Strict:             true,
+		FrameworkReadsBody: true,
+		Schema: DurableSurfaceSchemaSpec{
+			AuthoringFormat: DurableSurfaceSchemaFormatJSON,
+			StorageFormat:   DurableSurfaceSchemaFormatJSON,
+			Summary:         "Compiled success-model surface defining required quality dimensions, anti-goals, and structural closeout requirements for this run.",
+			Example:         `{"objective_contract_hash":"sha256:objective","goal_hash":"sha256:goal","dimensions":[{"id":"dim-product-clarity","kind":"quality","text":"Operators can orient within seconds.","required":true,"failure_modes":["correct_but_unclear"]}],"anti_goals":[{"id":"anti-proof-only","text":"Do not treat proof-only success as sufficient."}],"closeout_requirements":["quality_debt_zero"]}`,
+			FieldNotes: []string{
+				"`dimensions` is the canonical success-dimension list for the run.",
+				"Each dimension must include stable `id`, `kind`, and `text` fields.",
+				"`anti_goals` records explicit anti-optimizations the runtime should keep visible.",
+				"`closeout_requirements` is structural, not semantic scoring.",
+			},
+			FrameworkOwnedFields: []string{"`version`", "`compiled_at`"},
+		},
+		Path: SuccessModelPath,
+	},
+	DurableSurfaceProofPlan: {
+		Name:               DurableSurfaceProofPlan,
+		Class:              DurableSurfaceClassStructuredState,
+		WriteMode:          DurableSurfaceWriteModeReplace,
+		Strict:             true,
+		FrameworkReadsBody: true,
+		Schema: DurableSurfaceSchemaSpec{
+			AuthoringFormat: DurableSurfaceSchemaFormatJSON,
+			StorageFormat:   DurableSurfaceSchemaFormatJSON,
+			Summary:         "Compiled proof-plan surface defining what proof forms structurally cover each success dimension.",
+			Example:         `{"items":[{"id":"proof-correctness","covers_dimensions":["dim-correctness"],"kind":"acceptance_check","required":true,"source_surface":"acceptance"},{"id":"proof-product-clarity-visual","covers_dimensions":["dim-product-clarity"],"kind":"visual_evidence","required":true,"source_surface":"artifact"}]}`,
+			FieldNotes: []string{
+				"Each item must cover one or more success dimensions through `covers_dimensions`.",
+				"`kind` describes the required proof form, not the semantic verdict.",
+				"`source_surface` identifies where the proof is expected to land.",
+			},
+			FrameworkOwnedFields: []string{"`version`", "`compiled_at`"},
+		},
+		Path: ProofPlanPath,
+	},
+	DurableSurfaceWorkflowPlan: {
+		Name:               DurableSurfaceWorkflowPlan,
+		Class:              DurableSurfaceClassStructuredState,
+		WriteMode:          DurableSurfaceWriteModeReplace,
+		Strict:             true,
+		FrameworkReadsBody: true,
+		Schema: DurableSurfaceSchemaSpec{
+			AuthoringFormat: DurableSurfaceSchemaFormatJSON,
+			StorageFormat:   DurableSurfaceSchemaFormatJSON,
+			Summary:         "Compiled workflow-plan surface defining which runtime roles and structural gates must exist before success can be claimed.",
+			Example:         `{"required_roles":[{"id":"builder","required":true},{"id":"critic","required":true},{"id":"finisher","required":true}],"gates":["builder_result_present","critic_review_present","finisher_pass_present"]}`,
+			FieldNotes: []string{
+				"`required_roles` defines the minimal runtime role set for this run.",
+				"`gates` lists structural workflow checkpoints, not semantic scores.",
+			},
+			FrameworkOwnedFields: []string{"`version`", "`compiled_at`"},
+		},
+		Path: WorkflowPlanPath,
+	},
+	DurableSurfaceDomainPack: {
+		Name:               DurableSurfaceDomainPack,
+		Class:              DurableSurfaceClassStructuredState,
+		WriteMode:          DurableSurfaceWriteModeReplace,
+		Strict:             true,
+		FrameworkReadsBody: true,
+		Schema: DurableSurfaceSchemaSpec{
+			AuthoringFormat: DurableSurfaceSchemaFormatJSON,
+			StorageFormat:   DurableSurfaceSchemaFormatJSON,
+			Summary:         "Run-scoped snapshot of the repo policy, learned priors, and domain signals compiled into this run.",
+			Example:         `{"domain":"frontend_product","signals":["operator_console","quality_ambiguous"],"policy_sources":["AGENTS.md"],"prior_entry_ids":["mem_success_1"]}`,
+			FieldNotes: []string{
+				"`domain-pack` is a compiled run artifact, not canonical memory.",
+				"`prior_entry_ids` references the exact memory entries used for this run snapshot.",
+			},
+			FrameworkOwnedFields: []string{"`version`", "`compiled_at`"},
+		},
+		Path: DomainPackPath,
+	},
 	DurableSurfaceGoalLog: {
 		Name:               DurableSurfaceGoalLog,
 		Class:              DurableSurfaceClassEventLog,
@@ -187,6 +271,27 @@ var durableSurfaceRegistry = map[DurableSurfaceName]DurableSurfaceSpec{
 			AllowedKinds:         []string{"experiment.created", "experiment.integrated", "experiment.closed", "evolve.stopped"},
 		},
 		Path: ExperimentsLogPath,
+	},
+	DurableSurfaceInterventionLog: {
+		Name:               DurableSurfaceInterventionLog,
+		Class:              DurableSurfaceClassEventLog,
+		WriteMode:          DurableSurfaceWriteModeAppend,
+		Strict:             true,
+		FrameworkReadsBody: false,
+		Schema: DurableSurfaceSchemaSpec{
+			AuthoringFormat: DurableSurfaceSchemaFormatJSON,
+			StorageFormat:   DurableSurfaceSchemaFormatJSONL,
+			Summary:         "Append-only intervention event log for high-value user or master redirects that may later generate success-delta proposals.",
+			Example:         `{"message":"Do not stop at route cutover only.","before":{"goal_hash":"sha256:goal","status_hash":"sha256:status","coordination_hash":"sha256:coordination","success_model_hash":"sha256:success"},"affected_targets":["session-3","req-p4-web-cockpit"]}`,
+			FieldNotes: []string{
+				"`--kind` and `--actor` are required on the write command.",
+				"`message` captures the intervention text; richer evidence remains in linked reports or memory proposals.",
+				"The framework stores the canonical JSONL envelope; extraction and promotion happen elsewhere.",
+			},
+			FrameworkOwnedFields: []string{"storage envelope `version`", "storage envelope `at`", "storage envelope `kind`", "storage envelope `actor`"},
+			AllowedKinds:         []string{"user_redirect", "user_tell", "master_reframe"},
+		},
+		Path: InterventionLogPath,
 	},
 	DurableSurfaceSummary: {
 		Name:               DurableSurfaceSummary,

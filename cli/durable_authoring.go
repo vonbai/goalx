@@ -216,6 +216,16 @@ func compileDurableEventBody(surface DurableSurfaceName, kind string, bodyData [
 		return parseOpaqueJSONObjectBody(bodyData)
 	case DurableSurfaceExperiments:
 		return compileExperimentAuthoringBody(kind, bodyData, eventAt)
+	case DurableSurfaceInterventionLog:
+		body, err := parseInterventionEventBody(bodyData)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		return json.RawMessage(encoded), nil
 	default:
 		return nil, fmt.Errorf("surface %q does not support event-log authoring", surface)
 	}

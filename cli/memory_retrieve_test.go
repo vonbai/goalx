@@ -232,3 +232,44 @@ func TestBuildMemoryContextBoundsCategorySizes(t *testing.T) {
 		t.Fatalf("facts len = %d, want %d", len(context.Facts), memoryContextCategoryLimit)
 	}
 }
+
+func TestBuildMemoryContextAndDomainPackIncludeSuccessPrior(t *testing.T) {
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	if err := EnsureMemoryStore(); err != nil {
+		t.Fatalf("EnsureMemoryStore: %v", err)
+	}
+	writeCanonicalMemoryEntries(t, map[MemoryKind][]MemoryEntry{
+		MemoryKindSuccessPrior: {
+			{
+				ID:                "mem-success-prior",
+				Kind:              MemoryKindSuccessPrior,
+				Statement:         "frontend product goals require critique and finisher proof before closeout",
+				Selectors:         map[string]string{"project_id": goalx.ProjectID(repo)},
+				VerificationState: "repeated",
+				Confidence:        "grounded",
+				CreatedAt:         "2026-03-31T00:00:00Z",
+				UpdatedAt:         "2026-03-31T00:00:00Z",
+			},
+		},
+	})
+
+	if err := RefreshRunMemoryContext(runDir); err != nil {
+		t.Fatalf("RefreshRunMemoryContext: %v", err)
+	}
+
+	context, err := LoadMemoryContextFile(MemoryContextPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadMemoryContextFile: %v", err)
+	}
+	if context == nil || len(context.SuccessPriors) != 1 {
+		t.Fatalf("memory context = %+v, want one success prior", context)
+	}
+
+	pack, err := compileBootstrapDomainPack(repo, runDir, cfg, meta)
+	if err != nil {
+		t.Fatalf("compileBootstrapDomainPack: %v", err)
+	}
+	if len(pack.PriorEntryIDs) != 1 || pack.PriorEntryIDs[0] != "mem-success-prior" {
+		t.Fatalf("domain pack prior_entry_ids = %+v, want mem-success-prior", pack.PriorEntryIDs)
+	}
+}

@@ -105,6 +105,9 @@ func deliverTell(projectRoot, runName, target, message string, urgent bool, nudg
 		if err != nil {
 			return "", "", err
 		}
+		if err := RecordUserTellIntervention(rc.RunDir, rc.Name, "master", message, urgent); err != nil {
+			return "", "", err
+		}
 		if nudge != nil {
 			if facts, factsErr := LoadTargetPresenceFact(rc.RunDir, rc.TmuxSession, "master"); factsErr == nil && targetPresenceAvailableForTransport(facts) {
 				dedupeKey := fmt.Sprintf("master-inbox:%d", msg.ID)
@@ -127,6 +130,9 @@ func deliverTell(projectRoot, runName, target, message string, urgent bool, nudg
 	}
 	msg, err := appendControlInboxMessage(rc.RunDir, target, "tell", "user", message, urgent)
 	if err != nil {
+		return "", "", err
+	}
+	if err := RecordUserTellIntervention(rc.RunDir, rc.Name, target, message, urgent); err != nil {
 		return "", "", err
 	}
 	windowName, err := resolveWindowName(rc.Name, target)

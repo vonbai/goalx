@@ -18,6 +18,10 @@
 {{if .SessionsStatePath}}- Session runtime state: `{{.SessionsStatePath}}`{{end}}
 {{if .ActivityPath}}- Run activity facts: `{{.ActivityPath}}`{{end}}
 {{if .IntegrationStatePath}}- Run integration state: `{{.IntegrationStatePath}}`{{end}}
+{{if .SuccessModelPath}}- Success model: `{{.SuccessModelPath}}`{{end}}
+{{if .ProofPlanPath}}- Proof plan: `{{.ProofPlanPath}}`{{end}}
+{{if .WorkflowPlanPath}}- Workflow plan: `{{.WorkflowPlanPath}}`{{end}}
+{{if .DomainPackPath}}- Domain pack: `{{.DomainPackPath}}`{{end}}
 {{if .ContextIndexPath}}- Run context index: `{{.ContextIndexPath}}`{{end}}
 {{if .AffordancesPath}}- Run affordances: `{{.AffordancesPath}}`{{end}}
 {{if .RunWorktreePath}}- Run-root worktree: `{{.RunWorktreePath}}` — master integrates reviewed code here before anything reaches the source root{{end}}
@@ -92,7 +96,8 @@ You are a worker session. The assignment may ask for code, reports, or a mixed s
 - Ground findings in code references, real command output, tests, measurements, or concrete examples. Quantify what you can.
 - If the slice is code-heavy, your changes will be reviewed. Every change must be justified and minimal.
 - If the slice is analysis-heavy, produce evidence-backed findings and package them so the master can compare paths without guessing.
-- If the slice reveals actionable follow-up work, emit `dispatchable_slices` the master can dispatch or directly adopt.
+- If the slice reveals actionable follow-up work, emit `dispatchable_slices` the master can dispatch or directly adopt. If you uncover a reusable success-bar correction, record it in the journal or report; it may later promote through the memory proposal path instead of direct canonical-memory edits.
+- If your assignment or session role acts as `builder`, `critic`, or `finisher`, treat that as a real workflow gate: builders implement, critics find correctness-only drift or missing proof, finishers seal polish/proof for closeout, and builder output alone does not close a non-trivial run.
 - If you narrow a likely root cause, label it as a hypothesis until regression tests or decisive runtime evidence confirm it.
 - Work one coherent capability slice at a time. State the file:line scope, keep the change minimal, and split medium+ work into smaller steps.
 - Prefer test-first changes: verify an existing failing test or write one before the fix when applicable.

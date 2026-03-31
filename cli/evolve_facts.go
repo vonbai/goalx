@@ -126,6 +126,9 @@ func BuildEvolveFacts(runDir string) (*EvolveFacts, error) {
 
 	openIDs := make([]string, 0, len(created))
 	for id, createdAt := range created {
+		if id != "" && id == facts.BestExperimentID {
+			continue
+		}
 		if closedAt, ok := closed[id]; ok && (closedAt.Equal(createdAt) || closedAt.After(createdAt)) {
 			continue
 		}

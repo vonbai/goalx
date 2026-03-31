@@ -212,7 +212,7 @@ func TestBuildContextIndexIncludesEvolveFactsOnlyForEvolveRuns(t *testing.T) {
 		"Evolve facts",
 		"Frontier state: `active`",
 		"Best experiment: `exp-1`",
-		"Open candidate count: `1`",
+		"Open candidate count: `0`",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered context missing %q:\n%s", want, rendered)
@@ -427,6 +427,111 @@ func TestBuildContextIndexIncludesObjectiveIntegritySummary(t *testing.T) {
 		"Goal clause coverage: `1/1`",
 		"Acceptance clause coverage: `1/1`",
 		"Integrity OK: `true`",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered context missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestContextIndexIncludesQualityDebtSummary(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Version: 1,
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version: 1,
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+		Version:     2,
+		GoalVersion: 1,
+		Checks: []AcceptanceCheck{
+			{ID: "chk-1", Label: "acceptance", Command: "printf ok", State: acceptanceCheckStateActive},
+		},
+		LastResult: AcceptanceResult{CheckedAt: "2026-03-31T02:00:00Z"},
+	}); err != nil {
+		t.Fatalf("SaveAcceptanceState: %v", err)
+	}
+	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:objective",
+		GoalHash:              "sha256:goal",
+		Dimensions: []SuccessDimension{
+			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
+			{ID: "req-2", Kind: "outcome", Text: "ship research spine", Required: true},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSuccessModel: %v", err)
+	}
+	if err := SaveProofPlan(ProofPlanPath(runDir), &ProofPlan{
+		Version: 1,
+		Items: []ProofPlanItem{
+			{ID: "proof-acceptance", CoversDimensions: []string{"req-1"}, Kind: "acceptance_check", Required: true, SourceSurface: "acceptance"},
+			{ID: "proof-report", CoversDimensions: []string{"req-2"}, Kind: "report", Required: true, SourceSurface: "report"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveProofPlan: %v", err)
+	}
+	if err := SaveWorkflowPlan(WorkflowPlanPath(runDir), &WorkflowPlan{
+		Version: 1,
+		RequiredRoles: []WorkflowRoleRequirement{
+			{ID: "critic", Required: true},
+			{ID: "finisher", Required: true},
+		},
+		Gates: []string{"critic_review_present", "finisher_pass_present"},
+	}); err != nil {
+		t.Fatalf("SaveWorkflowPlan: %v", err)
+	}
+	if err := SaveDomainPack(DomainPackPath(runDir), &DomainPack{Version: 1, Domain: "generic"}); err != nil {
+		t.Fatalf("SaveDomainPack: %v", err)
+	}
+
+	index, err := BuildContextIndex(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildContextIndex: %v", err)
+	}
+	if index.QualityDebt == nil {
+		t.Fatal("quality debt summary missing")
+	}
+	if index.QualityDebt.Zero {
+		t.Fatalf("quality debt unexpectedly zero: %+v", index.QualityDebt)
+	}
+	if len(index.QualityDebt.SuccessDimensionUnowned) != 1 || index.QualityDebt.SuccessDimensionUnowned[0] != "req-2" {
+		t.Fatalf("success_dimension_unowned = %#v, want req-2", index.QualityDebt.SuccessDimensionUnowned)
+	}
+	if !index.QualityDebt.CriticGateMissing || !index.QualityDebt.FinisherGateMissing {
+		t.Fatalf("quality debt gates = %+v, want critic/finisher missing", index.QualityDebt)
+	}
+
+	rendered := renderContextIndex(index)
+	for _, want := range []string{
+		"## Quality Debt",
+		"Success dimensions unowned: `req-2`",
+		"Proof plan gaps: `proof-report`",
+		"Critic gate missing: `true`",
+		"Finisher gate missing: `true`",
+		"Only correctness evidence present: `true`",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered context missing %q:\n%s", want, rendered)

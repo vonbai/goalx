@@ -391,6 +391,122 @@ func TestLLMExtractionDoesNotPromoteDirectly(t *testing.T) {
 	}
 }
 
+func TestMemoryExtractBuildsSuccessDeltaProposalFromInterventionLog(t *testing.T) {
+	repo, runDir, _, _ := writeGuidanceRunFixture(t)
+	if err := EnsureMemoryStore(); err != nil {
+		t.Fatalf("EnsureMemoryStore: %v", err)
+	}
+	if err := os.WriteFile(SummaryPath(runDir), []byte("# summary\nui lane drifted to correctness-only checks\n"), 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+	if err := AppendInterventionEvent(runDir, "user_redirect", "user", InterventionEventBody{
+		Run:             filepath.Base(runDir),
+		Message:         "Do not stop at route cutover only; the page still needs real product polish.",
+		AffectedTargets: []string{"session-1"},
+		Before: InterventionBeforeState{
+			GoalHash:         "sha256:goal",
+			StatusHash:       "sha256:status",
+			CoordinationHash: "sha256:coordination",
+		},
+	}); err != nil {
+		t.Fatalf("AppendInterventionEvent: %v", err)
+	}
+
+	origRunner := runMemoryLLMExtract
+	origExists := memoryLLMCommandExists
+	defer func() {
+		runMemoryLLMExtract = origRunner
+		memoryLLMCommandExists = origExists
+	}()
+	memoryLLMCommandExists = func(name string) bool { return name == "codex" }
+	runMemoryLLMExtract = func(req memoryLLMExtractRequest) (memoryLLMExtractResponse, error) {
+		if _, ok := req.EvidenceMap[InterventionLogPath(runDir)]; !ok {
+			t.Fatalf("intervention evidence missing from request: %+v", req.EvidenceMap)
+		}
+		if !strings.Contains(req.Bundle, "interventions:\n") {
+			t.Fatalf("bundle missing interventions section:\n%s", req.Bundle)
+		}
+		return memoryLLMExtractResponse{
+			Proposals: []memoryLLMExtractItem{
+				{
+					Kind:          MemoryKindSuccessPrior,
+					Statement:     "frontend product goals require critique and polish proof before closeout",
+					EvidencePaths: []string{InterventionLogPath(runDir), SummaryPath(runDir)},
+				},
+			},
+		}, nil
+	}
+
+	proposals, err := ExtractMemoryProposals(runDir)
+	if err != nil {
+		t.Fatalf("ExtractMemoryProposals: %v", err)
+	}
+	if len(proposals) != 1 {
+		t.Fatalf("proposal len = %d, want 1", len(proposals))
+	}
+	if proposals[0].Kind != MemoryKindSuccessPrior {
+		t.Fatalf("proposal kind = %q, want success_prior", proposals[0].Kind)
+	}
+	if proposals[0].Selectors["project_id"] != goalx.ProjectID(repo) {
+		t.Fatalf("proposal selectors = %+v, want project_id=%s", proposals[0].Selectors, goalx.ProjectID(repo))
+	}
+	if len(proposals[0].Evidence) != 2 {
+		t.Fatalf("proposal evidence = %+v, want intervention log + summary", proposals[0].Evidence)
+	}
+}
+
+func TestAppendExtractedMemoryProposalsStoresSuccessDeltaInProposalShard(t *testing.T) {
+	repo, runDir, _, _ := writeGuidanceRunFixture(t)
+	if err := EnsureMemoryStore(); err != nil {
+		t.Fatalf("EnsureMemoryStore: %v", err)
+	}
+	if err := os.WriteFile(SummaryPath(runDir), []byte("# summary\n"), 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+	if err := AppendInterventionEvent(runDir, "user_tell", "user", InterventionEventBody{
+		Run:             filepath.Base(runDir),
+		Message:         "Do not close on correctness alone.",
+		AffectedTargets: []string{"master"},
+	}); err != nil {
+		t.Fatalf("AppendInterventionEvent: %v", err)
+	}
+
+	origRunner := runMemoryLLMExtract
+	origExists := memoryLLMCommandExists
+	defer func() {
+		runMemoryLLMExtract = origRunner
+		memoryLLMCommandExists = origExists
+	}()
+	memoryLLMCommandExists = func(name string) bool { return name == "codex" }
+	runMemoryLLMExtract = func(req memoryLLMExtractRequest) (memoryLLMExtractResponse, error) {
+		return memoryLLMExtractResponse{
+			Proposals: []memoryLLMExtractItem{
+				{
+					Kind:          MemoryKindSuccessPrior,
+					Statement:     "closeout should not rely on correctness-only evidence",
+					EvidencePaths: []string{InterventionLogPath(runDir), SummaryPath(runDir)},
+				},
+			},
+		}, nil
+	}
+
+	now := time.Date(2026, time.March, 31, 9, 0, 0, 0, time.UTC)
+	if err := AppendExtractedMemoryProposals(runDir, now); err != nil {
+		t.Fatalf("AppendExtractedMemoryProposals: %v", err)
+	}
+
+	proposals, err := loadMemoryProposals(MemoryProposalPath(now))
+	if err != nil {
+		t.Fatalf("loadMemoryProposals: %v", err)
+	}
+	if len(proposals) != 1 || proposals[0].Kind != MemoryKindSuccessPrior {
+		t.Fatalf("proposal shard = %+v, want one success_prior proposal", proposals)
+	}
+	if proposals[0].Selectors["project_id"] != goalx.ProjectID(repo) {
+		t.Fatalf("proposal selectors = %+v, want project_id=%s", proposals[0].Selectors, goalx.ProjectID(repo))
+	}
+}
+
 func TestLLMExtractionAutoDetectsClaudeWhenCodexUnavailable(t *testing.T) {
 	engines := map[string]goalx.EngineConfig{
 		"claude-code": goalx.BuiltinEngines["claude-code"],

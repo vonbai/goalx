@@ -147,7 +147,84 @@ func collectRunAdvisories(rc *RunContext) ([]string, error) {
 	if advisory := formatEvolveManagementAdvisory(evolveFacts, status); advisory != "" {
 		advisories = append(advisories, advisory)
 	}
+	controlGapFacts, err := BuildControlGapFacts(rc.RunDir)
+	if err != nil {
+		return nil, err
+	}
+	advisories = append(advisories, formatControlGapAdvisories(controlGapFacts)...)
+	qualityDebt, err := BuildQualityDebt(rc.RunDir)
+	if err != nil {
+		return nil, err
+	}
+	if advisory := formatQualityDebtAdvisory(qualityDebt); advisory != "" {
+		advisories = append(advisories, advisory)
+	}
 	return advisories, nil
+}
+
+func formatQualityDebtAdvisory(debt *QualityDebt) string {
+	if debt == nil || debt.Zero() {
+		return ""
+	}
+	parts := make([]string, 0, 6)
+	if len(debt.SuccessDimensionUnowned) > 0 {
+		parts = append(parts, "success_dimension_unowned="+strings.Join(debt.SuccessDimensionUnowned, ","))
+	}
+	if len(debt.ProofPlanGap) > 0 {
+		parts = append(parts, "proof_plan_gap="+strings.Join(debt.ProofPlanGap, ","))
+	}
+	if debt.CriticGateMissing {
+		parts = append(parts, "critic_gate_missing")
+	}
+	if debt.FinisherGateMissing {
+		parts = append(parts, "finisher_gate_missing")
+	}
+	if debt.OnlyCorrectnessEvidence {
+		parts = append(parts, "only_correctness_evidence_present")
+	}
+	if debt.DomainPackMissing {
+		parts = append(parts, "domain_pack_missing_for_nontrivial_run")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Quality debt: " + strings.Join(parts, " ")
+}
+
+func formatControlGapAdvisories(facts *ControlGapFacts) []string {
+	if facts == nil {
+		return nil
+	}
+	advisories := make([]string, 0, 3)
+	if facts.StatusDrift {
+		parts := []string{"Control gap: status_drift"}
+		if facts.StatusUpdatedAt != "" {
+			parts = append(parts, "status_updated_at="+facts.StatusUpdatedAt)
+		}
+		advisories = append(advisories, strings.Join(parts, " "))
+	}
+	if facts.CoordinationStale {
+		parts := []string{"Control gap: coordination_stale"}
+		if facts.CoordinationUpdatedAt != "" {
+			parts = append(parts, "coordination_updated_at="+facts.CoordinationUpdatedAt)
+		}
+		if facts.LatestControlChangeAt != "" {
+			parts = append(parts, "latest_control_change_at="+facts.LatestControlChangeAt)
+		}
+		advisories = append(advisories, strings.Join(parts, " "))
+	}
+	if facts.SerializedRequiredFrontier {
+		parts := []string{
+			"Control gap: serialized_required_frontier",
+			fmt.Sprintf("open_required_count=%d", facts.OpenRequiredCount),
+			"active_required_owners=" + strings.Join(facts.ActiveRequiredOwners, ","),
+		}
+		if len(facts.ReusableSessions) > 0 {
+			parts = append(parts, "reusable_sessions="+strings.Join(facts.ReusableSessions, ","))
+		}
+		advisories = append(advisories, strings.Join(parts, " "))
+	}
+	return advisories
 }
 
 func formatEvolveManagementAdvisory(facts *EvolveFacts, status *RunStatusRecord) string {

@@ -33,6 +33,11 @@ var durableLogKinds = map[DurableSurfaceName]map[string]struct{}{
 		"experiment.closed":     {},
 		"evolve.stopped":        {},
 	},
+	DurableSurfaceInterventionLog: {
+		"user_redirect":  {},
+		"user_tell":      {},
+		"master_reframe": {},
+	},
 }
 
 func LoadDurableLog(path string, surface DurableSurfaceName) ([]DurableLogEvent, error) {
@@ -110,6 +115,11 @@ func validateDurableLogEvent(event DurableLogEvent, surface DurableSurfaceName) 
 	}
 	if surface == DurableSurfaceExperiments {
 		if err := validateExperimentLogBody(kind, event.Body); err != nil {
+			return err
+		}
+	}
+	if surface == DurableSurfaceInterventionLog {
+		if _, err := parseInterventionEventBody(event.Body); err != nil {
 			return err
 		}
 	}

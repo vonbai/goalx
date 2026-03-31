@@ -202,6 +202,10 @@ func BuildMemoryContext(query MemoryQuery) (*MemoryContext, error) {
 			if len(context.SecretRefs) < memoryContextCategoryLimit {
 				context.SecretRefs = append(context.SecretRefs, entry.Statement)
 			}
+		case MemoryKindSuccessPrior:
+			if len(context.SuccessPriors) < memoryContextCategoryLimit {
+				context.SuccessPriors = append(context.SuccessPriors, entry.Statement)
+			}
 		}
 	}
 	return context, nil

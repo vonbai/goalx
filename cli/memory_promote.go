@@ -176,6 +176,10 @@ func aggregateMemoryProposals(proposals []MemoryProposal) []memoryProposalAggreg
 			} else if len(aggregate.SourceRuns) >= 2 {
 				aggregate.Verification = "repeated"
 			}
+		case MemoryKindSuccessPrior:
+			if len(aggregate.SourceRuns) >= 2 {
+				aggregate.Verification = "repeated"
+			}
 		}
 		out = append(out, *aggregate)
 	}
@@ -193,6 +197,8 @@ func memoryAggregatePromotable(aggregate memoryProposalAggregate) bool {
 		return len(aggregate.SourceRuns) >= 2 || (aggregate.FailureEvidence && aggregate.RecoveryEvidence)
 	case MemoryKindPitfall:
 		return len(aggregate.SourceRuns) >= 2 || aggregate.FailureEvidence
+	case MemoryKindSuccessPrior:
+		return len(aggregate.SourceRuns) >= 2
 	default:
 		return false
 	}
@@ -278,6 +284,7 @@ func loadCanonicalMemoryByKind() (map[MemoryKind][]MemoryEntry, error) {
 		MemoryKindProcedure,
 		MemoryKindPitfall,
 		MemoryKindSecretRef,
+		MemoryKindSuccessPrior,
 	} {
 		entries, err := loadCanonicalEntriesForKind(kind)
 		if err != nil {
@@ -329,6 +336,7 @@ func saveCanonicalMemoryByKind(byKind map[MemoryKind][]MemoryEntry) error {
 		MemoryKindProcedure,
 		MemoryKindPitfall,
 		MemoryKindSecretRef,
+		MemoryKindSuccessPrior,
 	} {
 		path := MemoryEntryPath(kind)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -456,7 +464,7 @@ func mergeStringSets(left, right []string) []string {
 func hasGroundedEvidence(evidence []MemoryEvidence) bool {
 	for _, item := range evidence {
 		switch strings.TrimSpace(item.Kind) {
-		case "summary", "report", "saved_summary", "saved_report", "acceptance_state", "acceptance_output", "saved_acceptance_output", "transport_facts", "verify_failure", "verify_recovery", "verify_success":
+		case "summary", "report", "saved_summary", "saved_report", "acceptance_state", "acceptance_output", "saved_acceptance_output", "transport_facts", "verify_failure", "verify_recovery", "verify_success", "intervention_log":
 			return true
 		}
 	}

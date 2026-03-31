@@ -659,6 +659,71 @@ func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]r
 		})
 		current[key] = fingerprint
 	}
+	controlGapFacts, err := BuildControlGapFacts(runDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if controlGapFacts != nil {
+		if controlGapFacts.StatusDrift {
+			key := "control_gap:status_drift"
+			fingerprint := strings.Join([]string{
+				"status_drift",
+				"status_updated_at=" + strings.TrimSpace(controlGapFacts.StatusUpdatedAt),
+			}, "|")
+			body := "Control gap in active GoalX run; fact=status_drift"
+			if controlGapFacts.StatusUpdatedAt != "" {
+				body += " status_updated_at=" + controlGapFacts.StatusUpdatedAt
+			}
+			alerts = append(alerts, requiredFrontierAlert{
+				Key:         key,
+				Fingerprint: fingerprint,
+				Body:        body,
+			})
+			current[key] = fingerprint
+		}
+		if controlGapFacts.CoordinationStale {
+			key := "control_gap:coordination_stale"
+			fingerprint := strings.Join([]string{
+				"coordination_stale",
+				"coordination_updated_at=" + strings.TrimSpace(controlGapFacts.CoordinationUpdatedAt),
+				"latest_control_change_at=" + strings.TrimSpace(controlGapFacts.LatestControlChangeAt),
+			}, "|")
+			body := "Control gap in active GoalX run; fact=coordination_stale"
+			if controlGapFacts.CoordinationUpdatedAt != "" {
+				body += " coordination_updated_at=" + controlGapFacts.CoordinationUpdatedAt
+			}
+			if controlGapFacts.LatestControlChangeAt != "" {
+				body += " latest_control_change_at=" + controlGapFacts.LatestControlChangeAt
+			}
+			alerts = append(alerts, requiredFrontierAlert{
+				Key:         key,
+				Fingerprint: fingerprint,
+				Body:        body,
+			})
+			current[key] = fingerprint
+		}
+		if controlGapFacts.SerializedRequiredFrontier {
+			key := "control_gap:serialized_required_frontier"
+			fingerprint := strings.Join([]string{
+				"serialized_required_frontier",
+				"active_required_owners=" + strings.Join(controlGapFacts.ActiveRequiredOwners, ","),
+				"reusable_sessions=" + strings.Join(controlGapFacts.ReusableSessions, ","),
+				fmt.Sprintf("open_required_count=%d", controlGapFacts.OpenRequiredCount),
+			}, "|")
+			body := "Control gap in active GoalX run; fact=serialized_required_frontier"
+			body += " active_required_owners=" + strings.Join(controlGapFacts.ActiveRequiredOwners, ",")
+			body += fmt.Sprintf(" open_required_count=%d", controlGapFacts.OpenRequiredCount)
+			if len(controlGapFacts.ReusableSessions) > 0 {
+				body += " reusable_sessions=" + strings.Join(controlGapFacts.ReusableSessions, ",")
+			}
+			alerts = append(alerts, requiredFrontierAlert{
+				Key:         key,
+				Fingerprint: fingerprint,
+				Body:        body,
+			})
+			current[key] = fingerprint
+		}
+	}
 	sort.Slice(alerts, func(i, j int) bool {
 		return alerts[i].Key < alerts[j].Key
 	})

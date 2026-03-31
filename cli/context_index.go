@@ -53,6 +53,7 @@ type ContextIndex struct {
 	GoalBoundary          *ContextGoalBoundary       `json:"goal_boundary,omitempty"`
 	RunStatus             *ContextRunStatus          `json:"run_status,omitempty"`
 	Acceptance            *ContextAcceptance         `json:"acceptance,omitempty"`
+	QualityDebt           *ContextQualityDebt        `json:"quality_debt,omitempty"`
 	Closeout              *ContextCloseout           `json:"closeout,omitempty"`
 	Selection             *ContextSelection          `json:"selection,omitempty"`
 	Sessions              []ContextSession           `json:"sessions,omitempty"`
@@ -111,6 +112,16 @@ type ContextAcceptance struct {
 	LastCheckedAt    string `json:"last_checked_at,omitempty"`
 	LastExitCode     *int   `json:"last_exit_code,omitempty"`
 	EvidencePath     string `json:"evidence_path,omitempty"`
+}
+
+type ContextQualityDebt struct {
+	SuccessDimensionUnowned []string `json:"success_dimension_unowned,omitempty"`
+	ProofPlanGap            []string `json:"proof_plan_gap,omitempty"`
+	CriticGateMissing       bool     `json:"critic_gate_missing,omitempty"`
+	FinisherGateMissing     bool     `json:"finisher_gate_missing,omitempty"`
+	OnlyCorrectnessEvidence bool     `json:"only_correctness_evidence_present,omitempty"`
+	DomainPackMissing       bool     `json:"domain_pack_missing_for_nontrivial_run,omitempty"`
+	Zero                    bool     `json:"zero,omitempty"`
 }
 
 type ContextCloseout struct {
@@ -298,6 +309,11 @@ func BuildContextIndex(projectRoot, runName, runDir string) (*ContextIndex, erro
 		return nil, err
 	} else if acceptanceSummary != nil {
 		index.Acceptance = acceptanceSummary
+	}
+	if qualityDebt, err := contextQualityDebt(runDir); err != nil {
+		return nil, err
+	} else if qualityDebt != nil {
+		index.QualityDebt = qualityDebt
 	}
 	if closeoutSummary, err := contextCloseout(runDir); err != nil {
 		return nil, err
@@ -489,6 +505,22 @@ func contextAcceptance(runDir string) (*ContextAcceptance, error) {
 		LastCheckedAt:    strings.TrimSpace(state.LastResult.CheckedAt),
 		LastExitCode:     state.LastResult.ExitCode,
 		EvidencePath:     strings.TrimSpace(state.LastResult.EvidencePath),
+	}, nil
+}
+
+func contextQualityDebt(runDir string) (*ContextQualityDebt, error) {
+	debt, err := BuildQualityDebt(runDir)
+	if err != nil || debt == nil {
+		return nil, err
+	}
+	return &ContextQualityDebt{
+		SuccessDimensionUnowned: append([]string(nil), debt.SuccessDimensionUnowned...),
+		ProofPlanGap:            append([]string(nil), debt.ProofPlanGap...),
+		CriticGateMissing:       debt.CriticGateMissing,
+		FinisherGateMissing:     debt.FinisherGateMissing,
+		OnlyCorrectnessEvidence: debt.OnlyCorrectnessEvidence,
+		DomainPackMissing:       debt.DomainPackMissing,
+		Zero:                    debt.Zero(),
 	}, nil
 }
 

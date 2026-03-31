@@ -186,6 +186,7 @@ func loadCanonicalMemoryEntries() ([]MemoryEntry, error) {
 		MemoryKindProcedure,
 		MemoryKindPitfall,
 		MemoryKindSecretRef,
+		MemoryKindSuccessPrior,
 	} {
 		path := MemoryEntryPath(kind)
 		file, err := os.Open(path)

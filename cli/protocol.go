@@ -36,8 +36,13 @@ type ProtocolData struct {
 	RunWorktreePath        string
 	SummaryPath            string
 	ObjectiveContractPath  string
+	SuccessModelPath       string
+	ProofPlanPath          string
+	WorkflowPlanPath       string
+	DomainPackPath         string
 	GoalPath               string
 	GoalLogPath            string
+	InterventionLogPath    string
 	IntegrationStatePath   string
 	CharterPath            string
 	IdentityFencePath      string
@@ -120,6 +125,21 @@ func normalizeProtocolData(data ProtocolData, runDir string) ProtocolData {
 	}
 	if data.ObjectiveContractPath == "" && runDir != "" {
 		data.ObjectiveContractPath = ObjectiveContractPath(runDir)
+	}
+	if data.SuccessModelPath == "" && runDir != "" {
+		data.SuccessModelPath = SuccessModelPath(runDir)
+	}
+	if data.ProofPlanPath == "" && runDir != "" {
+		data.ProofPlanPath = ProofPlanPath(runDir)
+	}
+	if data.WorkflowPlanPath == "" && runDir != "" {
+		data.WorkflowPlanPath = WorkflowPlanPath(runDir)
+	}
+	if data.DomainPackPath == "" && runDir != "" {
+		data.DomainPackPath = DomainPackPath(runDir)
+	}
+	if data.InterventionLogPath == "" && runDir != "" {
+		data.InterventionLogPath = InterventionLogPath(runDir)
 	}
 	if data.IntegrationStatePath == "" && runDir != "" {
 		data.IntegrationStatePath = IntegrationStatePath(runDir)
