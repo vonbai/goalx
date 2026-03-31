@@ -389,7 +389,7 @@ func launchStartRuntime(state *startRunState, cfg *goalx.Config, meta *RunMetada
 	if err := launchRunSidecar(state.projectRoot, cfg.Name, time.Duration(checkSec)*time.Second); err != nil {
 		return fmt.Errorf("launch sidecar: %w", err)
 	}
-	if err := RefreshRunGuidance(state.projectRoot, cfg.Name, state.runDir); err != nil {
+	if _, err := RefreshRunGuidance(state.projectRoot, cfg.Name, state.runDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 

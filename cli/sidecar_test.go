@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1783,8 +1784,8 @@ func TestRunSidecarTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read master inbox: %v", err)
 	}
-	if got := strings.Count(string(inboxData), `"type":"required-frontier"`); got != 3 {
-		t.Fatalf("master inbox required-frontier count = %d, want 3\n%s", got, string(inboxData))
+	if got := strings.Count(string(inboxData), `"type":"master-alert"`); got != 3 {
+		t.Fatalf("master inbox master-alert count = %d, want 3\n%s", got, string(inboxData))
 	}
 	for _, want := range []string{
 		"required=req-1 fact=master_orphaned",
@@ -1800,8 +1801,8 @@ func TestRunSidecarTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if len(controlState.RequiredFrontierAlerts) != 3 {
-		t.Fatalf("required frontier alerts = %+v, want 3 entries", controlState.RequiredFrontierAlerts)
+	if len(controlState.MasterAlerts) != 3 {
+		t.Fatalf("master alerts = %+v, want 3 entries", controlState.MasterAlerts)
 	}
 
 	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
@@ -1810,7 +1811,7 @@ func TestRunSidecarTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
 	}
 	count := 0
 	for _, item := range deliveries.Items {
-		if strings.HasPrefix(item.DedupeKey, "master-required-frontier:") {
+		if strings.HasPrefix(item.DedupeKey, "master-alert:") {
 			count++
 		}
 	}
@@ -1887,8 +1888,8 @@ func TestRunSidecarTickRealertsRequiredFrontierWhenStateChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read master inbox: %v", err)
 	}
-	if got := strings.Count(string(inboxData), `"type":"required-frontier"`); got != 2 {
-		t.Fatalf("master inbox required-frontier count = %d, want 2\n%s", got, string(inboxData))
+	if got := strings.Count(string(inboxData), `"type":"master-alert"`); got != 2 {
+		t.Fatalf("master inbox master-alert count = %d, want 2\n%s", got, string(inboxData))
 	}
 	if !strings.Contains(string(inboxData), "execution_state=probing") || !strings.Contains(string(inboxData), "execution_state=waiting") {
 		t.Fatalf("master inbox missing frontier state change:\n%s", string(inboxData))
@@ -1898,10 +1899,10 @@ func TestRunSidecarTickRealertsRequiredFrontierWhenStateChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if len(controlState.RequiredFrontierAlerts) != 1 {
-		t.Fatalf("required frontier alerts = %+v, want 1 entry", controlState.RequiredFrontierAlerts)
+	if len(controlState.MasterAlerts) != 1 {
+		t.Fatalf("master alerts = %+v, want 1 entry", controlState.MasterAlerts)
 	}
-	for _, fingerprint := range controlState.RequiredFrontierAlerts {
+	for _, fingerprint := range controlState.MasterAlerts {
 		if !strings.Contains(fingerprint, "execution_state=waiting") {
 			t.Fatalf("required frontier fingerprint = %q, want waiting state", fingerprint)
 		}
@@ -2008,8 +2009,8 @@ func TestRunSidecarTickAlertsControlGapFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if len(controlState.RequiredFrontierAlerts) != 3 {
-		t.Fatalf("required frontier alerts = %+v, want 3 entries", controlState.RequiredFrontierAlerts)
+	if len(controlState.MasterAlerts) != 3 {
+		t.Fatalf("master alerts = %+v, want 3 entries", controlState.MasterAlerts)
 	}
 }
 
@@ -2109,7 +2110,7 @@ func TestRunSidecarTickRealertsControlGapWhenFingerprintChanges(t *testing.T) {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
 	found := false
-	for key, fingerprint := range controlState.RequiredFrontierAlerts {
+	for key, fingerprint := range controlState.MasterAlerts {
 		if key != "control_gap:serialized_required_frontier" {
 			continue
 		}
@@ -2119,7 +2120,202 @@ func TestRunSidecarTickRealertsControlGapWhenFingerprintChanges(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("serialized control-gap fingerprint missing: %+v", controlState.RequiredFrontierAlerts)
+		t.Fatalf("serialized control-gap fingerprint missing: %+v", controlState.MasterAlerts)
+	}
+}
+
+func TestRunSidecarTickRefreshesDomainPackFromPromotedSuccessPrior(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+
+	installGuidanceFakeTmux(t, nil)
+
+	now := time.Date(2026, time.March, 31, 13, 0, 0, 0, time.UTC)
+	if err := writeProposalShard(now, []MemoryProposal{
+		{
+			ID:        "prop_success_prior_guidance",
+			State:     "proposed",
+			Kind:      MemoryKindSuccessPrior,
+			Statement: "operator-console runs require critique and finisher passes before closeout",
+			Selectors: map[string]string{"project_id": goalx.ProjectID(repo)},
+			Evidence: []MemoryEvidence{
+				{Kind: "intervention_log", Path: "/tmp/intervention-log.jsonl"},
+				{Kind: "summary", Path: "/tmp/summary.md"},
+			},
+			SourceRuns: []string{"run-1", "run-2"},
+			CreatedAt:  "2026-03-31T13:00:00Z",
+			UpdatedAt:  "2026-03-31T13:00:00Z",
+		},
+	}); err != nil {
+		t.Fatalf("writeProposalShard: %v", err)
+	}
+
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick: %v", err)
+	}
+
+	entries := loadCanonicalEntriesByKind(t, MemoryKindSuccessPrior)
+	if len(entries) != 1 {
+		t.Fatalf("success prior entries = %+v, want one promoted entry", entries)
+	}
+
+	pack, err := LoadDomainPack(DomainPackPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadDomainPack: %v", err)
+	}
+	if pack == nil || len(pack.PriorEntryIDs) != 1 {
+		t.Fatalf("domain pack = %+v, want one prior entry id", pack)
+	}
+	if len(pack.Signals) == 0 || !slices.Contains(pack.Signals, "success_prior_present") {
+		t.Fatalf("domain pack signals = %v, want success_prior_present", pack.Signals)
+	}
+
+	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlReminders: %v", err)
+	}
+	found := false
+	for _, item := range reminders.Items {
+		if item.DedupeKey == "refresh-context" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected refresh-context reminder after success-context change: %+v", reminders.Items)
+	}
+}
+
+func TestRunSidecarTickAlertsQualityDebtAndEvolveManagementGap(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	meta.Intent = runIntentEvolve
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+			{ID: "req-2", Text: "ship polish", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+		Version: 1,
+		LastResult: AcceptanceResult{
+			CheckedAt: "2026-03-31T10:05:00Z",
+		},
+	}); err != nil {
+		t.Fatalf("SaveAcceptanceState: %v", err)
+	}
+	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:objective",
+		GoalHash:              "sha256:goal",
+		Dimensions: []SuccessDimension{
+			{ID: "req-1", Kind: "goal_item", Text: "ship cockpit", Required: true},
+			{ID: "req-2", Kind: "goal_item", Text: "ship polish", Required: true},
+		},
+		CloseoutRequirements: []string{"quality_debt_zero"},
+	}); err != nil {
+		t.Fatalf("SaveSuccessModel: %v", err)
+	}
+	if err := SaveProofPlan(ProofPlanPath(runDir), &ProofPlan{
+		Version: 1,
+		Items: []ProofPlanItem{
+			{ID: "proof-summary", CoversDimensions: []string{"req-1", "req-2"}, Kind: "run_artifact", Required: true, SourceSurface: "summary"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveProofPlan: %v", err)
+	}
+	if err := SaveWorkflowPlan(WorkflowPlanPath(runDir), &WorkflowPlan{
+		Version: 1,
+		RequiredRoles: []WorkflowRoleRequirement{
+			{ID: "builder", Required: true},
+			{ID: "critic", Required: true},
+			{ID: "finisher", Required: true},
+		},
+		Gates: []string{"builder_result_present", "critic_review_present", "finisher_pass_present"},
+	}); err != nil {
+		t.Fatalf("SaveWorkflowPlan: %v", err)
+	}
+	if err := SaveDomainPack(DomainPackPath(runDir), &DomainPack{Version: 1, Domain: "evolve"}); err != nil {
+		t.Fatalf("SaveDomainPack: %v", err)
+	}
+	if err := SaveRunStatusRecord(RunStatusPath(runDir), &RunStatusRecord{
+		Version:           1,
+		Phase:             runStatusPhaseWorking,
+		RequiredRemaining: intPtr(2),
+		OpenRequiredIDs:   []string{"req-1", "req-2"},
+		UpdatedAt:         "2026-03-31T10:05:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunStatusRecord: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version:   1,
+		UpdatedAt: "2026-03-31T10:05:00Z",
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfaceActive,
+					WebResearch:    coordinationRequiredSurfaceNotApplicable,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	appendExperimentEventForTest(t, runDir, `{"version":1,"kind":"experiment.created","at":"2026-03-31T10:00:00Z","actor":"master","body":{"experiment_id":"exp-1","created_at":"2026-03-31T10:00:00Z"}}`)
+
+	orig := sendAgentNudgeDetailed
+	defer func() { sendAgentNudgeDetailed = orig }()
+	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
+	}
+
+	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runSidecarTick: %v", err)
+	}
+
+	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	inbox := string(inboxData)
+	for _, want := range []string{
+		"fact=quality_debt",
+		"fact=evolve_management_gap",
+		"gap=missing_stop_or_dispatch",
+	} {
+		if !strings.Contains(inbox, want) {
+			t.Fatalf("master inbox missing %q:\n%s", want, inbox)
+		}
+	}
+
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if len(controlState.MasterAlerts) == 0 {
+		t.Fatalf("master alerts unexpectedly empty: %+v", controlState)
 	}
 }
 

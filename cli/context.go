@@ -22,7 +22,7 @@ func Context(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := RefreshRunMemoryContext(rc.RunDir); err != nil {
+	if _, err := RefreshRunSuccessContextForRun(rc.ProjectRoot, rc.RunDir); err != nil {
 		return err
 	}
 	if err := RefreshEvolveFacts(rc.RunDir); err != nil {

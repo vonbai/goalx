@@ -506,38 +506,39 @@ func RenderAffordancesMarkdown(doc *AffordancesDocument) string {
 	return b.String()
 }
 
-func RefreshRunGuidance(projectRoot, runName, runDir string) error {
+func RefreshRunGuidance(projectRoot, runName, runDir string) (bool, error) {
 	if err := RefreshSessionRuntimeProjection(runDir, runName); err != nil {
-		return err
+		return false, err
 	}
 	if err := RefreshWorktreeSnapshot(runDir); err != nil {
-		return err
+		return false, err
 	}
-	if err := RefreshRunMemoryContext(runDir); err != nil {
-		return err
+	successContextChanged, err := RefreshRunSuccessContextForRun(projectRoot, runDir)
+	if err != nil {
+		return false, err
 	}
 	if err := RefreshEvolveFacts(runDir); err != nil {
-		return err
+		return false, err
 	}
 	activity, err := BuildActivitySnapshot(projectRoot, runName, runDir)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := SaveActivitySnapshot(runDir, activity); err != nil {
-		return err
+		return false, err
 	}
 	index, err := BuildContextIndex(projectRoot, runName, runDir)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := SaveContextIndex(runDir, index); err != nil {
-		return err
+		return false, err
 	}
 	affordances, err := BuildAffordances(projectRoot, runName, runDir, "")
 	if err != nil {
-		return err
+		return false, err
 	}
-	return SaveAffordances(runDir, affordances)
+	return successContextChanged, SaveAffordances(runDir, affordances)
 }
 
 func buildAffordanceCommand(runName, target string) string {

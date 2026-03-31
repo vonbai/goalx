@@ -16,7 +16,7 @@ func refreshDisplayFacts(rc *RunContext) error {
 		return err
 	}
 	_ = reconcileControlDeliveries(rc.RunDir)
-	if err := RefreshRunMemoryContext(rc.RunDir); err != nil {
+	if _, err := RefreshRunSuccessContextForRun(rc.ProjectRoot, rc.RunDir); err != nil {
 		return err
 	}
 	if err := RefreshWorktreeSnapshot(rc.RunDir); err != nil {

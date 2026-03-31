@@ -32,7 +32,7 @@ type ControlRunState struct {
 	Phase                  string            `json:"phase,omitempty"`
 	ActiveSessionCount     int               `json:"active_session_count,omitempty"`
 	ProviderDialogAlerts   map[string]string `json:"provider_dialog_alerts,omitempty"`
-	RequiredFrontierAlerts map[string]string `json:"required_frontier_alerts,omitempty"`
+	MasterAlerts           map[string]string `json:"master_alerts,omitempty"`
 	UpdatedAt              string            `json:"updated_at,omitempty"`
 }
 

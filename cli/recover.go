@@ -47,6 +47,16 @@ func Recover(projectRoot string, args []string) error {
 	killRunPaneProcessTrees(rc.RunDir, rc.TmuxSession)
 	killAllLeasedProcesses(rc.RunDir)
 
+	if err := RefreshRunMemorySeeds(rc.RunDir); err != nil {
+		return fmt.Errorf("refresh run memory seeds: %w", err)
+	}
+	if err := AppendExtractedMemoryProposals(rc.RunDir, time.Now().UTC()); err != nil {
+		return fmt.Errorf("append extracted memory proposals: %w", err)
+	}
+	if err := PromoteMemoryProposals(); err != nil {
+		return fmt.Errorf("promote memory proposals: %w", err)
+	}
+
 	if err := relaunchMaster(rc.ProjectRoot, rc.RunDir, rc.TmuxSession, rc.Config); err != nil {
 		return err
 	}
@@ -105,7 +115,7 @@ func Recover(projectRoot string, args []string) error {
 	if err := launchRunSidecar(rc.ProjectRoot, rc.Name, time.Duration(checkSec)*time.Second); err != nil {
 		return fmt.Errorf("launch sidecar: %w", err)
 	}
-	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+	if _, err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 

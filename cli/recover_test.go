@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +139,83 @@ func TestRecoverRequiresExistingRun(t *testing.T) {
 	repo := t.TempDir()
 	if err := Recover(repo, []string{"--run", "missing"}); err == nil || !strings.Contains(err.Error(), "run not found") {
 		t.Fatalf("Recover error = %v, want run not found", err)
+	}
+}
+
+func TestRecoverPromotesSuccessPriorBeforeRelaunch(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	_, _ = installRecoverFakeTmux(t, false)
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	runWT := RunWorktreePath(runDir)
+	if err := os.MkdirAll(runWT, 0o755); err != nil {
+		t.Fatalf("mkdir run worktree: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:        1,
+		LifecycleState: "stopped",
+		UpdatedAt:      "2026-03-29T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(goalx.ModeWorker),
+		Active:    false,
+		StartedAt: "2026-03-29T00:00:00Z",
+		StoppedAt: "2026-03-29T00:10:00Z",
+		UpdatedAt: "2026-03-29T00:10:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+
+	now := time.Date(2026, time.March, 31, 14, 0, 0, 0, time.UTC)
+	if err := writeProposalShard(now, []MemoryProposal{
+		{
+			ID:        "prop_success_prior_recover",
+			State:     "proposed",
+			Kind:      MemoryKindSuccessPrior,
+			Statement: "recover should relaunch with the latest success prior snapshot",
+			Selectors: map[string]string{"project_id": goalx.ProjectID(repo)},
+			Evidence: []MemoryEvidence{
+				{Kind: "intervention_log", Path: "/tmp/intervention-log.jsonl"},
+				{Kind: "summary", Path: "/tmp/summary.md"},
+			},
+			SourceRuns: []string{"run-1", "run-2"},
+			CreatedAt:  "2026-03-31T14:00:00Z",
+			UpdatedAt:  "2026-03-31T14:00:00Z",
+		},
+	}); err != nil {
+		t.Fatalf("writeProposalShard: %v", err)
+	}
+
+	origLaunchSidecar := launchRunSidecar
+	defer func() { launchRunSidecar = origLaunchSidecar }()
+	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error { return nil }
+
+	if err := Recover(repo, []string{"--run", runName}); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	entries := loadCanonicalEntriesByKind(t, MemoryKindSuccessPrior)
+	if len(entries) != 1 {
+		t.Fatalf("success prior entries = %+v, want one promoted entry", entries)
+	}
+
+	pack, err := LoadDomainPack(DomainPackPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadDomainPack: %v", err)
+	}
+	if pack == nil || len(pack.PriorEntryIDs) != 1 {
+		t.Fatalf("domain pack = %+v, want one prior entry id", pack)
+	}
+	if !slices.Contains(pack.Signals, "success_prior_present") {
+		t.Fatalf("domain pack signals = %v, want success_prior_present", pack.Signals)
 	}
 }
 

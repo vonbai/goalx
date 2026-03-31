@@ -299,7 +299,7 @@ func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string
 	if err := RefreshEvolveFacts(runDir); err != nil {
 		return err
 	}
-	if _, err := processRequiredFrontierAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
+	if _, err := processMasterAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
 		return err
 	}
 	if _, err := processTargetAttentionAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
@@ -314,8 +314,13 @@ func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string
 	if err := PromoteMemoryProposals(); err != nil {
 		return err
 	}
-	if err := RefreshRunGuidance(projectRoot, runName, runDir); err != nil {
+	successContextChanged, err := RefreshRunGuidance(projectRoot, runName, runDir)
+	if err != nil {
 		appendAuditLog(runDir, "guidance refresh warning: %v", err)
+	} else if successContextChanged {
+		if err := queueRefreshContextReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -522,13 +527,13 @@ func formatBlockedTargetReason(facts TargetAttentionFacts) string {
 	return strings.Join(parts, " ")
 }
 
-type requiredFrontierAlert struct {
+type masterAlert struct {
 	Key         string
 	Fingerprint string
 	Body        string
 }
 
-func processRequiredFrontierAlerts(runDir, tmuxSession, masterEngine string, presence map[string]TargetPresenceFacts) (bool, error) {
+func processMasterAlerts(runDir, tmuxSession, masterEngine string, presence map[string]TargetPresenceFacts) (bool, error) {
 	activity, err := LoadActivitySnapshot(ActivityPath(runDir))
 	if err != nil {
 		return false, err
@@ -537,15 +542,15 @@ func processRequiredFrontierAlerts(runDir, tmuxSession, masterEngine string, pre
 	if err != nil {
 		return false, err
 	}
-	alerts, current, err := buildRequiredFrontierAlerts(runDir, activity)
+	alerts, current, err := buildMasterAlerts(runDir, activity)
 	if err != nil {
 		return false, err
 	}
 	if len(current) == 0 {
-		if len(controlState.RequiredFrontierAlerts) == 0 {
+		if len(controlState.MasterAlerts) == 0 {
 			return false, nil
 		}
-		if err := submitAndApplyControlOp(runDir, controlOpRunStateRequiredFrontierAlerts, controlRunStateRequiredFrontierAlertsBody{}); err != nil {
+		if err := submitAndApplyControlOp(runDir, controlOpRunStateMasterAlerts, controlRunStateMasterAlertsBody{}); err != nil {
 			return false, err
 		}
 		return false, nil
@@ -557,23 +562,23 @@ func processRequiredFrontierAlerts(runDir, tmuxSession, masterEngine string, pre
 	}
 	alerted := false
 	for _, alert := range alerts {
-		if controlState.RequiredFrontierAlerts[alert.Key] == alert.Fingerprint {
+		if controlState.MasterAlerts[alert.Key] == alert.Fingerprint {
 			continue
 		}
-		appendAuditLog(runDir, "required_frontier_alert key=%s fingerprint=%s", alert.Key, alert.Fingerprint)
-		if _, err := appendControlInboxMessage(runDir, "master", "required-frontier", "goalx sidecar", alert.Body, true); err != nil {
+		appendAuditLog(runDir, "master_alert key=%s fingerprint=%s", alert.Key, alert.Fingerprint)
+		if _, err := appendControlInboxMessage(runDir, "master", "master-alert", "goalx sidecar", alert.Body, true); err != nil {
 			return false, err
 		}
-		dedupeKey := "master-required-frontier:" + alert.Key + ":" + alert.Fingerprint
+		dedupeKey := "master-alert:" + alert.Key + ":" + alert.Fingerprint
 		if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, sendAgentNudgeDetailed); err != nil {
 			return false, err
 		}
 		alerted = true
 	}
-	if mapsEqual(controlState.RequiredFrontierAlerts, current) {
+	if mapsEqual(controlState.MasterAlerts, current) {
 		return alerted, nil
 	}
-	if err := submitAndApplyControlOp(runDir, controlOpRunStateRequiredFrontierAlerts, controlRunStateRequiredFrontierAlertsBody{
+	if err := submitAndApplyControlOp(runDir, controlOpRunStateMasterAlerts, controlRunStateMasterAlertsBody{
 		Alerts: current,
 	}); err != nil {
 		return false, err
@@ -581,22 +586,22 @@ func processRequiredFrontierAlerts(runDir, tmuxSession, masterEngine string, pre
 	return alerted, nil
 }
 
-func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]requiredFrontierAlert, map[string]string, error) {
+func buildMasterAlerts(runDir string, activity *ActivitySnapshot) ([]masterAlert, map[string]string, error) {
 	if activity == nil || !activity.Coverage.RequiredPresent {
-		return nil, nil, nil
+		return buildNonFrontierMasterAlerts(runDir)
 	}
 	coord, err := LoadCoordinationState(CoordinationPath(runDir))
 	if err != nil {
 		return nil, nil, err
 	}
 	coverage := activity.Coverage
-	alerts := make([]requiredFrontierAlert, 0, len(coverage.UnmappedRequiredIDs)+len(coverage.MasterOrphanedRequiredIDs)+len(coverage.PrematureBlockedRequiredIDs))
+	alerts := make([]masterAlert, 0, len(coverage.UnmappedRequiredIDs)+len(coverage.MasterOrphanedRequiredIDs)+len(coverage.PrematureBlockedRequiredIDs)+4)
 	current := map[string]string{}
 
 	for _, id := range coverage.UnmappedRequiredIDs {
 		key := "unmapped_required:" + id
 		fingerprint := key
-		alerts = append(alerts, requiredFrontierAlert{
+		alerts = append(alerts, masterAlert{
 			Key:         key,
 			Fingerprint: fingerprint,
 			Body:        fmt.Sprintf("Required frontier gap in active GoalX run; required=%s fact=unmapped_required", id),
@@ -623,7 +628,7 @@ func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]r
 		if len(reusable) > 0 {
 			body += " reusable_sessions=" + strings.Join(reusable, ",")
 		}
-		alerts = append(alerts, requiredFrontierAlert{
+		alerts = append(alerts, masterAlert{
 			Key:         key,
 			Fingerprint: fingerprint,
 			Body:        body,
@@ -652,7 +657,7 @@ func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]r
 		if len(nonTerminal) > 0 {
 			body += " non_terminal_surfaces=" + strings.Join(nonTerminal, ",")
 		}
-		alerts = append(alerts, requiredFrontierAlert{
+		alerts = append(alerts, masterAlert{
 			Key:         key,
 			Fingerprint: fingerprint,
 			Body:        body,
@@ -674,7 +679,7 @@ func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]r
 			if controlGapFacts.StatusUpdatedAt != "" {
 				body += " status_updated_at=" + controlGapFacts.StatusUpdatedAt
 			}
-			alerts = append(alerts, requiredFrontierAlert{
+			alerts = append(alerts, masterAlert{
 				Key:         key,
 				Fingerprint: fingerprint,
 				Body:        body,
@@ -695,7 +700,7 @@ func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]r
 			if controlGapFacts.LatestControlChangeAt != "" {
 				body += " latest_control_change_at=" + controlGapFacts.LatestControlChangeAt
 			}
-			alerts = append(alerts, requiredFrontierAlert{
+			alerts = append(alerts, masterAlert{
 				Key:         key,
 				Fingerprint: fingerprint,
 				Body:        body,
@@ -716,13 +721,21 @@ func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]r
 			if len(controlGapFacts.ReusableSessions) > 0 {
 				body += " reusable_sessions=" + strings.Join(controlGapFacts.ReusableSessions, ",")
 			}
-			alerts = append(alerts, requiredFrontierAlert{
+			alerts = append(alerts, masterAlert{
 				Key:         key,
 				Fingerprint: fingerprint,
 				Body:        body,
 			})
 			current[key] = fingerprint
 		}
+	}
+	nonFrontierAlerts, nonFrontierCurrent, err := buildNonFrontierMasterAlerts(runDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	alerts = append(alerts, nonFrontierAlerts...)
+	for key, fingerprint := range nonFrontierCurrent {
+		current[key] = fingerprint
 	}
 	sort.Slice(alerts, func(i, j int) bool {
 		return alerts[i].Key < alerts[j].Key
@@ -731,6 +744,97 @@ func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]r
 		return nil, nil, nil
 	}
 	return alerts, current, nil
+}
+
+func buildNonFrontierMasterAlerts(runDir string) ([]masterAlert, map[string]string, error) {
+	alerts := make([]masterAlert, 0, 2)
+	current := map[string]string{}
+
+	qualityDebt, err := BuildQualityDebt(runDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	acceptance, err := LoadAcceptanceState(AcceptanceStatePath(runDir))
+	if err != nil {
+		return nil, nil, err
+	}
+	if qualityDebt != nil && !qualityDebt.Zero() && hasBuilderEvidence(runDir, acceptance) {
+		parts := qualityDebtAlertParts(qualityDebt)
+		if len(parts) > 0 {
+			key := "quality_debt:open"
+			fingerprint := strings.Join(append([]string{"quality_debt"}, parts...), "|")
+			body := "Quality debt in active GoalX run; fact=quality_debt " + strings.Join(parts, " ")
+			alerts = append(alerts, masterAlert{
+				Key:         key,
+				Fingerprint: fingerprint,
+				Body:        body,
+			})
+			current[key] = fingerprint
+		}
+	}
+
+	status, err := LoadRunStatusRecord(RunStatusPath(runDir))
+	if err != nil {
+		return nil, nil, err
+	}
+	evolveFacts, err := LoadCurrentEvolveFacts(runDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if evolveFacts != nil && strings.TrimSpace(evolveFacts.ManagementGap) != "" {
+		parts := []string{
+			"gap=" + strings.TrimSpace(evolveFacts.ManagementGap),
+			"frontier_state=" + blankAsUnknown(evolveFacts.FrontierState),
+			fmt.Sprintf("open_candidate_count=%d", evolveFacts.OpenCandidateCount),
+			fmt.Sprintf("active_sessions=%d", evolveFacts.ActiveSessionCount),
+		}
+		if evolveFacts.LastManagementEventAt != "" {
+			parts = append(parts, "last_management_event_at="+evolveFacts.LastManagementEventAt)
+		}
+		if status != nil && strings.TrimSpace(status.Phase) != "" {
+			parts = append(parts, "phase="+strings.TrimSpace(status.Phase))
+		}
+		key := "evolve_management_gap:" + strings.TrimSpace(evolveFacts.ManagementGap)
+		fingerprint := strings.Join(append([]string{"evolve_management_gap"}, parts...), "|")
+		body := "Evolve management gap in active GoalX run; fact=evolve_management_gap " + strings.Join(parts, " ")
+		alerts = append(alerts, masterAlert{
+			Key:         key,
+			Fingerprint: fingerprint,
+			Body:        body,
+		})
+		current[key] = fingerprint
+	}
+
+	if len(alerts) == 0 {
+		return nil, nil, nil
+	}
+	return alerts, current, nil
+}
+
+func qualityDebtAlertParts(debt *QualityDebt) []string {
+	if debt == nil || debt.Zero() {
+		return nil
+	}
+	parts := make([]string, 0, 6)
+	if len(debt.SuccessDimensionUnowned) > 0 {
+		parts = append(parts, "success_dimension_unowned="+strings.Join(debt.SuccessDimensionUnowned, ","))
+	}
+	if len(debt.ProofPlanGap) > 0 {
+		parts = append(parts, "proof_plan_gap="+strings.Join(debt.ProofPlanGap, ","))
+	}
+	if debt.CriticGateMissing {
+		parts = append(parts, "critic_gate_missing")
+	}
+	if debt.FinisherGateMissing {
+		parts = append(parts, "finisher_gate_missing")
+	}
+	if debt.OnlyCorrectnessEvidence {
+		parts = append(parts, "only_correctness_evidence_present")
+	}
+	if debt.DomainPackMissing {
+		parts = append(parts, "domain_pack_missing_for_nontrivial_run")
+	}
+	return parts
 }
 
 func coordinationRequiredByID(coord *CoordinationState, id string) (CoordinationRequiredItem, bool) {

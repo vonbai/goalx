@@ -198,7 +198,7 @@ func TestRefreshRunGuidanceWritesSessionLineageSnapshot(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	seedForkedWorktreeLineageFixture(t, repo, runDir, cfg)
 
-	if err := RefreshRunGuidance(repo, cfg.Name, runDir); err != nil {
+	if _, err := RefreshRunGuidance(repo, cfg.Name, runDir); err != nil {
 		t.Fatalf("RefreshRunGuidance: %v", err)
 	}
 

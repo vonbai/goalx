@@ -65,6 +65,81 @@ func EnsureSuccessCompilation(projectRoot, runDir string, cfg *goalx.Config, met
 	return nil
 }
 
+func RefreshRunSuccessContextForRun(projectRoot, runDir string) (bool, error) {
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		return false, err
+	}
+	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
+	if err != nil {
+		return false, err
+	}
+	if meta == nil {
+		meta = &RunMetadata{
+			Version:     1,
+			ProjectRoot: projectRoot,
+		}
+	}
+	return RefreshRunSuccessContext(projectRoot, runDir, cfg, meta)
+}
+
+func RefreshRunSuccessContext(projectRoot, runDir string, cfg *goalx.Config, meta *RunMetadata) (bool, error) {
+	if cfg == nil {
+		return false, fmt.Errorf("run config is nil")
+	}
+	if meta == nil {
+		loaded, err := LoadRunMetadata(RunMetadataPath(runDir))
+		if err != nil {
+			return false, err
+		}
+		if loaded != nil {
+			meta = loaded
+		} else {
+			meta = &RunMetadata{
+				Version:     1,
+				ProjectRoot: projectRoot,
+			}
+		}
+	}
+
+	beforeContext, err := LoadMemoryContextFile(MemoryContextPath(runDir))
+	if err != nil {
+		return false, err
+	}
+	beforeDomainPack, err := LoadDomainPack(DomainPackPath(runDir))
+	if err != nil {
+		return false, err
+	}
+
+	if !fileExists(SuccessModelPath(runDir)) || !fileExists(ProofPlanPath(runDir)) || !fileExists(WorkflowPlanPath(runDir)) {
+		if err := EnsureSuccessCompilation(projectRoot, runDir, cfg, meta); err != nil {
+			return false, err
+		}
+	} else {
+		if err := RefreshRunMemoryContext(runDir); err != nil {
+			return false, fmt.Errorf("refresh run memory context: %w", err)
+		}
+		domainPack, err := compileBootstrapDomainPack(projectRoot, runDir, cfg, meta)
+		if err != nil {
+			return false, err
+		}
+		if err := SaveDomainPack(DomainPackPath(runDir), domainPack); err != nil {
+			return false, err
+		}
+	}
+
+	afterContext, err := LoadMemoryContextFile(MemoryContextPath(runDir))
+	if err != nil {
+		return false, err
+	}
+	afterDomainPack, err := LoadDomainPack(DomainPackPath(runDir))
+	if err != nil {
+		return false, err
+	}
+	return !stringSliceEqual(successPriorStatements(beforeContext), successPriorStatements(afterContext)) ||
+		!stringSliceEqual(domainPackPriorIDs(beforeDomainPack), domainPackPriorIDs(afterDomainPack)), nil
+}
+
 func compileBootstrapSuccessModel(cfg *goalx.Config, objectiveContract *ObjectiveContract, goalState *GoalState, objectiveContractHash, goalHash string) *SuccessModel {
 	model := &SuccessModel{
 		Version:               1,
@@ -234,4 +309,18 @@ func hashFileSHA256(path string) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func successPriorStatements(context *MemoryContext) []string {
+	if context == nil {
+		return nil
+	}
+	return append([]string(nil), context.SuccessPriors...)
+}
+
+func domainPackPriorIDs(pack *DomainPack) []string {
+	if pack == nil {
+		return nil
+	}
+	return append([]string(nil), pack.PriorEntryIDs...)
 }

@@ -421,7 +421,7 @@ func Add(projectRoot string, args []string) (err error) {
 	} else {
 		masterNotified = true
 	}
-	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+	if _, err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 

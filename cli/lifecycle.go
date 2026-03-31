@@ -89,7 +89,7 @@ func Park(projectRoot string, args []string) error {
 	if err := UpsertSessionRuntimeState(rc.RunDir, snapshot); err != nil {
 		return fmt.Errorf("update session runtime state: %w", err)
 	}
-	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+	if _, err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 
@@ -267,7 +267,7 @@ func Resume(projectRoot string, args []string) error {
 	if _, err := AppendMasterInboxMessage(rc.RunDir, "session_resumed", "goalx resume", fmt.Sprintf("%s was resumed for reuse.", sessionName)); err == nil {
 		_, _ = DeliverControlNudge(rc.RunDir, "session-resumed:"+sessionName, "session-resumed:"+sessionName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed)
 	}
-	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+	if _, err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 
@@ -650,7 +650,7 @@ func Replace(projectRoot string, args []string) (err error) {
 	} else {
 		fmt.Fprintf(os.Stderr, "warning: notify master inbox: %v\n", err)
 	}
-	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+	if _, err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 
