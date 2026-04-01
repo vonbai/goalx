@@ -142,6 +142,40 @@ func TestBuildTargetPresenceFactsTreatsParkedSessionAsNotMissing(t *testing.T) {
 	}
 }
 
+func TestBuildTargetPresenceFactsTreatsStoppedSessionAsNotMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
+	installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-1",
+		State: "stopped",
+		Mode:  string(goalx.ModeWorker),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+
+	facts, err := BuildTargetPresenceFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name))
+	if err != nil {
+		t.Fatalf("BuildTargetPresenceFacts: %v", err)
+	}
+
+	sessionFacts := facts["session-1"]
+	if sessionFacts.State != TargetPresenceParked {
+		t.Fatalf("session state = %q, want %q for stopped session", sessionFacts.State, TargetPresenceParked)
+	}
+	if sessionFacts.WindowExpected {
+		t.Fatalf("stopped session should not expect a window: %+v", sessionFacts)
+	}
+	if !sessionFacts.SessionExists || sessionFacts.WindowExists || sessionFacts.PaneExists {
+		t.Fatalf("stopped session presence wrong: %+v", sessionFacts)
+	}
+}
+
 func TestBuildTargetPresenceFactsReportsTmuxSessionMissingForTmuxTargets(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

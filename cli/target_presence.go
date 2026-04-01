@@ -162,7 +162,8 @@ func loadParkedSessionTargets(runDir string) (map[string]bool, error) {
 	}
 	if runtimeState != nil {
 		for name, session := range runtimeState.Sessions {
-			if strings.TrimSpace(session.State) == "parked" {
+			switch strings.TrimSpace(session.State) {
+			case "parked", "stopped":
 				parked[name] = true
 			}
 		}
