@@ -498,8 +498,14 @@ func TestResolvePrompt(t *testing.T) {
 	}
 }
 
-func TestExpandSessions(t *testing.T) {
-	cfg := Config{Parallel: 3}
+func TestExpandSessionsConfiguredSessions(t *testing.T) {
+	cfg := Config{
+		Sessions: []SessionConfig{
+			{},
+			{},
+			{},
+		},
+	}
 	sessions := ExpandSessions(&cfg)
 	if len(sessions) != 3 {
 		t.Fatalf("len = %d, want 3", len(sessions))
@@ -601,7 +607,7 @@ func TestValidateConfigPlaceholder(t *testing.T) {
 	}
 }
 
-func TestValidateConfigAllowsSessionOverridesWithParallel(t *testing.T) {
+func TestValidateConfigAllowsExplicitSessions(t *testing.T) {
 	cfg := &Config{
 		Name:      "test",
 		Mode:      ModeWorker,
@@ -609,7 +615,6 @@ func TestValidateConfigAllowsSessionOverridesWithParallel(t *testing.T) {
 		Roles: RoleDefaultsConfig{
 			Worker: SessionConfig{Engine: "claude-code", Model: "sonnet"},
 		},
-		Parallel:        2,
 		Sessions:        []SessionConfig{{Hint: "a"}},
 		Target:          TargetConfig{Files: []string{"src/"}},
 		LocalValidation: LocalValidationConfig{Command: "go test"},
@@ -852,6 +857,30 @@ local_validation:
 	}
 }
 
+func TestLoadConfigLayersRejectsLegacyParallelField(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	projectGoalxDir := filepath.Join(projectRoot, ".goalx")
+	if err := os.MkdirAll(projectGoalxDir, 0o755); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	projectCfg := []byte(strings.TrimSpace(`
+parallel: 4
+master:
+  engine: codex
+  model: fast
+`) + "\n")
+	if err := os.WriteFile(filepath.Join(projectGoalxDir, "config.yaml"), projectCfg, 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	if _, err := LoadConfigLayers(projectRoot); err == nil || !strings.Contains(err.Error(), "parallel") {
+		t.Fatalf("LoadConfigLayers error = %v, want legacy parallel rejection", err)
+	}
+}
+
 func TestLoadConfigProjectDefaultsOverrideUserDefaults(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -861,12 +890,15 @@ func TestLoadConfigProjectDefaultsOverrideUserDefaults(t *testing.T) {
 		t.Fatalf("mkdir user config dir: %v", err)
 	}
 	userCfg := []byte(strings.TrimSpace(`
-parallel: 2
 master:
   engine: claude-code
   model: opus
 roles:
   worker:
+    engine: claude-code
+    model: sonnet
+sessions:
+  - hint: user-session
     engine: claude-code
     model: sonnet
 `) + "\n")
@@ -880,7 +912,6 @@ roles:
 		t.Fatalf("mkdir project config dir: %v", err)
 	}
 	projectCfg := []byte(strings.TrimSpace(`
-parallel: 4
 master:
   engine: codex
   model: fast
@@ -888,6 +919,11 @@ roles:
   worker:
     engine: codex
     model: fast
+sessions:
+  - hint: project-session-1
+    engine: codex
+    model: best
+  - hint: project-session-2
 `) + "\n")
 	if err := os.WriteFile(filepath.Join(projectGoalxDir, "config.yaml"), projectCfg, 0o644); err != nil {
 		t.Fatalf("write project config: %v", err)
@@ -915,8 +951,11 @@ local_validation:
 	if cfg.Master.Engine != "codex" || cfg.Master.Model != "fast" {
 		t.Fatalf("master engine/model = %s/%s, want codex/fast", cfg.Master.Engine, cfg.Master.Model)
 	}
-	if cfg.Parallel != 4 {
-		t.Fatalf("parallel = %d, want 4", cfg.Parallel)
+	if len(cfg.Sessions) != 2 {
+		t.Fatalf("sessions = %#v, want 2 project sessions", cfg.Sessions)
+	}
+	if cfg.Sessions[0].Hint != "project-session-1" || cfg.Sessions[1].Hint != "project-session-2" {
+		t.Fatalf("session hints = %#v, want project session hints", cfg.Sessions)
 	}
 }
 
