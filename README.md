@@ -53,9 +53,12 @@ If you operate GoalX yourself from the terminal:
 
 ```bash
 goalx run "the dashboard feels production-ready, fast, and clear on desktop and mobile"
+goalx run "the onboarding feels polished and credible for first-time users"
 ```
 
 `goalx run` is the canonical public entrypoint.
+
+Fresh `goalx run` always materializes launch intake before the run compiles its success plane.
 
 ## Engine Selection
 
@@ -210,12 +213,14 @@ Use `intent` to bias master behavior and output shape without creating separate 
 ```bash
 goalx run "we understand why ranking quality regressed and have an evidence-backed recovery plan" --intent explore
 goalx run "we understand why ranking quality regressed and have an evidence-backed recovery plan" --intent explore --readonly
+goalx run "the product feels investor-ready and the success bar is explicit before implementation starts"
 ```
 
 - `deliver` stays the default fresh-run path when the user wants the goal achieved.
 - `explore` is the fresh evidence-first path when the user wants investigation, alternatives, and reports before implementation.
 - fresh `explore` tells the master to start with evidence expansion and path comparison; implementation should follow only when current-run evidence clearly justifies it.
 - `--readonly` declares a no-edit execution boundary in `target.readonly` and surfaces it to workers through GoalX protocol/context/affordances. It is a GoalX contract boundary, not an OS sandbox.
+- fresh `goalx run` always writes a launch-time intake artifact and feeds it into the success compiler as additional run-context input.
 
 ### Extra Context
 
@@ -227,6 +232,7 @@ goalx run "audit auth flow" --intent explore --context README.md,docs/architectu
 
 - existing files and directories go to `context.files`
 - URLs and explicit `ref:` / `note:` items go to `context.refs`
+- use one comma-delimited `--context` value; escape literal commas inside one item as `\,`
 - phase runs keep saved-run boundary/evidence surfaces and merge any extra `--context` items on top
 
 ### Evolve Workflow
@@ -251,9 +257,25 @@ Use this when you want to relaunch the same run in place.
 goalx recover --run auth-audit
 ```
 
-- `recover` restarts tmux/master/sidecar for the existing run
+- `recover` restarts tmux/master/runtime-host for the existing run
 - it preserves the same run identity and run directory
 - use it after `goalx stop`, tmux loss, or a stranded run with no live master
+- if recover is blocked by exhausted budget, change budget first with `goalx budget --run auth-audit --extend 2h` (or `--clear`), then rerun `goalx recover --run auth-audit`
+
+### Runtime Budget Control
+
+Use this when the same run should keep going with a different time boundary.
+
+```bash
+goalx budget --run auth-audit
+goalx budget --run auth-audit --extend 2h
+goalx budget --run auth-audit --set-total 10h
+goalx budget --run auth-audit --clear
+```
+
+- `goalx budget` is the canonical same-run budget control surface
+- budget exhaustion blocks new work creation and recovery-style continuation, but it does not auto-drop the run
+- the master should review outputs, keep/adopt if needed, save if continuation matters, then stop explicitly
 
 ### Continue A Saved Run Into The Next Phase
 

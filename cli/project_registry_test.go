@@ -23,12 +23,13 @@ func TestProjectRegistryFocusedRunFallsBackToRunScopedTruth(t *testing.T) {
 	}
 	activeRun := writeRunSpecFixture(t, repo, activeCfg)
 	if err := SaveControlRunState(ControlRunStatePath(activeRun), &ControlRunState{
-		Version:        1,
-		LifecycleState: "active",
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
 	}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
-	if err := RenewControlLease(activeRun, "sidecar", "run_alpha", 1, time.Minute, "process", 4242); err != nil {
+	if err := RenewControlLease(activeRun, "runtime-host", "run_alpha", 1, time.Minute, "process", 4242); err != nil {
 		t.Fatalf("RenewControlLease: %v", err)
 	}
 

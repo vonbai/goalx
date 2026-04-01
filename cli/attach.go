@@ -30,11 +30,11 @@ func Attach(projectRoot string, args []string) error {
 		}
 	}
 
-	if !SessionExists(rc.TmuxSession) {
+	if !SessionExistsInRun(rc.RunDir, rc.TmuxSession) {
 		if state, err := loadDerivedRunState(projectRoot, rc.RunDir); err == nil && state != nil && derivedRunStatusOpen(state.Status) {
 			return fmt.Errorf("tmux transport unavailable for run '%s' (state=%s); use `goalx observe --run %s` or `goalx status --run %s`", rc.Name, state.Status, rc.Name, rc.Name)
 		}
 		return fmt.Errorf("tmux session %s not found (run may have stopped)", rc.TmuxSession)
 	}
-	return AttachSession(rc.TmuxSession, window)
+	return AttachSessionInRun(rc.RunDir, rc.TmuxSession, window)
 }

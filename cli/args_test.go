@@ -129,6 +129,32 @@ func TestParseLaunchOptionsSupportsRepeatedDimensions(t *testing.T) {
 	}
 }
 
+func TestParseLaunchOptionsSplitsCommaDelimitedContextItems(t *testing.T) {
+	opts, err := parseLaunchOptions([]string{
+		"audit auth",
+		"--context", "README.md,docs/arch.md,ref:ticket-123,https://example.com/spec,note:commas\\, stay inside",
+	}, goalx.ModeWorker, true)
+	if err != nil {
+		t.Fatalf("parseLaunchOptions: %v", err)
+	}
+	want := []string{
+		"README.md",
+		"docs/arch.md",
+		"ref:ticket-123",
+		"https://example.com/spec",
+		"note:commas, stay inside",
+	}
+	if got := opts.ContextPaths; len(got) != len(want) {
+		t.Fatalf("context paths len = %d, want %d: %#v", len(got), len(want), got)
+	} else {
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("context[%d] = %q, want %q (all=%#v)", i, got[i], want[i], got)
+			}
+		}
+	}
+}
+
 func TestParseLaunchOptionsRejectsRemovedLegacySelectionFlags(t *testing.T) {
 	t.Parallel()
 

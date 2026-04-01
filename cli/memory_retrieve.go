@@ -130,6 +130,10 @@ func RetrieveMemory(query MemoryQuery) ([]MemoryEntry, error) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
+	governance, err := loadMemoryPriorGovernanceSummary()
+	if err != nil {
+		return nil, err
+	}
 
 	entryIDs := stableMemoryEntryIDs(entries)
 	entryByNumericID := make(map[uint32]MemoryEntry, len(entries))
@@ -154,10 +158,11 @@ func RetrieveMemory(query MemoryQuery) ([]MemoryEntry, error) {
 
 	ranked := make([]memoryRankedEntry, 0, len(candidates))
 	for _, entry := range candidates {
-		if strings.TrimSpace(entry.SupersededBy) != "" {
+		summary := governance[entry.ID]
+		if strings.TrimSpace(firstNonEmpty(summary.SupersededBy, entry.SupersededBy)) != "" {
 			continue
 		}
-		match, rank := rankMemoryEntry(entry, query, requireSelectorMatch)
+		match, rank := rankMemoryEntry(entry, query, requireSelectorMatch, summary)
 		if !match {
 			continue
 		}
@@ -201,6 +206,10 @@ func BuildMemoryContext(query MemoryQuery) (*MemoryContext, error) {
 		case MemoryKindSecretRef:
 			if len(context.SecretRefs) < memoryContextCategoryLimit {
 				context.SecretRefs = append(context.SecretRefs, entry.Statement)
+			}
+		case MemoryKindSuccessPrior:
+			if len(context.SuccessPriors) < memoryContextCategoryLimit {
+				context.SuccessPriors = append(context.SuccessPriors, entry.Statement)
 			}
 		}
 	}
@@ -281,7 +290,7 @@ func entriesForNumericIDs(candidateIDs map[uint32]struct{}, entryByNumericID map
 	return entries
 }
 
-func rankMemoryEntry(entry MemoryEntry, query MemoryQuery, requireSelectorMatch bool) (bool, memoryEntryRank) {
+func rankMemoryEntry(entry MemoryEntry, query MemoryQuery, requireSelectorMatch bool, governance memoryPriorGovernanceSummary) (bool, memoryEntryRank) {
 	rank := memoryEntryRank{
 		SelectorCount: len(entry.Selectors),
 		TrustWeight:   memoryTrustWeight(entry),
@@ -315,6 +324,11 @@ func rankMemoryEntry(entry MemoryEntry, query MemoryQuery, requireSelectorMatch 
 		if _, ok := statementTokens[token]; ok {
 			rank.LexicalMatches++
 		}
+	}
+	if entry.Kind == MemoryKindSuccessPrior {
+		rank.TrustWeight += governance.ReinforcedCount * 8
+		rank.TrustWeight += governance.ReplayedValidCount * 10
+		rank.TrustWeight -= (entry.ContradictedCount + governance.ContradictedCount) * 12
 	}
 	return true, rank
 }

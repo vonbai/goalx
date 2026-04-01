@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	goalx "github.com/vonbai/goalx"
 )
@@ -212,7 +213,7 @@ func TestBuildContextIndexIncludesEvolveFactsOnlyForEvolveRuns(t *testing.T) {
 		"Evolve facts",
 		"Frontier state: `active`",
 		"Best experiment: `exp-1`",
-		"Open candidate count: `1`",
+		"Open candidate count: `0`",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered context missing %q:\n%s", want, rendered)
@@ -434,6 +435,111 @@ func TestBuildContextIndexIncludesObjectiveIntegritySummary(t *testing.T) {
 	}
 }
 
+func TestContextIndexIncludesQualityDebtSummary(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Version: 1,
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version: 1,
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+		Version:     2,
+		GoalVersion: 1,
+		Checks: []AcceptanceCheck{
+			{ID: "chk-1", Label: "acceptance", Command: "printf ok", State: acceptanceCheckStateActive},
+		},
+		LastResult: AcceptanceResult{CheckedAt: "2026-03-31T02:00:00Z"},
+	}); err != nil {
+		t.Fatalf("SaveAcceptanceState: %v", err)
+	}
+	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:objective",
+		GoalHash:              "sha256:goal",
+		Dimensions: []SuccessDimension{
+			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
+			{ID: "req-2", Kind: "outcome", Text: "ship research spine", Required: true},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSuccessModel: %v", err)
+	}
+	if err := SaveProofPlan(ProofPlanPath(runDir), &ProofPlan{
+		Version: 1,
+		Items: []ProofPlanItem{
+			{ID: "proof-acceptance", CoversDimensions: []string{"req-1"}, Kind: "acceptance_check", Required: true, SourceSurface: "acceptance"},
+			{ID: "proof-report", CoversDimensions: []string{"req-2"}, Kind: "report", Required: true, SourceSurface: "report"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveProofPlan: %v", err)
+	}
+	if err := SaveWorkflowPlan(WorkflowPlanPath(runDir), &WorkflowPlan{
+		Version: 1,
+		RequiredRoles: []WorkflowRoleRequirement{
+			{ID: "critic", Required: true},
+			{ID: "finisher", Required: true},
+		},
+		Gates: []string{"critic_review_present", "finisher_pass_present"},
+	}); err != nil {
+		t.Fatalf("SaveWorkflowPlan: %v", err)
+	}
+	if err := SaveDomainPack(DomainPackPath(runDir), &DomainPack{Version: 1, Domain: "generic"}); err != nil {
+		t.Fatalf("SaveDomainPack: %v", err)
+	}
+
+	index, err := BuildContextIndex(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildContextIndex: %v", err)
+	}
+	if index.QualityDebt == nil {
+		t.Fatal("quality debt summary missing")
+	}
+	if index.QualityDebt.Zero {
+		t.Fatalf("quality debt unexpectedly zero: %+v", index.QualityDebt)
+	}
+	if len(index.QualityDebt.SuccessDimensionUnowned) != 1 || index.QualityDebt.SuccessDimensionUnowned[0] != "req-2" {
+		t.Fatalf("success_dimension_unowned = %#v, want req-2", index.QualityDebt.SuccessDimensionUnowned)
+	}
+	if !index.QualityDebt.CriticGateMissing || !index.QualityDebt.FinisherGateMissing {
+		t.Fatalf("quality debt gates = %+v, want critic/finisher missing", index.QualityDebt)
+	}
+
+	rendered := renderContextIndex(index)
+	for _, want := range []string{
+		"## Quality Debt",
+		"Success dimensions unowned: `req-2`",
+		"Proof plan gaps: `proof-report`",
+		"Critic gate missing: `true`",
+		"Finisher gate missing: `true`",
+		"Only correctness evidence present: `true`",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered context missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
 func TestBuildContextIndexIncludesRunStatusAcceptanceAndCloseoutSummary(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	evidencePath := filepath.Join(runDir, "evidence.txt")
@@ -638,6 +744,110 @@ func TestBuildContextIndexIncludesExecutionSurfaceFacts(t *testing.T) {
 		"worktree kind: `dedicated`",
 		"mergeable output: `true`",
 	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered context missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestBuildContextIndexIncludesCompilerReportPath(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+
+	if err := EnsureSuccessCompilation(repo, runDir, cfg, &RunMetadata{Version: 1, ProjectRoot: repo}); err != nil {
+		t.Fatalf("EnsureSuccessCompilation: %v", err)
+	}
+	if err := SaveCompilerReport(CompilerReportPath(runDir), &CompilerReport{
+		Version:         1,
+		CompilerVersion: "compiler-v2",
+		SelectedPriorRefs: []string{
+			"prior/operator-cockpit",
+		},
+	}); err != nil {
+		t.Fatalf("SaveCompilerReport: %v", err)
+	}
+
+	index, err := BuildContextIndex(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildContextIndex: %v", err)
+	}
+	if index.CompilerInputPath != CompilerInputPath(runDir) {
+		t.Fatalf("compiler_input_path = %q, want %q", index.CompilerInputPath, CompilerInputPath(runDir))
+	}
+	if index.CompilerReportPath != CompilerReportPath(runDir) {
+		t.Fatalf("compiler_report_path = %q, want %q", index.CompilerReportPath, CompilerReportPath(runDir))
+	}
+	if index.ProtocolComposition == nil {
+		t.Fatal("protocol_composition = nil, want summary")
+	}
+	if len(index.ProtocolComposition.Philosophy) == 0 {
+		t.Fatalf("protocol composition philosophy = %v, want non-empty", index.ProtocolComposition.Philosophy)
+	}
+	if len(index.ProtocolComposition.SelectedPriorRefs) != 1 || index.ProtocolComposition.SelectedPriorRefs[0] != "prior/operator-cockpit" {
+		t.Fatalf("protocol composition selected priors = %v, want compiler report prior", index.ProtocolComposition.SelectedPriorRefs)
+	}
+
+	rendered := renderContextIndex(index)
+	for _, want := range []string{"Compiler input", "Compiler report", "## Protocol Composition", "Selected prior refs"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered context missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestBuildContextIndexIncludesIntakePathWhenPresent(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := SaveRunIntake(IntakePath(runDir), &RunIntake{
+		Version:   1,
+		Objective: cfg.Objective,
+		Intent:    runIntentDeliver,
+	}); err != nil {
+		t.Fatalf("SaveRunIntake: %v", err)
+	}
+
+	index, err := BuildContextIndex(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildContextIndex: %v", err)
+	}
+	if index.IntakePath != IntakePath(runDir) {
+		t.Fatalf("intake_path = %q, want %q", index.IntakePath, IntakePath(runDir))
+	}
+
+	rendered := renderContextIndex(index)
+	if !strings.Contains(rendered, "Intake") {
+		t.Fatalf("rendered context missing intake line:\n%s", rendered)
+	}
+}
+
+func TestBuildContextIndexIncludesBudgetSummary(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	cfg.Budget.MaxDuration = 2 * time.Hour
+	if err := SaveRunSpec(runDir, cfg); err != nil {
+		t.Fatalf("SaveRunSpec: %v", err)
+	}
+	startedAt := time.Now().UTC().Add(-30 * time.Minute).Truncate(time.Second)
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       cfg.Name,
+		Mode:      string(cfg.Mode),
+		Active:    true,
+		StartedAt: startedAt.Format(time.RFC3339),
+		UpdatedAt: startedAt.Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+
+	index, err := BuildContextIndex(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildContextIndex: %v", err)
+	}
+	if index.Budget == nil {
+		t.Fatal("context index budget missing")
+	}
+	if index.Budget.MaxDurationSeconds != int64((2*time.Hour)/time.Second) {
+		t.Fatalf("budget max_duration_seconds = %d, want %d", index.Budget.MaxDurationSeconds, int64((2*time.Hour)/time.Second))
+	}
+	rendered := renderContextIndex(index)
+	for _, want := range []string{"## Budget", "max_duration", "deadline_at"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered context missing %q:\n%s", want, rendered)
 		}

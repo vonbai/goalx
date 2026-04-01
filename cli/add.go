@@ -101,7 +101,7 @@ func Add(projectRoot string, args []string) (err error) {
 		return err
 	}
 	// Check run is active
-	if !SessionExists(rc.TmuxSession) {
+	if !SessionExistsInRun(rc.RunDir, rc.TmuxSession) {
 		return fmt.Errorf("run '%s' is not active (no tmux session)", rc.Name)
 	}
 	if err := requireRunBudgetAvailable(rc.RunDir, rc.Config); err != nil {
@@ -213,7 +213,7 @@ func Add(projectRoot string, args []string) (err error) {
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
 	}
-	checkSec, _ := normalizeSidecarInterval(rc.Config.Master.CheckInterval)
+	checkSec, _ := normalizeRuntimeHostInterval(rc.Config.Master.CheckInterval)
 	sessionLeaseTTL := time.Duration(checkSec) * time.Second * 2
 
 	// Resolve engine
@@ -357,10 +357,10 @@ func Add(projectRoot string, args []string) (err error) {
 	// Launch in tmux
 	prompt := goalx.ResolvePrompt(engines, engine, protocolPath)
 	launchCmd := buildLeaseWrappedLaunchCommand(goalxBin, rc.Name, rc.RunDir, sName, meta.RunID, meta.Epoch, sessionLeaseTTL, engineCmd, prompt)
-	if err := NewWindowWithCommand(rc.TmuxSession, windowName, workdir, launchCmd); err != nil {
+	if err := NewWindowWithCommandInRun(rc.RunDir, rc.TmuxSession, windowName, workdir, launchCmd); err != nil {
 		return fmt.Errorf("create tmux window: %w", err)
 	}
-	cleanup.Add(func() error { return cleanupSessionWindow(rc.TmuxSession, windowName) })
+	cleanup.Add(func() error { return cleanupSessionWindow(rc.RunDir, rc.TmuxSession, windowName) })
 	if err := submitControlOperationTarget(rc.RunDir, operationTarget, ControlOperationTarget{
 		Kind:              ControlOperationKindSessionDispatch,
 		State:             ControlOperationStateHandshaking,
@@ -415,13 +415,15 @@ func Add(projectRoot string, args []string) (err error) {
 	}
 	sessionCommitted = true
 	cleanup.Commit()
-	if _, err := DeliverControlNudge(rc.RunDir, "session-added:"+sName, "session-added:"+sName, rc.TmuxSession+":master", rc.Config.Master.Engine, sendAgentNudgeDetailed); err != nil {
+	if _, err := DeliverControlNudge(rc.RunDir, "session-added:"+sName, "session-added:"+sName, rc.TmuxSession+":master", rc.Config.Master.Engine, func(target, engine string) (TransportDeliveryOutcome, error) {
+		return sendAgentNudgeDetailedInRunFunc(rc.RunDir, target, engine)
+	}); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: nudge master: %v\n", err)
 		masterNotified = true
 	} else {
 		masterNotified = true
 	}
-	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+	if _, err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 

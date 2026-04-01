@@ -73,6 +73,7 @@ type startRunState struct {
 	runDirCreated      bool
 	tmuxCreated        bool
 	runWorktreeCreated bool
+	runtimeStarted     bool
 }
 
 func newStartRunState(projectRoot string, cfg *goalx.Config) *startRunState {
@@ -81,10 +82,11 @@ func newStartRunState(projectRoot string, cfg *goalx.Config) *startRunState {
 		runName = cfg.Name
 	}
 	runDir := goalx.ResolveRunDir(projectRoot, runName, cfg)
+	tmuxSession := resolveRunTmuxSession(projectRoot, runDir, runName)
 	return &startRunState{
 		projectRoot:    projectRoot,
 		runDir:         runDir,
-		tmuxSession:    goalx.TmuxSessionName(projectRoot, runName),
+		tmuxSession:    tmuxSession,
 		absProjectRoot: mustAbsPath(projectRoot),
 		runWorktree:    runWorktreePathForConfig(projectRoot, runDir, cfg),
 		runBranch:      fmt.Sprintf("goalx/%s/root", runName),
@@ -103,8 +105,13 @@ func (s *startRunState) cleanup(errp *error) {
 	if errp == nil || *errp == nil {
 		return
 	}
+	if s.runtimeStarted {
+		if stopErr := runtimeSupervisor.Stop(s.runDir); stopErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: cleanup runtime supervisor for %s: %v\n", s.runDir, stopErr)
+		}
+	}
 	if s.tmuxCreated {
-		if killErr := KillSessionIfExists(s.tmuxSession); killErr != nil {
+		if killErr := KillSessionIfExistsInRun(s.runDir, s.tmuxSession); killErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: cleanup tmux session %s: %v\n", s.tmuxSession, killErr)
 		}
 	}
@@ -187,7 +194,7 @@ func ensureStartAvailable(state *startRunState) error {
 	if _, err := os.Stat(state.runDir); err == nil {
 		return fmt.Errorf("run directory already exists: %s (use a different name or goalx drop first)", state.runDir)
 	}
-	if SessionExists(state.tmuxSession) {
+	if SessionExistsInRun(state.runDir, state.tmuxSession) {
 		return fmt.Errorf("tmux session already exists: %s (goalx stop first)", state.tmuxSession)
 	}
 	return nil
@@ -211,6 +218,9 @@ func bootstrapStartWorkspace(state *startRunState, cfg *goalx.Config, selectionS
 	}
 	if err := EnsureProjectGoalxIgnoredWithConfig(state.projectRoot, cfg); err != nil {
 		return fmt.Errorf("bootstrap .goalx ignore: %w", err)
+	}
+	if _, err := ensureRunTmuxLocator(state.projectRoot, state.runDir, cfg.Name); err != nil {
+		return fmt.Errorf("write tmux locator: %w", err)
 	}
 	if err := SaveRunSpec(state.runDir, cfg); err != nil {
 		return fmt.Errorf("write run spec: %w", err)
@@ -303,6 +313,12 @@ func bootstrapStartDurables(projectRoot string, state *startRunState, cfg *goalx
 	if err := SaveRunMetadata(RunMetadataPath(state.runDir), meta); err != nil {
 		return "", "", nil, 0, "", fmt.Errorf("write run metadata: %w", err)
 	}
+	if err := ensureRunIntake(state.runDir, cfg, meta); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("write intake: %w", err)
+	}
+	if err := EnsureSuccessCompilation(projectRoot, state.runDir, cfg, meta); err != nil {
+		return "", "", nil, 0, "", fmt.Errorf("compile success plane: %w", err)
+	}
 	if err := ensureExperimentsSurface(state.runDir); err != nil {
 		return "", "", nil, 0, "", fmt.Errorf("init experiments surface: %w", err)
 	}
@@ -369,7 +385,7 @@ func bootstrapStartDurables(projectRoot string, state *startRunState, cfg *goalx
 		return "", "", nil, 0, "", fmt.Errorf("focus active run: %w", err)
 	}
 
-	checkSec, warning := normalizeSidecarInterval(cfg.Master.CheckInterval)
+	checkSec, warning := normalizeRuntimeHostInterval(cfg.Master.CheckInterval)
 	return masterCmd, masterPrompt, meta, checkSec, warning, nil
 }
 
@@ -380,7 +396,7 @@ func launchStartRuntime(state *startRunState, cfg *goalx.Config, meta *RunMetada
 	}
 	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
 	masterLaunch := buildMasterLaunchCommand(goalxBin, cfg.Name, state.runDir, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
-	if err := NewSessionWithCommand(state.tmuxSession, "master", state.runWorktree, masterLaunch); err != nil {
+	if err := NewSessionWithCommandInRun(state.runDir, state.tmuxSession, "master", state.runWorktree, masterLaunch); err != nil {
 		return fmt.Errorf("tmux new-session: %w", err)
 	}
 	state.tmuxCreated = true
@@ -388,10 +404,16 @@ func launchStartRuntime(state *startRunState, cfg *goalx.Config, meta *RunMetada
 		return fmt.Errorf("persist master pane pid: %w", err)
 	}
 
-	if err := launchRunSidecar(state.projectRoot, cfg.Name, time.Duration(checkSec)*time.Second); err != nil {
-		return fmt.Errorf("launch sidecar: %w", err)
+	if _, err := runtimeSupervisor.Start(RuntimeSupervisorStartSpec{
+		ProjectRoot: state.projectRoot,
+		RunName:     cfg.Name,
+		RunDir:      state.runDir,
+		Interval:    time.Duration(checkSec) * time.Second,
+	}); err != nil {
+		return fmt.Errorf("launch runtime supervisor: %w", err)
 	}
-	if err := RefreshRunGuidance(state.projectRoot, cfg.Name, state.runDir); err != nil {
+	state.runtimeStarted = true
+	if _, err := RefreshRunGuidance(state.projectRoot, cfg.Name, state.runDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 
@@ -530,7 +552,6 @@ func buildMasterProtocolData(projectRoot, runDir, tmuxSession string, cfg *goalx
 		ControlRunIdentityPath: ControlRunIdentityPath(runDir),
 		ControlRunStatePath:    ControlRunStatePath(runDir),
 		MasterLeasePath:        ControlLeasePath(runDir, "master"),
-		SidecarLeasePath:       ControlLeasePath(runDir, "sidecar"),
 		LivenessPath:           LivenessPath(runDir),
 		WorktreeSnapshotPath:   WorktreeSnapshotPath(runDir),
 		ControlRemindersPath:   ControlRemindersPath(runDir),

@@ -36,6 +36,10 @@ func MemoryProposalsDir() string {
 	return filepath.Join(MemoryRootDir(), "proposals")
 }
 
+func MemoryPriorGovernancePath() string {
+	return filepath.Join(MemoryRootDir(), "success-prior-reports.jsonl")
+}
+
 func MemoryIndexesDir() string {
 	return filepath.Join(MemoryRootDir(), "indexes")
 }
@@ -58,6 +62,8 @@ func MemoryEntryPath(kind MemoryKind) string {
 		return filepath.Join(MemoryEntriesDir(), "pitfalls.jsonl")
 	case MemoryKindSecretRef:
 		return filepath.Join(MemoryEntriesDir(), "secret_refs.jsonl")
+	case MemoryKindSuccessPrior:
+		return filepath.Join(MemoryEntriesDir(), "success_priors.jsonl")
 	default:
 		panic("unknown memory kind")
 	}

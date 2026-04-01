@@ -44,7 +44,7 @@ func TestObserveShowsDegradedRunWithoutTmux(t *testing.T) {
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
 
 	runName, runDir, runStateBefore, statusBefore := writeReadOnlyRunFixture(t, repo)
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(runDir, "master.jsonl"), []byte("{\"round\":1,\"desc\":\"master still coordinating\",\"status\":\"active\"}\n"), 0o644); err != nil {
@@ -77,8 +77,8 @@ func TestObservePrefersCanonicalControlFactsOverStaleActivitySnapshot(t *testing
 	if err := RenewControlLease(runDir, "master", meta.RunID, meta.Epoch, time.Minute, "tmux", 1234); err != nil {
 		t.Fatalf("RenewControlLease master: %v", err)
 	}
-	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
-		t.Fatalf("ExpireControlLease sidecar: %v", err)
+	if err := ExpireControlLease(runDir, "runtime-host"); err != nil {
+		t.Fatalf("ExpireControlLease runtime-host: %v", err)
 	}
 	if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{
 		Version: 1,
@@ -113,7 +113,7 @@ func TestObservePrefersCanonicalControlFactsOverStaleActivitySnapshot(t *testing
 		},
 		Actors: map[string]ActivityActor{
 			"master":  {Lease: "healthy"},
-			"sidecar": {Lease: "expired"},
+			"runtime-host": {Lease: "expired"},
 		},
 	}); err != nil {
 		t.Fatalf("SaveActivitySnapshot: %v", err)
@@ -130,7 +130,7 @@ func TestObservePrefersCanonicalControlFactsOverStaleActivitySnapshot(t *testing
 	for _, want := range []string{
 		"unread_inbox=1",
 		"master_lease=healthy",
-		"sidecar_lease=expired",
+			"runtime_host=expired",
 		"reminders_due=1",
 		"deliveries_failed=1",
 	} {

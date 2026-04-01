@@ -17,7 +17,7 @@ func TestScanLivenessReportsHealthyMasterAndSession(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -27,7 +27,7 @@ func TestScanLivenessReportsHealthyMasterAndSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestScanLivenessNotifiesMasterWhenSessionDies(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -87,7 +87,7 @@ func TestScanLivenessNotifiesMasterWhenSessionDies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestScanLivenessDoesNotNotifyMasterWhenParkedSessionDies(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -166,7 +166,7 @@ func TestScanLivenessDoesNotNotifyMasterWhenParkedSessionDies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -221,14 +221,14 @@ func TestScanLivenessDoesNotNotifyMasterWhenParkedSessionDies(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickWritesLivenessState(t *testing.T) {
+func TestRunRuntimeHostTickWritesLivenessState(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -238,7 +238,7 @@ func TestRunSidecarTickWritesLivenessState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -256,8 +256,8 @@ func TestRunSidecarTickWritesLivenessState(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	state, err := LoadLivenessState(LivenessPath(runDir))

@@ -126,6 +126,109 @@ func TestProcedurePromotesAfterFailureAndSuccess(t *testing.T) {
 	}
 }
 
+func TestSuccessPriorPromotesAfterRepeatedRuns(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	now := time.Date(2026, time.March, 31, 10, 0, 0, 0, time.UTC)
+	if err := writeProposalShard(now, []MemoryProposal{
+		{
+			ID:        "prop_success_prior",
+			State:     "proposed",
+			Kind:      MemoryKindSuccessPrior,
+			Statement: "frontend product goals require critique and finisher proof before closeout",
+			Selectors: map[string]string{"project_id": "demo", "intent": "worker"},
+			Evidence: []MemoryEvidence{
+				{Kind: "intervention_log", Path: "/tmp/intervention-log.jsonl"},
+				{Kind: "summary", Path: "/tmp/summary.md"},
+			},
+			SourceRuns: []string{"run-1", "run-2"},
+			CreatedAt:  "2026-03-31T10:00:00Z",
+			UpdatedAt:  "2026-03-31T10:00:00Z",
+		},
+	}); err != nil {
+		t.Fatalf("writeProposalShard: %v", err)
+	}
+
+	if err := PromoteMemoryProposals(); err != nil {
+		t.Fatalf("PromoteMemoryProposals: %v", err)
+	}
+
+	entries := loadCanonicalEntriesByKind(t, MemoryKindSuccessPrior)
+	if len(entries) != 1 {
+		t.Fatalf("success_prior entries len = %d, want 1", len(entries))
+	}
+	entry := entries[0]
+	if entry.VerificationState != "repeated" {
+		t.Fatalf("verification_state = %q, want repeated", entry.VerificationState)
+	}
+	if entry.Statement != "frontend product goals require critique and finisher proof before closeout" {
+		t.Fatalf("statement = %q", entry.Statement)
+	}
+}
+
+func TestPromoteMemoryProposalsReinforcesExistingSuccessPrior(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := EnsureMemoryStore(); err != nil {
+		t.Fatalf("EnsureMemoryStore: %v", err)
+	}
+	writeCanonicalMemoryEntries(t, map[MemoryKind][]MemoryEntry{
+		MemoryKindSuccessPrior: {
+			{
+				ID:                stableMemoryEntryID(MemoryKindSuccessPrior, map[string]string{"project_id": "demo"}, "operator runs require finisher proof"),
+				Kind:              MemoryKindSuccessPrior,
+				Statement:         "operator runs require finisher proof",
+				Selectors:         map[string]string{"project_id": "demo"},
+				VerificationState: "repeated",
+				Confidence:        "grounded",
+				SourceRuns:        []string{"run-1", "run-2"},
+				CreatedAt:         "2026-03-31T10:00:00Z",
+				UpdatedAt:         "2026-03-31T10:00:00Z",
+			},
+		},
+	})
+
+	now := time.Date(2026, time.March, 31, 11, 0, 0, 0, time.UTC)
+	if err := writeProposalShard(now, []MemoryProposal{
+		{
+			ID:        "prop_success_prior_reinforce",
+			State:     "proposed",
+			Kind:      MemoryKindSuccessPrior,
+			Statement: "operator runs require finisher proof",
+			Selectors: map[string]string{"project_id": "demo"},
+			Evidence: []MemoryEvidence{
+				{Kind: "summary", Path: "/tmp/summary-2.md"},
+			},
+			SourceRuns: []string{"run-3", "run-4"},
+			CreatedAt:  "2026-03-31T11:00:00Z",
+			UpdatedAt:  "2026-03-31T11:00:00Z",
+		},
+	}); err != nil {
+		t.Fatalf("writeProposalShard: %v", err)
+	}
+
+	if err := PromoteMemoryProposals(); err != nil {
+		t.Fatalf("PromoteMemoryProposals: %v", err)
+	}
+
+	events, err := LoadMemoryPriorGovernanceEvents()
+	if err != nil {
+		t.Fatalf("LoadMemoryPriorGovernanceEvents: %v", err)
+	}
+	found := false
+	for _, event := range events {
+		if event.Kind == MemoryPriorGovernanceKindReinforced {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("governance events = %+v, want reinforced event", events)
+	}
+}
+
 func TestSupersedeMemoryEntryMarksPriorEntryInactive(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -12,8 +12,7 @@ When set, GoalX still keeps durable run state under `~/.goalx/runs/...`, but pla
 
 ```bash
 goalx run "goal"
-goalx run "goal" --intent research
-goalx run "goal" --intent develop
+goalx run "goal" --intent explore
 goalx run "goal" --intent evolve --budget 8h
 goalx run --from RUN --intent debate
 goalx run --from RUN --intent implement
@@ -36,10 +35,11 @@ goalx attach --run NAME
 ```bash
 goalx tell [--run NAME] [master|session-N] "message"
 goalx tell --urgent [--run NAME] [master|session-N] "message"
-goalx add --run NAME --mode research "goal"
-goalx add --run NAME --mode develop --worktree "goal"
+goalx add --run NAME "goal"
+goalx add --run NAME --worktree "goal"
 goalx replace --run NAME session-N --engine ENGINE --model MODEL --effort LEVEL
 goalx dimension --run NAME session-N --set depth,evidence
+goalx budget --run NAME --extend 2h
 goalx focus --run NAME
 ```
 
@@ -91,6 +91,7 @@ goalx recover [--run RUN]
 ## Recovery Semantics
 
 - `goalx recover --run NAME` relaunches the same stopped or stranded run in place.
+- `goalx recover --run NAME` does not mutate budget. If budget is exhausted, use `goalx budget --run NAME --extend ...` or `--clear` first, then recover.
 - `goalx save NAME` plus `goalx run --from NAME --intent ...` starts a new phase from saved artifacts.
 - Do not use `goalx run --from ...` as a substitute for same-run recovery.
 

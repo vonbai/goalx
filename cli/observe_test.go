@@ -502,8 +502,8 @@ func TestObserveShowsEvolveSummaryOnlyForEvolveRuns(t *testing.T) {
 		"### Evolve",
 		"frontier_state=active",
 		"best_experiment_id=exp-1",
-		"open_candidate_count=2",
-		"open_candidate_ids=exp-1,exp-2",
+		"open_candidate_count=1",
+		"open_candidate_ids=exp-2",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("observe output missing %q:\n%s", want, out)
@@ -647,7 +647,7 @@ func TestObserveShowsBlockedRequiredFrontierAdvisory(t *testing.T) {
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
-	for _, holder := range []string{"master", "sidecar", "session-1"} {
+	for _, holder := range []string{"master", "runtime-host", "session-1"} {
 		if err := RenewControlLease(runDir, holder, meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
 			t.Fatalf("RenewControlLease %s: %v", holder, err)
 		}
@@ -939,6 +939,181 @@ func TestObserveWarnsAboutMasterOrphanedAndPrematureBlockedFrontierFacts(t *test
 		"Required frontier:",
 		"req-1 owner=master execution_state=probing",
 		"req-2 owner=master execution_state=blocked blocked_by=claimed blocker before runtime exhausted",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("observe output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestObserveWarnsAboutControlGapFacts(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := os.WriteFile(RunStatusPath(runDir), []byte(`{"version":1,"phase":"working","required_remaining":2,"open_required_ids":["req-1"],"active_sessions":["session-9"],"updated_at":"2026-03-30T19:12:54Z"}`), 0o644); err != nil {
+		t.Fatalf("write status record: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version:   1,
+		UpdatedAt: "2026-03-30T19:12:54Z",
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfaceActive,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfacePending,
+				},
+			},
+			"req-2": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfaceActive,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfacePending,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := SaveIntegrationState(IntegrationStatePath(runDir), &IntegrationState{
+		Version:             1,
+		CurrentExperimentID: "exp-2",
+		CurrentBranch:       "goalx/guidance-run/root",
+		CurrentCommit:       "abc123",
+		UpdatedAt:           "2026-03-31T01:05:35Z",
+	}); err != nil {
+		t.Fatalf("SaveIntegrationState: %v", err)
+	}
+	for _, session := range []SessionRuntimeState{
+		{Name: "session-5", State: "idle", Mode: string(goalx.ModeWorker)},
+		{Name: "session-4", State: "parked", Mode: string(goalx.ModeWorker)},
+	} {
+		if err := UpsertSessionRuntimeState(runDir, session); err != nil {
+			t.Fatalf("UpsertSessionRuntimeState %s: %v", session.Name, err)
+		}
+	}
+
+	out := captureStdout(t, func() {
+		if err := Observe(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"### advisories",
+		"Control gap: status_drift",
+		"Control gap: coordination_stale",
+		"Control gap: serialized_required_frontier",
+		"active_required_owners=session-5",
+		"reusable_sessions=session-4",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("observe output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestObserveWarnsAboutQualityDebt(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Version: 1,
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version: 1,
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+		Version:     2,
+		GoalVersion: 1,
+		Checks: []AcceptanceCheck{
+			{ID: "chk-1", Label: "acceptance", Command: "printf ok", State: acceptanceCheckStateActive},
+		},
+		LastResult: AcceptanceResult{CheckedAt: "2026-03-31T02:00:00Z"},
+	}); err != nil {
+		t.Fatalf("SaveAcceptanceState: %v", err)
+	}
+	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:objective",
+		GoalHash:              "sha256:goal",
+		Dimensions: []SuccessDimension{
+			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
+			{ID: "req-2", Kind: "outcome", Text: "ship research spine", Required: true},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSuccessModel: %v", err)
+	}
+	if err := SaveProofPlan(ProofPlanPath(runDir), &ProofPlan{
+		Version: 1,
+		Items: []ProofPlanItem{
+			{ID: "proof-acceptance", CoversDimensions: []string{"req-1"}, Kind: "acceptance_check", Required: true, SourceSurface: "acceptance"},
+			{ID: "proof-report", CoversDimensions: []string{"req-2"}, Kind: "report", Required: true, SourceSurface: "report"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveProofPlan: %v", err)
+	}
+	if err := SaveWorkflowPlan(WorkflowPlanPath(runDir), &WorkflowPlan{
+		Version: 1,
+		RequiredRoles: []WorkflowRoleRequirement{
+			{ID: "critic", Required: true},
+			{ID: "finisher", Required: true},
+		},
+		Gates: []string{"critic_review_present", "finisher_pass_present"},
+	}); err != nil {
+		t.Fatalf("SaveWorkflowPlan: %v", err)
+	}
+	if err := SaveDomainPack(DomainPackPath(runDir), &DomainPack{Version: 1, Domain: "generic"}); err != nil {
+		t.Fatalf("SaveDomainPack: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Observe(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"### advisories",
+		"Quality debt:",
+		"success_dimension_unowned=req-2",
+		"proof_plan_gap=proof-report",
+		"critic_gate_missing",
+		"finisher_gate_missing",
+		"only_correctness_evidence_present",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("observe output missing %q:\n%s", want, out)

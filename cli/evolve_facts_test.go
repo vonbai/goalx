@@ -117,6 +117,33 @@ func TestBuildEvolveFactsUsesIntegratedBestExperiment(t *testing.T) {
 	}
 }
 
+func TestBuildEvolveFactsExcludesIntegratedBestFromOpenCandidates(t *testing.T) {
+	runDir := t.TempDir()
+	writeEvolveMetadataForTest(t, runDir)
+	appendExperimentEventForTest(t, runDir, `{"version":1,"kind":"experiment.created","at":"2026-03-29T10:00:00Z","actor":"master","body":{"experiment_id":"exp-1","created_at":"2026-03-29T10:00:00Z"}}`)
+	appendExperimentEventForTest(t, runDir, `{"version":1,"kind":"experiment.created","at":"2026-03-29T10:02:00Z","actor":"master","body":{"experiment_id":"exp-2","created_at":"2026-03-29T10:02:00Z"}}`)
+	if err := SaveIntegrationState(IntegrationStatePath(runDir), &IntegrationState{
+		Version:             1,
+		CurrentExperimentID: "exp-2",
+		CurrentBranch:       "goalx/demo/root",
+		CurrentCommit:       "abc1234",
+		UpdatedAt:           "2026-03-29T10:03:00Z",
+	}); err != nil {
+		t.Fatalf("SaveIntegrationState: %v", err)
+	}
+
+	facts, err := BuildEvolveFacts(runDir)
+	if err != nil {
+		t.Fatalf("BuildEvolveFacts: %v", err)
+	}
+	if facts == nil {
+		t.Fatal("BuildEvolveFacts returned nil facts")
+	}
+	if got := facts.OpenCandidateIDs; !reflect.DeepEqual(got, []string{"exp-1"}) {
+		t.Fatalf("OpenCandidateIDs = %v, want [exp-1]", got)
+	}
+}
+
 func writeEvolveMetadataForTest(t *testing.T, runDir string) {
 	t.Helper()
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{

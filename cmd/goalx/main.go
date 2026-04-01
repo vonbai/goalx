@@ -21,6 +21,7 @@ Usage:
   goalx start   "objective" [flags]   Create and start a run directly from CLI flags
   goalx list                          List all runs (active / completed / archived)
   goalx status  [--run RUN] [session] Show current run progress and control summary
+  goalx budget  [--run RUN]           Show the current run budget boundary
   goalx context [--run RUN] [--json]    Show the run context index
   goalx afford  [--run RUN] [target] [--json] Show run-scoped command affordances
   goalx attach  [--run RUN] [window]  Attach to tmux session (default: master)
@@ -65,8 +66,10 @@ var (
 	mainStop             = cli.Stop
 	mainRecover          = cli.Recover
 	mainWait             = cli.Wait
-	mainSidecar          = cli.Sidecar
+	mainRuntimeHost      = cli.RuntimeHostCommand
 	mainLeaseLoop        = cli.LeaseLoop
+	mainTargetRunner     = cli.TargetRunnerCommand
+	mainBudget           = cli.Budget
 	mainContext          = cli.Context
 	mainAfford           = cli.Afford
 	mainDurable          = cli.Durable
@@ -127,6 +130,8 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.List(cwd, args)
 	case "status":
 		return cli.Status(cwd, args)
+	case "budget":
+		return mainBudget(cwd, args)
 	case "context":
 		return mainContext(cwd, args)
 	case "afford":
@@ -185,10 +190,12 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.Observe(cwd, args)
 	case "claude-hook":
 		return cli.ClaudeHook(cwd, args)
-	case "sidecar":
-		return mainSidecar(cwd, args)
+	case "runtime-host":
+		return mainRuntimeHost(cwd, args)
 	case "lease-loop":
 		return mainLeaseLoop(cwd, args)
+	case "target-runner":
+		return mainTargetRunner(cwd, args)
 	default:
 		return errUnknownCommand
 	}

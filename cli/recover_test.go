@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,9 +25,10 @@ func TestRecoverRelaunchesStoppedRunInPlace(t *testing.T) {
 		t.Fatalf("mkdir run worktree: %v", err)
 	}
 	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
-		Version:        1,
-		LifecycleState: "stopped",
-		UpdatedAt:      "2026-03-29T00:00:00Z",
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "stopped",
+		UpdatedAt:       "2026-03-29T00:00:00Z",
 	}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
@@ -42,14 +44,10 @@ func TestRecoverRelaunchesStoppedRunInPlace(t *testing.T) {
 		t.Fatalf("SaveRunRuntimeState: %v", err)
 	}
 
-	origLaunchSidecar := launchRunSidecar
-	defer func() { launchRunSidecar = origLaunchSidecar }()
-	var gotSidecarProjectRoot, gotSidecarRunName string
-	var gotSidecarInterval time.Duration
-	launchRunSidecar = func(projectRoot, runName string, interval time.Duration) error {
-		gotSidecarProjectRoot, gotSidecarRunName, gotSidecarInterval = projectRoot, runName, interval
-		return nil
-	}
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	supervisor := &runtimeSupervisorStub{}
+	runtimeSupervisor = supervisor
 
 	if err := Recover(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Recover: %v", err)
@@ -67,8 +65,8 @@ func TestRecoverRelaunchesStoppedRunInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState == nil || controlState.LifecycleState != "active" {
-		t.Fatalf("control state after recover = %+v, want lifecycle_state active", controlState)
+	if controlState == nil || controlState.GoalState != "open" || controlState.ContinuityState != "running" {
+		t.Fatalf("control state after recover = %+v, want open/running", controlState)
 	}
 
 	reg, err := LoadProjectRegistry(repo)
@@ -96,8 +94,17 @@ func TestRecoverRelaunchesStoppedRunInPlace(t *testing.T) {
 		}
 	}
 
-	if gotSidecarProjectRoot != repo || gotSidecarRunName != runName || gotSidecarInterval <= 0 {
-		t.Fatalf("launchRunSidecar got (%q, %q, %v), want (%q, %q, >0)", gotSidecarProjectRoot, gotSidecarRunName, gotSidecarInterval, repo, runName)
+	if supervisor.stopCalls != 1 || supervisor.lastStopRunDir != runDir {
+		t.Fatalf("runtime supervisor stop = calls:%d runDir:%q, want calls=1 runDir=%q", supervisor.stopCalls, supervisor.lastStopRunDir, runDir)
+	}
+	if supervisor.startCalls != 1 {
+		t.Fatalf("runtime supervisor start calls = %d, want 1", supervisor.startCalls)
+	}
+	if supervisor.lastStartSpec.ProjectRoot != repo || supervisor.lastStartSpec.RunName != runName || supervisor.lastStartSpec.RunDir != runDir {
+		t.Fatalf("runtime supervisor start spec = %+v, want project=%q run=%q runDir=%q", supervisor.lastStartSpec, repo, runName, runDir)
+	}
+	if supervisor.lastStartSpec.Interval <= 0 {
+		t.Fatalf("runtime supervisor interval = %v, want > 0", supervisor.lastStartSpec.Interval)
 	}
 
 	if _, err := os.Stat(filepath.Join(stateDir, "session_"+goalx.TmuxSessionName(repo, runName))); err != nil {
@@ -119,8 +126,9 @@ func TestRecoverRejectsAlreadyActiveRun(t *testing.T) {
 		t.Fatalf("seed tmux session marker: %v", err)
 	}
 	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
-		Version:        1,
-		LifecycleState: "active",
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
 	}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
@@ -131,6 +139,75 @@ func TestRecoverRejectsAlreadyActiveRun(t *testing.T) {
 	}
 }
 
+func TestRecoverRewritesLegacyLongTmuxLocator(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	_, stateDir := installRecoverFakeTmux(t, false)
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	runWT := RunWorktreePath(runDir)
+	if err := os.MkdirAll(runWT, 0o755); err != nil {
+		t.Fatalf("mkdir run worktree: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "stopped",
+		UpdatedAt:       "2026-03-29T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(goalx.ModeWorker),
+		Active:    false,
+		StartedAt: "2026-03-29T00:00:00Z",
+		StoppedAt: "2026-03-29T00:10:00Z",
+		UpdatedAt: "2026-03-29T00:10:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+	legacySocketDir := filepath.Join(ControlDir(runDir), "tmux")
+	if err := SaveTmuxLocator(TmuxLocatorPath(runDir), &TmuxLocator{
+		Version:   1,
+		Session:   goalx.TmuxSessionName(repo, runName),
+		SocketDir: legacySocketDir,
+	}); err != nil {
+		t.Fatalf("SaveTmuxLocator legacy: %v", err)
+	}
+
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	supervisor := &runtimeSupervisorStub{}
+	runtimeSupervisor = supervisor
+
+	if err := Recover(repo, []string{"--run", runName}); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	locator, err := LoadTmuxLocator(TmuxLocatorPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadTmuxLocator: %v", err)
+	}
+	if locator == nil {
+		t.Fatal("locator missing after recover")
+	}
+	if locator.SocketDir == legacySocketDir {
+		t.Fatalf("recover did not rewrite legacy tmux socket dir: %+v", locator)
+	}
+	if !strings.HasPrefix(locator.SocketDir, filepath.Join(os.TempDir(), "goalx-tmux")+string(os.PathSeparator)) {
+		t.Fatalf("recover wrote unexpected tmux socket dir: %+v", locator)
+	}
+
+	if _, err := os.Stat(filepath.Join(stateDir, "session_"+goalx.TmuxSessionName(repo, runName))); err != nil {
+		t.Fatalf("tmux session marker missing after recover: %v", err)
+	}
+}
+
 func TestRecoverRequiresExistingRun(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -138,6 +215,266 @@ func TestRecoverRequiresExistingRun(t *testing.T) {
 	repo := t.TempDir()
 	if err := Recover(repo, []string{"--run", "missing"}); err == nil || !strings.Contains(err.Error(), "run not found") {
 		t.Fatalf("Recover error = %v, want run not found", err)
+	}
+}
+
+func TestRecoverRejectsLegacyGuidedIntakeRun(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	_, _ = installRecoverFakeTmux(t, false)
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	runWT := RunWorktreePath(runDir)
+	if err := os.MkdirAll(runWT, 0o755); err != nil {
+		t.Fatalf("mkdir run worktree: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "stopped",
+		UpdatedAt:       "2026-03-29T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(goalx.ModeWorker),
+		Active:    false,
+		StartedAt: "2026-03-29T00:00:00Z",
+		StoppedAt: "2026-03-29T00:10:00Z",
+		UpdatedAt: "2026-03-29T00:10:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+	if err := os.MkdirAll(ControlDir(runDir), 0o755); err != nil {
+		t.Fatalf("mkdir control dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ControlDir(runDir), "guided-intake.json"), []byte(`{"version":1,"guided":true,"objective":"legacy","intent":"deliver"}`), 0o644); err != nil {
+		t.Fatalf("write legacy guided intake: %v", err)
+	}
+
+	err := Recover(repo, []string{"--run", runName})
+	if err == nil {
+		t.Fatal("Recover unexpectedly succeeded for legacy guided-intake run")
+	}
+	if !strings.Contains(err.Error(), "legacy") || !strings.Contains(err.Error(), "guided-intake.json") {
+		t.Fatalf("Recover error = %v, want legacy guided-intake rejection", err)
+	}
+}
+
+func TestRecoverStaysBlockedUntilBudgetChanges(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	logPath, stateDir := installRecoverFakeTmux(t, false)
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	runWT := RunWorktreePath(runDir)
+	if err := os.MkdirAll(runWT, 0o755); err != nil {
+		t.Fatalf("mkdir run worktree: %v", err)
+	}
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	cfg.Budget.MaxDuration = time.Second
+	if err := SaveRunSpec(runDir, cfg); err != nil {
+		t.Fatalf("SaveRunSpec: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "stopped",
+		UpdatedAt:       "2026-03-29T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(goalx.ModeWorker),
+		Active:    false,
+		StartedAt: "2000-01-01T00:00:00Z",
+		StoppedAt: "2000-01-01T01:00:00Z",
+		UpdatedAt: "2000-01-01T01:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+
+	err = Recover(repo, []string{"--run", runName})
+	if err == nil || !strings.Contains(err.Error(), "budget exhausted") {
+		t.Fatalf("Recover error = %v, want budget exhausted", err)
+	}
+
+	if err := Budget(repo, []string{"--run", runName, "--clear"}); err != nil {
+		t.Fatalf("Budget --clear: %v", err)
+	}
+
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	supervisor := &runtimeSupervisorStub{}
+	runtimeSupervisor = supervisor
+
+	if err := Recover(repo, []string{"--run", runName}); err != nil {
+		t.Fatalf("Recover after budget clear: %v", err)
+	}
+	if supervisor.startCalls != 1 {
+		t.Fatalf("runtime supervisor start calls = %d, want 1", supervisor.startCalls)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "session_"+goalx.TmuxSessionName(repo, runName))); err != nil {
+		t.Fatalf("tmux session marker missing after recover: %v", err)
+	}
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	if !strings.Contains(string(logData), filepath.Join(runDir, "master.md")) {
+		t.Fatalf("tmux log missing master relaunch:\n%s", string(logData))
+	}
+}
+
+func TestRecoverRejectsBootstrapInProgress(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
+		UpdatedAt:       "2026-03-31T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(goalx.ModeWorker),
+		Active:    true,
+		StartedAt: "2026-03-31T00:00:00Z",
+		UpdatedAt: "2026-03-31T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+	if err := submitControlOperationTarget(runDir, RunBootstrapOperationKey(), ControlOperationTarget{
+		Kind:              ControlOperationKindRunBootstrap,
+		State:             ControlOperationStatePreparing,
+		Summary:           "launching master runtime",
+		PendingConditions: []string{"master_window_ready"},
+	}); err != nil {
+		t.Fatalf("submitControlOperationTarget: %v", err)
+	}
+
+	supervisor := stubRuntimeSupervisor(t)
+
+	err := Recover(repo, []string{"--run", runName})
+	if err == nil || !strings.Contains(err.Error(), "bootstrap is still in progress") {
+		t.Fatalf("Recover error = %v, want bootstrap-in-progress rejection", err)
+	}
+	if supervisor.stopCalls != 0 || supervisor.startCalls != 0 {
+		t.Fatalf("runtime supervisor should not run during bootstrap conflict: %+v", supervisor)
+	}
+}
+
+func TestRecoverPromotesSuccessPriorBeforeRelaunch(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	_, _ = installRecoverFakeTmux(t, false)
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	runWT := RunWorktreePath(runDir)
+	if err := os.MkdirAll(runWT, 0o755); err != nil {
+		t.Fatalf("mkdir run worktree: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "stopped",
+		UpdatedAt:       "2026-03-29T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(goalx.ModeWorker),
+		Active:    false,
+		StartedAt: "2026-03-29T00:00:00Z",
+		StoppedAt: "2026-03-29T00:10:00Z",
+		UpdatedAt: "2026-03-29T00:10:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+
+	now := time.Date(2026, time.March, 31, 14, 0, 0, 0, time.UTC)
+	if err := writeProposalShard(now, []MemoryProposal{
+		{
+			ID:        "prop_success_prior_recover",
+			State:     "proposed",
+			Kind:      MemoryKindSuccessPrior,
+			Statement: "recover should relaunch with the latest success prior snapshot",
+			Selectors: map[string]string{"project_id": goalx.ProjectID(repo)},
+			Evidence: []MemoryEvidence{
+				{Kind: "intervention_log", Path: "/tmp/intervention-log.jsonl"},
+				{Kind: "summary", Path: "/tmp/summary.md"},
+			},
+			SourceRuns: []string{"run-1", "run-2"},
+			CreatedAt:  "2026-03-31T14:00:00Z",
+			UpdatedAt:  "2026-03-31T14:00:00Z",
+		},
+	}); err != nil {
+		t.Fatalf("writeProposalShard: %v", err)
+	}
+
+	_ = stubRuntimeSupervisor(t)
+
+	if err := Recover(repo, []string{"--run", runName}); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	entries := loadCanonicalEntriesByKind(t, MemoryKindSuccessPrior)
+	if len(entries) != 1 {
+		t.Fatalf("success prior entries = %+v, want one promoted entry", entries)
+	}
+
+	pack, err := LoadDomainPack(DomainPackPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadDomainPack: %v", err)
+	}
+	if pack == nil || len(pack.PriorEntryIDs) != 1 {
+		t.Fatalf("domain pack = %+v, want one prior entry id", pack)
+	}
+	if !slices.Contains(pack.Signals, "success_prior_present") {
+		t.Fatalf("domain pack signals = %v, want success_prior_present", pack.Signals)
+	}
+	compilerInput, err := LoadCompilerInput(CompilerInputPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadCompilerInput: %v", err)
+	}
+	if compilerInput == nil || len(compilerInput.SelectedPriorRefs) != 1 {
+		t.Fatalf("compiler input = %+v, want one selected prior ref", compilerInput)
+	}
+	composition, err := buildProtocolComposition(runDir, ProtocolComposition{})
+	if err != nil {
+		t.Fatalf("buildProtocolComposition: %v", err)
+	}
+	if len(composition.SelectedPriorRefs) != 1 {
+		t.Fatalf("protocol composition selected prior refs = %v, want one selected prior", composition.SelectedPriorRefs)
 	}
 }
 

@@ -27,13 +27,14 @@ type ControlRunIdentity struct {
 }
 
 type ControlRunState struct {
-	Version                int               `json:"version"`
-	LifecycleState         string            `json:"lifecycle_state,omitempty"`
-	Phase                  string            `json:"phase,omitempty"`
-	ActiveSessionCount     int               `json:"active_session_count,omitempty"`
-	ProviderDialogAlerts   map[string]string `json:"provider_dialog_alerts,omitempty"`
-	RequiredFrontierAlerts map[string]string `json:"required_frontier_alerts,omitempty"`
-	UpdatedAt              string            `json:"updated_at,omitempty"`
+	Version              int               `json:"version"`
+	GoalState            string            `json:"goal_state,omitempty"`
+	ContinuityState      string            `json:"continuity_state,omitempty"`
+	Phase                string            `json:"phase,omitempty"`
+	ActiveSessionCount   int               `json:"active_session_count,omitempty"`
+	ProviderDialogAlerts map[string]string `json:"provider_dialog_alerts,omitempty"`
+	MasterAlerts         map[string]string `json:"master_alerts,omitempty"`
+	UpdatedAt            string            `json:"updated_at,omitempty"`
 }
 
 type ControlLease struct {
@@ -163,10 +164,15 @@ func EnsureControlState(runDir string) error {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active", UpdatedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
-			return err
+			if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+				Version:         1,
+				GoalState:       "open",
+				ContinuityState: "running",
+				UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
+			}); err != nil {
+				return err
+			}
 		}
-	}
 	if _, err := LoadControlLease(ControlLeasePath(runDir, "master")); err != nil {
 		if !os.IsNotExist(err) {
 			return err
@@ -175,17 +181,9 @@ func EnsureControlState(runDir string) error {
 			return err
 		}
 	}
-	if _, err := LoadControlLease(ControlLeasePath(runDir, "sidecar")); err != nil {
-		if !os.IsNotExist(err) {
-			return err
-		}
-		if err := SaveControlLease(ControlLeasePath(runDir, "sidecar"), &ControlLease{Version: 1, Holder: "sidecar"}); err != nil {
-			return err
-		}
-	}
-	if _, err := LoadControlReminders(ControlRemindersPath(runDir)); err != nil {
-		if !os.IsNotExist(err) {
-			return err
+		if _, err := LoadControlReminders(ControlRemindersPath(runDir)); err != nil {
+			if !os.IsNotExist(err) {
+				return err
 		}
 		if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{Version: 1, Items: []ControlReminder{}}); err != nil {
 			return err
@@ -248,10 +246,20 @@ func LoadControlRunState(path string) (*ControlRunState, error) {
 	if err != nil {
 		return nil, err
 	}
-	state := &ControlRunState{}
+	type diskState struct {
+		Version              int               `json:"version"`
+		GoalState            string            `json:"goal_state,omitempty"`
+		ContinuityState      string            `json:"continuity_state,omitempty"`
+		Phase                string            `json:"phase,omitempty"`
+		ActiveSessionCount   int               `json:"active_session_count,omitempty"`
+		ProviderDialogAlerts map[string]string `json:"provider_dialog_alerts,omitempty"`
+		MasterAlerts         map[string]string `json:"master_alerts,omitempty"`
+		UpdatedAt            string            `json:"updated_at,omitempty"`
+	}
+	state := &diskState{}
 	if len(strings.TrimSpace(string(data))) == 0 {
 		state.Version = 1
-		return state, nil
+		return &ControlRunState{Version: 1}, nil
 	}
 	if err := json.Unmarshal(data, state); err != nil {
 		return nil, fmt.Errorf("parse control run state: %w", err)
@@ -259,7 +267,17 @@ func LoadControlRunState(path string) (*ControlRunState, error) {
 	if state.Version == 0 {
 		state.Version = 1
 	}
-	return state, nil
+	runState := &ControlRunState{
+		Version:              state.Version,
+		GoalState:            strings.TrimSpace(state.GoalState),
+		ContinuityState:      strings.TrimSpace(state.ContinuityState),
+		Phase:                state.Phase,
+		ActiveSessionCount:   state.ActiveSessionCount,
+		ProviderDialogAlerts: state.ProviderDialogAlerts,
+		MasterAlerts:         state.MasterAlerts,
+		UpdatedAt:            state.UpdatedAt,
+	}
+	return runState, nil
 }
 
 func SaveControlRunState(path string, state *ControlRunState) error {
@@ -273,6 +291,25 @@ func SaveControlRunState(path string, state *ControlRunState) error {
 		state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	return writeJSONFile(path, state)
+}
+
+func controlRunDisplayState(state *ControlRunState) string {
+	if state == nil {
+		return ""
+	}
+	switch strings.TrimSpace(state.GoalState) {
+	case "completed", "dropped":
+		return strings.TrimSpace(state.GoalState)
+	default:
+		return strings.TrimSpace(state.ContinuityState)
+	}
+}
+
+func controlRunContinuityRunning(state *ControlRunState, runtimeState *RunRuntimeState) bool {
+	if state != nil && strings.TrimSpace(state.ContinuityState) != "" {
+		return strings.TrimSpace(state.ContinuityState) == "running"
+	}
+	return runtimeState != nil && runtimeState.Active
 }
 
 func LoadControlLease(path string) (*ControlLease, error) {

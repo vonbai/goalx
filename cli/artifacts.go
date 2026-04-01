@@ -279,6 +279,7 @@ func CollectSavedPhaseContext(runDir string, base goalx.ContextConfig) (goalx.Co
 
 	for _, path := range []string{
 		SummaryPath(runDir),
+		filepath.Join(runDir, "intake.json"),
 		ObjectiveContractPath(runDir),
 		GoalPath(runDir),
 		AcceptanceStatePath(runDir),

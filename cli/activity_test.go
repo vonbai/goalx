@@ -31,8 +31,8 @@ func TestBuildActivitySnapshotAggregatesControlFacts(t *testing.T) {
 	if err := RenewControlLease(runDir, "master", meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
 		t.Fatalf("RenewControlLease master: %v", err)
 	}
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 	if err := RenewControlLease(runDir, "session-1", meta.RunID, meta.Epoch, time.Minute, "tmux", os.Getpid()); err != nil {
 		t.Fatalf("RenewControlLease session-1: %v", err)
@@ -473,6 +473,46 @@ func TestBuildActivitySnapshotIncludesBudgetFacts(t *testing.T) {
 	}
 	if snapshot.Budget.RemainingSeconds > -int64((1*time.Hour)/time.Second)+2 {
 		t.Fatalf("budget remaining_seconds = %d, want about -%d", snapshot.Budget.RemainingSeconds, int64((1*time.Hour)/time.Second))
+	}
+}
+
+func TestBuildActivitySnapshotClampsBudgetFactsToStoppedAt(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	cfg.Budget.MaxDuration = 6 * time.Hour
+	if err := SaveRunSpec(runDir, cfg); err != nil {
+		t.Fatalf("SaveRunSpec: %v", err)
+	}
+
+	stoppedAt := time.Now().UTC().Add(-1 * time.Hour).Truncate(time.Second)
+	startedAt := stoppedAt.Add(-3 * time.Hour)
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       cfg.Name,
+		Mode:      string(cfg.Mode),
+		Active:    false,
+		Phase:     "complete",
+		StartedAt: startedAt.Format(time.RFC3339),
+		StoppedAt: stoppedAt.Format(time.RFC3339),
+		UpdatedAt: stoppedAt.Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+
+	snapshot, err := BuildActivitySnapshot(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildActivitySnapshot: %v", err)
+	}
+
+	wantElapsed := int64((3 * time.Hour) / time.Second)
+	if snapshot.Budget.ElapsedSeconds < wantElapsed-2 || snapshot.Budget.ElapsedSeconds > wantElapsed+2 {
+		t.Fatalf("budget elapsed_seconds = %d, want about %d", snapshot.Budget.ElapsedSeconds, wantElapsed)
+	}
+	wantRemaining := int64((3 * time.Hour) / time.Second)
+	if snapshot.Budget.RemainingSeconds < wantRemaining-2 || snapshot.Budget.RemainingSeconds > wantRemaining+2 {
+		t.Fatalf("budget remaining_seconds = %d, want about %d", snapshot.Budget.RemainingSeconds, wantRemaining)
+	}
+	if snapshot.Budget.Exhausted {
+		t.Fatalf("budget exhausted = true, want false after clamping to stopped_at: %+v", snapshot.Budget)
 	}
 }
 

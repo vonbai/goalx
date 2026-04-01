@@ -96,7 +96,7 @@ func buildTransportFacts(runDir, tmuxSession, masterEngine string, paneOutputAt 
 	if masterPresence, ok := presence["master"]; ok {
 		masterFacts := transportFactsFromPresence(masterPresence, masterEngine, paneOutputAt)
 		if masterPresence.State == TargetPresencePresent {
-			masterFacts = inspectTransportTarget(tmuxSession+":master", "master", "master", masterEngine)
+			masterFacts = inspectTransportTargetInRun(runDir, tmuxSession+":master", "master", "master", masterEngine)
 			masterFacts.PaneID = masterPresence.PaneID
 			masterFacts.LastOutputAt = formatPaneOutputAt(paneOutputAt, masterPresence.PaneID)
 		}
@@ -123,7 +123,7 @@ func buildTransportFacts(runDir, tmuxSession, masterEngine string, paneOutputAt 
 		targetFacts := transportFactsFromPresence(targetPresence, identity.Engine, paneOutputAt)
 		if targetPresence.State == TargetPresencePresent {
 			target := tmuxSession + ":" + targetPresence.Window
-			targetFacts = inspectTransportTarget(target, name, targetPresence.Window, identity.Engine)
+			targetFacts = inspectTransportTargetInRun(runDir, target, name, targetPresence.Window, identity.Engine)
 			targetFacts.PaneID = targetPresence.PaneID
 			targetFacts.LastOutputAt = formatPaneOutputAt(paneOutputAt, targetPresence.PaneID)
 		}
@@ -152,19 +152,37 @@ func transportFactsFromPresence(presence TargetPresenceFacts, engine string, pan
 }
 
 func inspectTransportTarget(target, logicalTarget, window, engine string) TransportTargetFacts {
+	return inspectTransportTargetInRun("", target, logicalTarget, window, engine)
+}
+
+func inspectTransportTargetInRun(runDir, target, logicalTarget, window, engine string) TransportTargetFacts {
 	facts := TransportTargetFacts{
 		Target:       logicalTarget,
 		Window:       window,
 		Engine:       strings.TrimSpace(engine),
 		LastSampleAt: time.Now().UTC().Format(time.RFC3339),
 	}
-	if captureAgentPane == nil {
+	if strings.TrimSpace(runDir) == "" {
+		if captureAgentPane == nil {
+			return facts
+		}
+		out, err := captureAgentPane(target)
+		if err != nil {
+			return facts
+		}
+		return inspectTransportCaptureResult(facts, out)
+	}
+	if captureAgentPaneInRun == nil {
 		return facts
 	}
-	out, err := captureAgentPane(target)
+	out, err := captureAgentPaneInRun(runDir, target)
 	if err != nil {
 		return facts
 	}
+	return inspectTransportCaptureResult(facts, out)
+}
+
+func inspectTransportCaptureResult(facts TransportTargetFacts, out string) TransportTargetFacts {
 	if strings.TrimSpace(out) == "" {
 		facts.TransportState = string(TUIStateBlank)
 		return facts
@@ -446,12 +464,12 @@ func latestSessionTransportFacts(all *TransportFacts, sessionName string) Transp
 	return all.Targets[sessionName]
 }
 
-func tmuxPanesByWindow(session string) (map[string]tmuxPaneRef, error) {
+func tmuxPanesByWindow(runDir, session string) (map[string]tmuxPaneRef, error) {
 	panes := map[string]tmuxPaneRef{}
-	if !SessionExists(session) {
+	if !SessionExistsInRun(runDir, session) {
 		return panes, nil
 	}
-	items, err := listTmuxSessionPanes(session)
+	items, err := listTmuxSessionPanes(runDir, session)
 	if err != nil {
 		return nil, err
 	}

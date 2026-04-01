@@ -60,9 +60,12 @@ The normal loop is:
 goalx run "goal"
 goalx status
 goalx observe
+goalx context
+goalx afford
 goalx schema status
 goalx tell "redirect"
 goalx recover --run NAME
+goalx budget --run NAME --extend 2h
 goalx verify
 goalx result
 goalx save
@@ -72,9 +75,12 @@ Use this by default unless the user explicitly asks for config-first control.
 
 - `goalx status` = durable control/state view
 - `goalx observe` = live transport view plus control summary
+- `goalx context` = canonical run identity plus durable paths
+- `goalx afford` = current run-scoped command surface
 - `goalx schema <surface>` = authoring contract view for machine-consumed durable surfaces
 - `goalx tell` = durable redirect to master or session
 - `goalx recover --run NAME` = relaunch the same stopped or stranded run in place
+- `goalx budget` = same-run budget inspection and mutation
 - `goalx verify` = record acceptance facts, not completion verdict
 - `goalx result` = read the current result surfaces
 - `goalx save` = export a durable saved run for later continuation
@@ -141,13 +147,21 @@ Intent mapping:
 Boundary flag:
 
 - **--readonly**: declare a no-edit execution boundary in `target.readonly` for report-first or investigation-only runs; GoalX exposes it in protocol/context/affordances instead of pretending it is an OS sandbox
+- fresh `goalx run` always writes intake and feeds it into the success compiler
 
 Context injection:
 
 - use `--context` for extra evidence at launch or phase continuation
 - existing files/dirs are recorded in `context.files`
 - URLs and explicit `ref:` / `note:` items are recorded in `context.refs`
+- use one comma-delimited `--context` value; escape literal commas inside one item as `\,`
 - phase runs preserve saved-run boundary/evidence surfaces and merge any extra `--context` items on top
+
+Run naming:
+
+- default run names are derived from the goal text
+- when that generated name already exists, GoalX auto-suffixes `-2`, `-3`, and so on
+- explicit `--name` stays exact; do not promise automatic renaming for user-provided names
 
 ## Evolve
 
@@ -197,8 +211,31 @@ goalx run --from RUN --intent implement
 ```
 
 - `goalx recover --run RUN` relaunches the same stopped or stranded run in place
+- `goalx recover --run RUN` does not change budget; if budget is exhausted, run `goalx budget --run RUN --extend ...` or `--clear` first, then recover
 - `goalx save --run RUN` plus `goalx run --from RUN --intent ...` creates a new phase from saved artifacts
 - do not suggest `save + run --from` when the user wants to continue the same run after `stop`, tmux loss, or a stranded state
+
+## Runtime Budget Control
+
+Use the dedicated budget surface instead of overloading recover:
+
+```bash
+goalx budget --run RUN
+goalx budget --run RUN --extend 2h
+goalx budget --run RUN --set-total 10h
+goalx budget --run RUN --clear
+```
+
+## Public Command Surface
+
+Use `references/advanced-control.md` when the user needs the full operator-facing command matrix. It covers:
+
+- launch: `run`, `init`, `start`
+- inspect: `list`, `status`, `observe`, `context`, `afford`, `attach`, `wait`
+- control: `tell`, `add`, `replace`, `dimension`, `budget`, `focus`
+- review/integration: `review`, `diff`, `keep`, `integrate`
+- lifecycle/persistence: `park`, `resume`, `stop`, `recover`, `archive`, `save`, `drop`
+- results/surfaces: `verify`, `result`, `report`, `schema`, `durable`
 
 ## Worktree And Merge Boundaries
 

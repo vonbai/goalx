@@ -26,11 +26,14 @@ type MemoryTokenIndex struct {
 }
 
 type MemoryTrustRecord struct {
-	VerificationState string `json:"verification_state,omitempty"`
-	Confidence        string `json:"confidence,omitempty"`
-	UpdatedAt         string `json:"updated_at,omitempty"`
-	ValidFrom         string `json:"valid_from,omitempty"`
-	SupersededBy      string `json:"superseded_by,omitempty"`
+	VerificationState  string `json:"verification_state,omitempty"`
+	Confidence         string `json:"confidence,omitempty"`
+	UpdatedAt          string `json:"updated_at,omitempty"`
+	ValidFrom          string `json:"valid_from,omitempty"`
+	SupersededBy       string `json:"superseded_by,omitempty"`
+	ContradictedCount  int    `json:"contradicted_count,omitempty"`
+	ReinforcedCount    int    `json:"reinforced_count,omitempty"`
+	ReplayedValidCount int    `json:"replayed_valid_count,omitempty"`
 }
 
 type MemoryTrustIndex struct {
@@ -96,17 +99,26 @@ func BuildMemoryTrustIndex() (*MemoryTrustIndex, error) {
 	if err != nil {
 		return nil, err
 	}
+	governance, err := loadMemoryPriorGovernanceSummary()
+	if err != nil {
+		return nil, err
+	}
 	index := &MemoryTrustIndex{
 		Version: 1,
 		Records: make(map[string]MemoryTrustRecord, len(entries)),
 	}
 	for _, entry := range entries {
+		summary := governance[entry.ID]
+		supersededBy := firstNonEmpty(summary.SupersededBy, entry.SupersededBy)
 		index.Records[entry.ID] = MemoryTrustRecord{
-			VerificationState: entry.VerificationState,
-			Confidence:        entry.Confidence,
-			UpdatedAt:         entry.UpdatedAt,
-			ValidFrom:         entry.ValidFrom,
-			SupersededBy:      entry.SupersededBy,
+			VerificationState:  entry.VerificationState,
+			Confidence:         entry.Confidence,
+			UpdatedAt:          entry.UpdatedAt,
+			ValidFrom:          entry.ValidFrom,
+			SupersededBy:       supersededBy,
+			ContradictedCount:  entry.ContradictedCount + summary.ContradictedCount,
+			ReinforcedCount:    summary.ReinforcedCount,
+			ReplayedValidCount: summary.ReplayedValidCount,
 		}
 	}
 	return index, nil
@@ -186,6 +198,7 @@ func loadCanonicalMemoryEntries() ([]MemoryEntry, error) {
 		MemoryKindProcedure,
 		MemoryKindPitfall,
 		MemoryKindSecretRef,
+		MemoryKindSuccessPrior,
 	} {
 		path := MemoryEntryPath(kind)
 		file, err := os.Open(path)

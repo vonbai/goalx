@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	goalx "github.com/vonbai/goalx"
@@ -230,5 +231,167 @@ func TestBuildMemoryContextBoundsCategorySizes(t *testing.T) {
 	}
 	if len(context.Facts) != memoryContextCategoryLimit {
 		t.Fatalf("facts len = %d, want %d", len(context.Facts), memoryContextCategoryLimit)
+	}
+}
+
+func TestBuildMemoryContextAndDomainPackIncludeSuccessPrior(t *testing.T) {
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	if err := os.WriteFile(filepath.Join(repo, "AGENTS.md"), []byte("repo policy"), 0o644); err != nil {
+		t.Fatalf("WriteFile AGENTS.md: %v", err)
+	}
+	if err := EnsureMemoryStore(); err != nil {
+		t.Fatalf("EnsureMemoryStore: %v", err)
+	}
+	writeCanonicalMemoryEntries(t, map[MemoryKind][]MemoryEntry{
+		MemoryKindSuccessPrior: {
+			{
+				ID:                "mem-success-prior-b",
+				Kind:              MemoryKindSuccessPrior,
+				Statement:         "frontend product goals require critique and finisher proof before closeout",
+				Selectors:         map[string]string{"project_id": goalx.ProjectID(repo)},
+				VerificationState: "repeated",
+				Confidence:        "grounded",
+				CreatedAt:         "2026-03-31T00:00:00Z",
+				UpdatedAt:         "2026-03-31T00:00:00Z",
+			},
+			{
+				ID:                "mem-success-prior-a",
+				Kind:              MemoryKindSuccessPrior,
+				Statement:         "operator runs require explicit finisher proof before closeout",
+				Selectors:         map[string]string{"project_id": goalx.ProjectID(repo)},
+				VerificationState: "repeated",
+				Confidence:        "grounded",
+				CreatedAt:         "2026-03-31T00:00:00Z",
+				UpdatedAt:         "2026-03-31T00:00:00Z",
+			},
+		},
+	})
+
+	if err := RefreshRunMemoryContext(runDir); err != nil {
+		t.Fatalf("RefreshRunMemoryContext: %v", err)
+	}
+
+	context, err := LoadMemoryContextFile(MemoryContextPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadMemoryContextFile: %v", err)
+	}
+	if context == nil || len(context.SuccessPriors) != 2 {
+		t.Fatalf("memory context = %+v, want two success priors", context)
+	}
+
+	sources, err := buildBootstrapCompilerSources(repo, runDir)
+	if err != nil {
+		t.Fatalf("buildBootstrapCompilerSources: %v", err)
+	}
+	pack, err := compileBootstrapDomainPack(cfg, meta, sources)
+	if err != nil {
+		t.Fatalf("compileBootstrapDomainPack: %v", err)
+	}
+	wantPriorIDs := []string{"mem-success-prior-a", "mem-success-prior-b"}
+	if !reflect.DeepEqual(pack.PriorEntryIDs, wantPriorIDs) {
+		t.Fatalf("domain pack prior_entry_ids = %+v, want %+v", pack.PriorEntryIDs, wantPriorIDs)
+	}
+	if pack.Slots.RepoPolicy.Source != "AGENTS.md" {
+		t.Fatalf("repo_policy slot = %+v, want AGENTS.md source", pack.Slots.RepoPolicy)
+	}
+	if !reflect.DeepEqual(pack.Slots.LearnedSuccessPriors.EntryIDs, wantPriorIDs) {
+		t.Fatalf("learned_success_priors slot = %+v, want %+v", pack.Slots.LearnedSuccessPriors.EntryIDs, wantPriorIDs)
+	}
+	if pack.Slots.RunContext.Source != "control/memory-context.json" {
+		t.Fatalf("run_context slot = %+v, want memory context source", pack.Slots.RunContext)
+	}
+}
+
+func TestRetrieveMemorySuccessPriorPenalizesContradictedEntry(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := EnsureMemoryStore(); err != nil {
+		t.Fatalf("EnsureMemoryStore: %v", err)
+	}
+	writeCanonicalMemoryEntries(t, map[MemoryKind][]MemoryEntry{
+		MemoryKindSuccessPrior: {
+			{
+				ID:                "mem-success-a",
+				Kind:              MemoryKindSuccessPrior,
+				Statement:         "operator runs require finisher proof",
+				Selectors:         map[string]string{"project_id": "demo"},
+				VerificationState: "repeated",
+				Confidence:        "grounded",
+				CreatedAt:         "2026-03-31T10:00:00Z",
+				UpdatedAt:         "2026-03-31T10:00:00Z",
+			},
+			{
+				ID:                "mem-success-b",
+				Kind:              MemoryKindSuccessPrior,
+				Statement:         "operator runs require explicit finisher proof",
+				Selectors:         map[string]string{"project_id": "demo"},
+				VerificationState: "repeated",
+				Confidence:        "grounded",
+				CreatedAt:         "2026-03-31T10:00:00Z",
+				UpdatedAt:         "2026-03-31T10:00:00Z",
+			},
+		},
+	})
+	if err := AppendMemoryPriorGovernanceEvent(MemoryPriorGovernanceEvent{
+		EntryID:    "mem-success-a",
+		Kind:       MemoryPriorGovernanceKindContradicted,
+		RecordedAt: "2026-03-31T11:00:00Z",
+	}); err != nil {
+		t.Fatalf("AppendMemoryPriorGovernanceEvent: %v", err)
+	}
+
+	entries, err := RetrieveMemory(MemoryQuery{ProjectID: "demo"})
+	if err != nil {
+		t.Fatalf("RetrieveMemory: %v", err)
+	}
+	if len(entries) < 2 || entries[0].ID != "mem-success-b" {
+		t.Fatalf("retrieve order = %+v, want non-contradicted prior first", entries)
+	}
+}
+
+func TestRetrieveMemorySuccessPriorPrefersReinforcedEntry(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := EnsureMemoryStore(); err != nil {
+		t.Fatalf("EnsureMemoryStore: %v", err)
+	}
+	writeCanonicalMemoryEntries(t, map[MemoryKind][]MemoryEntry{
+		MemoryKindSuccessPrior: {
+			{
+				ID:                "mem-success-a",
+				Kind:              MemoryKindSuccessPrior,
+				Statement:         "operator runs require finisher proof",
+				Selectors:         map[string]string{"project_id": "demo"},
+				VerificationState: "repeated",
+				Confidence:        "grounded",
+				CreatedAt:         "2026-03-31T10:00:00Z",
+				UpdatedAt:         "2026-03-31T10:00:00Z",
+			},
+			{
+				ID:                "mem-success-b",
+				Kind:              MemoryKindSuccessPrior,
+				Statement:         "operator runs require explicit finisher proof",
+				Selectors:         map[string]string{"project_id": "demo"},
+				VerificationState: "repeated",
+				Confidence:        "grounded",
+				CreatedAt:         "2026-03-31T10:00:00Z",
+				UpdatedAt:         "2026-03-31T10:00:00Z",
+			},
+		},
+	})
+	if err := AppendMemoryPriorGovernanceEvent(MemoryPriorGovernanceEvent{
+		EntryID:    "mem-success-b",
+		Kind:       MemoryPriorGovernanceKindReinforced,
+		RecordedAt: "2026-03-31T11:00:00Z",
+	}); err != nil {
+		t.Fatalf("AppendMemoryPriorGovernanceEvent: %v", err)
+	}
+
+	entries, err := RetrieveMemory(MemoryQuery{ProjectID: "demo"})
+	if err != nil {
+		t.Fatalf("RetrieveMemory: %v", err)
+	}
+	if len(entries) < 2 || entries[0].ID != "mem-success-b" {
+		t.Fatalf("retrieve order = %+v, want reinforced prior first", entries)
 	}
 }

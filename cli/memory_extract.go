@@ -58,6 +58,10 @@ func ExtractMemoryProposals(runDir string) ([]MemoryProposal, error) {
 	if err != nil {
 		return nil, err
 	}
+	interventions, err := LoadInterventionLog(InterventionLogPath(runDir))
+	if err != nil {
+		return nil, err
+	}
 	proposals := make([]MemoryProposal, 0)
 	seen := map[string]struct{}{}
 	for _, seed := range seeds {
@@ -70,7 +74,7 @@ func ExtractMemoryProposals(runDir string) ([]MemoryProposal, error) {
 			proposals = append(proposals, proposal)
 		}
 	}
-	llmProposals, err := extractLLMMemoryProposals(runDir, seeds)
+	llmProposals, err := extractLLMMemoryProposals(runDir, seeds, interventions)
 	if err != nil {
 		appendAuditLog(runDir, "memory llm extraction skipped: %v", err)
 	} else {
@@ -214,8 +218,8 @@ func extractProposalsFromSeed(seed MemorySeed) []MemoryProposal {
 	return proposals
 }
 
-func extractLLMMemoryProposals(runDir string, seeds []MemorySeed) ([]MemoryProposal, error) {
-	if !memoryLLMExtractionEligible(runDir, seeds) {
+func extractLLMMemoryProposals(runDir string, seeds []MemorySeed, interventions []InterventionLogEvent) ([]MemoryProposal, error) {
+	if !memoryLLMExtractionEligible(runDir, seeds, interventions) {
 		return nil, nil
 	}
 	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
@@ -240,7 +244,7 @@ func extractLLMMemoryProposals(runDir string, seeds []MemorySeed) ([]MemoryPropo
 	if err != nil {
 		return nil, err
 	}
-	req, err := buildMemoryLLMExtractRequest(runDir, meta.ProjectRoot, target, query, seeds)
+	req, err := buildMemoryLLMExtractRequest(runDir, meta.ProjectRoot, target, query, seeds, interventions)
 	if err != nil {
 		return nil, err
 	}
@@ -254,12 +258,15 @@ func extractLLMMemoryProposals(runDir string, seeds []MemorySeed) ([]MemoryPropo
 	return llmResponseToMemoryProposals(*req, resp), nil
 }
 
-func memoryLLMExtractionEligible(runDir string, seeds []MemorySeed) bool {
-	if len(seeds) == 0 {
+func memoryLLMExtractionEligible(runDir string, seeds []MemorySeed, interventions []InterventionLogEvent) bool {
+	if len(seeds) == 0 && len(interventions) == 0 {
 		return false
 	}
 	if !fileExists(SummaryPath(runDir)) && len(collectReportEvidencePaths(runDir)) == 0 {
 		return false
+	}
+	if len(interventions) > 0 {
+		return true
 	}
 	for _, seed := range seeds {
 		if len(seed.Evidence) == 0 {
@@ -322,12 +329,12 @@ func resolveMemoryModelID(engine goalx.EngineConfig, model string) (string, bool
 	return strings.TrimSpace(modelID), true
 }
 
-func buildMemoryLLMExtractRequest(runDir, projectRoot string, target memoryLLMExtractTarget, query MemoryQuery, seeds []MemorySeed) (*memoryLLMExtractRequest, error) {
-	evidenceMap := buildMemoryLLMEvidenceMap(runDir, seeds)
+func buildMemoryLLMExtractRequest(runDir, projectRoot string, target memoryLLMExtractTarget, query MemoryQuery, seeds []MemorySeed, interventions []InterventionLogEvent) (*memoryLLMExtractRequest, error) {
+	evidenceMap := buildMemoryLLMEvidenceMap(runDir, seeds, interventions)
 	if len(evidenceMap) == 0 {
 		return nil, nil
 	}
-	bundle, sourceRuns, observedAt, err := buildMemoryLLMExtractBundle(runDir, query, seeds, evidenceMap)
+	bundle, sourceRuns, observedAt, err := buildMemoryLLMExtractBundle(runDir, query, seeds, interventions, evidenceMap)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +355,7 @@ func buildMemoryLLMExtractRequest(runDir, projectRoot string, target memoryLLMEx
 	}, nil
 }
 
-func buildMemoryLLMEvidenceMap(runDir string, seeds []MemorySeed) map[string]MemoryEvidence {
+func buildMemoryLLMEvidenceMap(runDir string, seeds []MemorySeed, interventions []InterventionLogEvent) map[string]MemoryEvidence {
 	evidenceMap := map[string]MemoryEvidence{}
 	add := func(item MemoryEvidence) {
 		path := strings.TrimSpace(item.Path)
@@ -361,6 +368,9 @@ func buildMemoryLLMEvidenceMap(runDir string, seeds []MemorySeed) map[string]Mem
 	}
 	if fileExists(SummaryPath(runDir)) {
 		add(MemoryEvidence{Kind: "summary", Path: SummaryPath(runDir)})
+	}
+	if len(interventions) > 0 && fileExists(InterventionLogPath(runDir)) {
+		add(MemoryEvidence{Kind: "intervention_log", Path: InterventionLogPath(runDir)})
 	}
 	for _, path := range collectReportEvidencePaths(runDir) {
 		add(MemoryEvidence{Kind: "report", Path: path})
@@ -389,7 +399,7 @@ func collectReportEvidencePaths(runDir string) []string {
 	return paths
 }
 
-func buildMemoryLLMExtractBundle(runDir string, query MemoryQuery, seeds []MemorySeed, evidenceMap map[string]MemoryEvidence) (string, []string, string, error) {
+func buildMemoryLLMExtractBundle(runDir string, query MemoryQuery, seeds []MemorySeed, interventions []InterventionLogEvent, evidenceMap map[string]MemoryEvidence) (string, []string, string, error) {
 	var sections []string
 	selectors := buildMemoryLLMSelectors(query, seeds)
 	if len(selectors) > 0 {
@@ -453,9 +463,33 @@ func buildMemoryLLMExtractBundle(runDir string, query MemoryQuery, seeds []Memor
 		seedLines = append(seedLines, line)
 	}
 	if len(seedLines) == 0 {
+		seedLines = nil
+	}
+	if len(seedLines) > 0 {
+		sections = append(sections, "grounded_seeds:\n"+strings.Join(seedLines, "\n"))
+	}
+
+	interventionLines := make([]string, 0, len(interventions))
+	for _, event := range interventions {
+		sourceRuns = mergeStringSets(sourceRuns, compactStrings([]string{event.Body.Run}))
+		observedAt = earliestRFC3339(observedAt, event.At)
+		line := strings.TrimSpace(event.Kind) + " | " + strings.TrimSpace(event.Body.Message)
+		targets := compactStrings(event.Body.AffectedTargets)
+		if len(targets) > 0 {
+			line += " | targets=" + strings.Join(targets, ",")
+		}
+		if evidence, ok := evidenceMap[InterventionLogPath(runDir)]; ok && strings.TrimSpace(evidence.Path) != "" {
+			line += " | evidence=" + evidence.Path
+		}
+		interventionLines = append(interventionLines, line)
+	}
+	if len(interventionLines) > 0 {
+		sections = append(sections, "interventions:\n"+strings.Join(interventionLines, "\n"))
+	}
+
+	if len(seedLines) == 0 && len(interventionLines) == 0 {
 		return "", nil, "", nil
 	}
-	sections = append(sections, "grounded_seeds:\n"+strings.Join(seedLines, "\n"))
 
 	evidencePaths := make([]string, 0, len(evidenceMap))
 	for path := range evidenceMap {
@@ -538,7 +572,7 @@ func llmResponseToMemoryProposals(req memoryLLMExtractRequest, resp memoryLLMExt
 		if statement == "" {
 			continue
 		}
-		if item.Kind != MemoryKindProcedure && item.Kind != MemoryKindPitfall {
+		if item.Kind != MemoryKindProcedure && item.Kind != MemoryKindPitfall && item.Kind != MemoryKindSuccessPrior {
 			continue
 		}
 		evidence := make([]MemoryEvidence, 0, len(item.EvidencePaths))
@@ -584,7 +618,7 @@ func memoryLLMExtractSchema() string {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "kind": { "type": "string", "enum": ["procedure", "pitfall"] },
+          "kind": { "type": "string", "enum": ["procedure", "pitfall", "success_prior"] },
           "statement": { "type": "string", "minLength": 1 },
           "evidence_paths": {
             "type": "array",
@@ -731,11 +765,12 @@ func buildMemoryLLMPrompt(bundle string) string {
 
 Rules:
 - Output valid JSON only.
-- Return only proposals of kind "procedure" or "pitfall".
+- Return only proposals of kind "procedure", "pitfall", or "success_prior".
 - Do not restate facts already obvious from deterministic key=value extraction.
 - Use only evidence paths listed in allowed_evidence_paths.
 - Every proposal must cite at least one evidence path.
 - Prefer short, concrete operational lessons.
+- Use "success_prior" only for reusable success bars, anti-optimizations, or workflow/proof expectations implied by interventions.
 - If there is no good bounded lesson, return {"proposals":[]}.
 
 Grounded bundle:

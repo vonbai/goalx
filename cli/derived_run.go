@@ -12,19 +12,20 @@ import (
 )
 
 type DerivedRunState struct {
-	Name           string
-	Mode           string
-	Objective      string
-	RunDir         string
-	RunID          string
-	Epoch          int
-	Charter        string
-	Selector       string
-	LifecycleState string
-	Status         string
-	Completed      bool
-	HasLease       bool
-	HasTmuxSession bool
+	Name            string
+	Mode            string
+	Objective       string
+	RunDir          string
+	RunID           string
+	Epoch           int
+	Charter         string
+	Selector        string
+	GoalState       string
+	ContinuityState string
+	Status          string
+	Completed       bool
+	HasLease        bool
+	HasTmuxSession  bool
 }
 
 func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
@@ -36,8 +37,11 @@ func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
 	if name == "" {
 		name = filepath.Base(runDir)
 	}
-	tmuxSession := goalx.TmuxSessionName(projectRoot, name)
+	tmuxSession := resolveRunTmuxSession(projectRoot, runDir, name)
 	if err := repairCompletedRunFinalizationForRun(projectRoot, name, runDir, tmuxSession); err != nil {
+		return nil, err
+	}
+	if err := reconcileRunContinuityForRun(projectRoot, name, runDir); err != nil {
 		return nil, err
 	}
 
@@ -47,77 +51,113 @@ func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
 		Objective:      cfg.Objective,
 		RunDir:         runDir,
 		Selector:       goalx.ProjectID(projectRoot) + "/" + name,
-		HasLease:       controlLeaseActive(runDir, "sidecar") || controlLeaseActive(runDir, "master"),
-		HasTmuxSession: SessionExists(tmuxSession),
+		HasLease:       controlLeaseActive(runDir, "runtime-host") || controlLeaseActive(runDir, "master"),
+		HasTmuxSession: SessionExistsInRun(runDir, tmuxSession),
 	}
 	state.RunID, state.Epoch, state.Charter, state.Objective = deriveRunIdentitySurface(runDir, cfg.Objective)
 
 	runtimeState, _ := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
 	controlState, _ := LoadControlRunState(ControlRunStatePath(runDir))
-	if controlState != nil && controlState.LifecycleState != "" {
-		state.LifecycleState = controlState.LifecycleState
-	} else if runtimeState != nil {
+	bootstrapLaunching := runBootstrapStillLaunching(runDir, controlState, runtimeState)
+	if controlState != nil {
+		state.GoalState = strings.TrimSpace(controlState.GoalState)
+		state.ContinuityState = strings.TrimSpace(controlState.ContinuityState)
+	}
+	if state.GoalState == "" && runtimeState != nil && runtimeState.Phase == "complete" {
+		state.GoalState = "completed"
+	}
+	if state.GoalState == "" {
+		state.GoalState = "open"
+	}
+	if state.ContinuityState == "" && runtimeState != nil {
 		switch {
 		case runtimeState.StoppedAt != "":
-			state.LifecycleState = "stopped"
+			state.ContinuityState = "stopped"
 		case runtimeState.Active:
-			state.LifecycleState = "active"
+			state.ContinuityState = "running"
 		case runtimeState.Phase == "complete":
-			state.LifecycleState = "completed"
-		default:
-			state.LifecycleState = "inactive"
+			state.ContinuityState = "stopped"
 		}
 	}
-	state.Completed = runtimeState != nil && runtimeState.Phase == "complete"
+	if state.ContinuityState == "" {
+		if state.GoalState == "completed" || state.GoalState == "dropped" {
+			state.ContinuityState = "stopped"
+		} else if state.HasLease || state.HasTmuxSession {
+			state.ContinuityState = "running"
+		} else {
+			state.ContinuityState = "stopped"
+		}
+	}
+	state.Completed = state.GoalState == "completed" || (runtimeState != nil && runtimeState.Phase == "complete")
 
-	switch state.LifecycleState {
-	case "active":
-		presence, err := BuildTargetPresenceFacts(runDir, tmuxSession)
-		if err != nil {
-			return nil, err
-		}
-		sessionMissing := false
-		sessionTruthAvailable := false
-		for target, facts := range presence {
-			if !strings.HasPrefix(target, "session-") {
-				continue
-			}
-			if strings.TrimSpace(facts.State) == TargetPresencePresent || strings.TrimSpace(facts.State) == TargetPresenceParked {
-				sessionTruthAvailable = true
-			}
-			if targetPresenceMissing(facts) {
-				sessionMissing = true
-			}
-		}
-		masterMissing := targetPresenceMissing(presence["master"])
-		sidecarMissing := targetPresenceMissing(presence["sidecar"])
-		switch {
-		case masterMissing || sidecarMissing || sessionMissing:
-			if !state.HasLease && !state.HasTmuxSession && !sessionTruthAvailable {
-				state.Status = "stranded"
-				break
-			}
-			state.Status = "degraded"
-		case state.HasLease || state.HasTmuxSession || sessionTruthAvailable:
-			state.Status = "active"
-		default:
-			state.Status = "degraded"
-		}
+	switch state.GoalState {
 	case "completed":
 		state.Status = "completed"
 		state.Completed = true
-	case "stopped", "inactive", "dropped":
-		state.Status = state.LifecycleState
+	case "dropped":
+		state.Status = "dropped"
 	default:
-		if state.Completed {
-			state.Status = "completed"
-		} else if state.HasLease {
-			state.Status = "active"
-		} else {
-			state.Status = "completed"
+		if bootstrapLaunching {
+			state.Status = "launching"
+			return state, nil
+		}
+		switch state.ContinuityState {
+		case "stranded":
+			state.Status = "stranded"
+		case "stopped":
+			state.Status = "stopped"
+		default:
+			presence, err := BuildTargetPresenceFacts(runDir, tmuxSession)
+			if err != nil {
+				return nil, err
+			}
+			sessionMissing := false
+			sessionTruthAvailable := false
+			for target, facts := range presence {
+				if !strings.HasPrefix(target, "session-") {
+					continue
+				}
+				if strings.TrimSpace(facts.State) == TargetPresencePresent || strings.TrimSpace(facts.State) == TargetPresenceParked {
+					sessionTruthAvailable = true
+				}
+				if targetPresenceMissing(facts) {
+					sessionMissing = true
+				}
+			}
+			masterMissing := targetPresenceMissing(presence["master"])
+			sidecarMissing := targetPresenceMissing(presence["runtime-host"])
+			switch {
+			case masterMissing || sidecarMissing || sessionMissing:
+				state.Status = "degraded"
+			case state.HasLease || state.HasTmuxSession || sessionTruthAvailable:
+				state.Status = "active"
+			default:
+				state.Status = "degraded"
+			}
 		}
 	}
 	return state, nil
+}
+
+func runBootstrapStillLaunching(runDir string, controlState *ControlRunState, runtimeState *RunRuntimeState) bool {
+	continuityRunning := controlRunContinuityRunning(controlState, runtimeState)
+	if !continuityRunning {
+		return false
+	}
+	operations, err := LoadControlOperationsState(ControlOperationsPath(runDir))
+	if err != nil || operations == nil {
+		return false
+	}
+	op, ok := operations.Targets[RunBootstrapOperationKey()]
+	if !ok || strings.TrimSpace(op.Kind) != ControlOperationKindRunBootstrap {
+		return false
+	}
+	switch strings.TrimSpace(op.State) {
+	case ControlOperationStatePreparing, ControlOperationStateHandshaking, ControlOperationStateReconciling:
+		return true
+	default:
+		return false
+	}
 }
 
 func deriveRunIdentitySurface(runDir, fallbackObjective string) (string, int, string, string) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,14 +13,14 @@ import (
 	goalx "github.com/vonbai/goalx"
 )
 
-func TestRunSidecarTickRenewsLease(t *testing.T) {
+func TestRunRuntimeHostTickRenewsLease(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -29,12 +30,18 @@ func TestRunSidecarTickRenewsLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
 	if err := EnsureControlState(runDir); err != nil {
 		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if err := EnsureSuccessCompilation(repo, runDir, cfg, meta); err != nil {
+		t.Fatalf("EnsureSuccessCompilation: %v", err)
+	}
+	if _, _, err := RefreshIdentityFence(runDir, meta); err != nil {
+		t.Fatalf("RefreshIdentityFence: %v", err)
 	}
 
 	fakeBin := t.TempDir()
@@ -44,8 +51,8 @@ func TestRunSidecarTickRenewsLease(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	activity, err := LoadActivitySnapshot(ActivityPath(runDir))
@@ -77,12 +84,12 @@ func TestRunSidecarTickRenewsLease(t *testing.T) {
 		t.Fatal("transport facts not written")
 	}
 
-	lease, err := LoadControlLease(ControlLeasePath(runDir, "sidecar"))
+	lease, err := LoadControlLease(ControlLeasePath(runDir, "runtime-host"))
 	if err != nil {
 		t.Fatalf("LoadControlLease: %v", err)
 	}
-	if lease.Holder != "sidecar" {
-		t.Fatalf("lease holder = %q, want sidecar", lease.Holder)
+	if lease.Holder != "runtime-host" {
+		t.Fatalf("lease holder = %q, want runtime-host", lease.Holder)
 	}
 	if lease.RunID != meta.RunID {
 		t.Fatalf("lease run id = %q, want %q", lease.RunID, meta.RunID)
@@ -101,14 +108,14 @@ func TestRunSidecarTickRenewsLease(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickAppliesPendingControlOpsBeforeMaintenance(t *testing.T) {
+func TestRunRuntimeHostTickAppliesPendingControlOpsBeforeMaintenance(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -118,7 +125,7 @@ func TestRunSidecarTickAppliesPendingControlOpsBeforeMaintenance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -127,7 +134,7 @@ func TestRunSidecarTickAppliesPendingControlOpsBeforeMaintenance(t *testing.T) {
 	}
 	if _, err := appendControlOp(runDir, controlOpReminderQueue, controlReminderQueueBody{
 		DedupeKey: "pending-op",
-		Reason:    "queued-before-sidecar",
+		Reason:    "queued-before-runtime-host",
 		Target:    "gx-demo:master",
 		Engine:    "codex",
 	}); err != nil {
@@ -141,8 +148,8 @@ func TestRunSidecarTickAppliesPendingControlOpsBeforeMaintenance(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
@@ -161,14 +168,14 @@ func TestRunSidecarTickAppliesPendingControlOpsBeforeMaintenance(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickWritesEvolveFactsOnlyForEvolveRun(t *testing.T) {
+func TestRunRuntimeHostTickWritesEvolveFactsOnlyForEvolveRun(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -183,7 +190,7 @@ func TestRunSidecarTickWritesEvolveFactsOnlyForEvolveRun(t *testing.T) {
 		t.Fatalf("SaveRunMetadata: %v", err)
 	}
 	appendExperimentEventForTest(t, runDir, `{"version":1,"kind":"experiment.created","at":"2026-03-29T10:00:00Z","actor":"master","body":{"experiment_id":"exp-1","created_at":"2026-03-29T10:00:00Z"}}`)
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -198,15 +205,15 @@ func TestRunSidecarTickWritesEvolveFactsOnlyForEvolveRun(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick evolve: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick evolve: %v", err)
 	}
 	if _, err := os.Stat(EvolveFactsPath(runDir)); err != nil {
 		t.Fatalf("expected evolve facts file, stat err = %v", err)
 	}
 
 	runDir2 := writeRunSpecFixture(t, repo, &goalx.Config{
-		Name:      "sidecar-run-non-evolve",
+		Name:      "runtime-host-run-non-evolve",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -215,14 +222,14 @@ func TestRunSidecarTickWritesEvolveFactsOnlyForEvolveRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata non-evolve: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir2, repo, &goalx.Config{
-		Name:      "sidecar-run-non-evolve",
+	bootstrapRuntimeHostIdentityFixture(t, runDir2, repo, &goalx.Config{
+		Name:      "runtime-host-run-non-evolve",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
 	}, meta2)
 	if _, err := EnsureRuntimeState(runDir2, &goalx.Config{
-		Name:      "sidecar-run-non-evolve",
+		Name:      "runtime-host-run-non-evolve",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -232,22 +239,22 @@ func TestRunSidecarTickWritesEvolveFactsOnlyForEvolveRun(t *testing.T) {
 	if err := EnsureControlState(runDir2); err != nil {
 		t.Fatalf("EnsureControlState non-evolve: %v", err)
 	}
-	if err := runSidecarTick(repo, "sidecar-run-non-evolve", runDir2, meta2.RunID, meta2.Epoch, 2*time.Minute, 4343); err != nil {
-		t.Fatalf("runSidecarTick non-evolve: %v", err)
+	if err := runRuntimeHostTick(repo, "runtime-host-run-non-evolve", runDir2, meta2.RunID, meta2.Epoch, 2*time.Minute, 4343); err != nil {
+		t.Fatalf("runRuntimeHostTick non-evolve: %v", err)
 	}
 	if _, err := os.Stat(EvolveFactsPath(runDir2)); !os.IsNotExist(err) {
 		t.Fatalf("expected no evolve facts for non-evolve run, stat err = %v", err)
 	}
 }
 
-func TestRunSidecarTickDeliversDueMasterWakeReminder(t *testing.T) {
+func TestRunRuntimeHostTickDeliversDueMasterWakeReminder(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -257,7 +264,7 @@ func TestRunSidecarTickDeliversDueMasterWakeReminder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -279,21 +286,21 @@ func TestRunSidecarTickDeliversDueMasterWakeReminder(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var gotTarget, gotEngine string
 	sendAgentNudge = func(target, engine string) error {
 		gotTarget, gotEngine = target, engine
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		gotTarget, gotEngine = target, engine
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	wantTarget := goalx.TmuxSessionName(repo, cfg.Name) + ":master"
@@ -313,14 +320,14 @@ func TestRunSidecarTickDeliversDueMasterWakeReminder(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickQueuesRefreshContextWhenIdentityFenceChanges(t *testing.T) {
+func TestRunRuntimeHostTickQueuesRefreshContextWhenIdentityFenceChanges(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -330,7 +337,7 @@ func TestRunSidecarTickQueuesRefreshContextWhenIdentityFenceChanges(t *testing.T
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -356,8 +363,8 @@ func TestRunSidecarTickQueuesRefreshContextWhenIdentityFenceChanges(t *testing.T
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
@@ -376,14 +383,14 @@ func TestRunSidecarTickQueuesRefreshContextWhenIdentityFenceChanges(t *testing.T
 	}
 }
 
-func TestRunSidecarTickRelaunchesMissingMasterWindowOnActiveRun(t *testing.T) {
+func TestRunRuntimeHostTickRelaunchesMissingMasterWindowOnActiveRun(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -393,14 +400,14 @@ func TestRunSidecarTickRelaunchesMissingMasterWindowOnActiveRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
 	if err := EnsureControlState(runDir); err != nil {
 		t.Fatalf("EnsureControlState: %v", err)
 	}
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 	seedSaveSessionIdentity(t, runDir, "session-1", goalx.ModeWorker, "codex", "gpt-5.4", goalx.TargetConfig{}, goalx.LocalValidationConfig{})
@@ -421,8 +428,8 @@ func TestRunSidecarTickRelaunchesMissingMasterWindowOnActiveRun(t *testing.T) {
 	t.Setenv("TMUX_LOG", logPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	logData, err := os.ReadFile(logPath)
@@ -442,9 +449,9 @@ func TestRunSidecarTickRelaunchesMissingMasterWindowOnActiveRun(t *testing.T) {
 		t.Fatalf("missing-master relaunch should not kill window:\n%s", logText)
 	}
 
-	auditData, err := os.ReadFile(filepath.Join(runDir, "sidecar.log"))
+	auditData, err := os.ReadFile(filepath.Join(runDir, "runtime-host.log"))
 	if err != nil {
-		t.Fatalf("read sidecar audit log: %v", err)
+		t.Fatalf("read runtime-host audit log: %v", err)
 	}
 	auditText := string(auditData)
 	for _, want := range []string{
@@ -452,19 +459,19 @@ func TestRunSidecarTickRelaunchesMissingMasterWindowOnActiveRun(t *testing.T) {
 		"target_relaunch_result target=master result=success cause=window_missing",
 	} {
 		if !strings.Contains(auditText, want) {
-			t.Fatalf("sidecar audit log missing %q:\n%s", want, auditText)
+			t.Fatalf("runtime-host audit log missing %q:\n%s", want, auditText)
 		}
 	}
 }
 
-func TestRunSidecarTickAlertsMasterOnceWhenSessionWindowMissing(t *testing.T) {
+func TestRunRuntimeHostTickAlertsMasterOnceWhenSessionWindowMissing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -474,14 +481,14 @@ func TestRunSidecarTickAlertsMasterOnceWhenSessionWindowMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
 	if err := EnsureControlState(runDir); err != nil {
 		t.Fatalf("EnsureControlState: %v", err)
 	}
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 	seedSaveSessionIdentity(t, runDir, "session-1", goalx.ModeWorker, "codex", "gpt-5.4", goalx.TargetConfig{}, goalx.LocalValidationConfig{})
@@ -500,8 +507,8 @@ func TestRunSidecarTickAlertsMasterOnceWhenSessionWindowMissing(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	for i := 0; i < 2; i++ {
-		if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-			t.Fatalf("runSidecarTick #%d: %v", i+1, err)
+		if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+			t.Fatalf("runRuntimeHostTick #%d: %v", i+1, err)
 		}
 	}
 
@@ -533,14 +540,14 @@ func TestRunSidecarTickAlertsMasterOnceWhenSessionWindowMissing(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickProjectsSessionJournalStateIntoRuntime(t *testing.T) {
+func TestRunRuntimeHostTickRelaunchesMissingMasterSession(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -550,7 +557,74 @@ func TestRunSidecarTickProjectsSessionJournalStateIntoRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
+	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
+		t.Fatalf("EnsureRuntimeState: %v", err)
+	}
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+
+	fakeBin := t.TempDir()
+	logPath := filepath.Join(fakeBin, "tmux.log")
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	script := "#!/bin/sh\n" +
+		"echo \"$@\" >> \"$TMUX_LOG\"\n" +
+		"if [ \"$1\" = \"has-session\" ]; then exit 1; fi\n" +
+		"if [ \"$1\" = \"new-session\" ]; then exit 0; fi\n" +
+		"if [ \"$1\" = \"capture-pane\" ]; then exit 0; fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(tmuxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("TMUX_LOG", logPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read tmux log: %v", err)
+	}
+	logText := string(logData)
+	wantSession := goalx.TmuxSessionName(repo, cfg.Name)
+	if !strings.Contains(logText, "new-session -d -s "+wantSession+" -n master -c "+RunWorktreePath(runDir)) {
+		t.Fatalf("tmux log missing master session relaunch:\n%s", logText)
+	}
+
+	auditData, err := os.ReadFile(filepath.Join(runDir, "runtime-host.log"))
+	if err != nil {
+		t.Fatalf("read runtime-host audit log: %v", err)
+	}
+	auditText := string(auditData)
+	if !strings.Contains(auditText, "target_relaunch_attempt target=master cause=session_missing") {
+		t.Fatalf("runtime-host audit log missing session_missing relaunch attempt:\n%s", auditText)
+	}
+}
+
+func TestRunRuntimeHostTickProjectsSessionJournalStateIntoRuntime(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "base", "base commit")
+	cfg := &goalx.Config{
+		Name:      "runtime-host-run",
+		Mode:      goalx.ModeWorker,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	runDir := writeRunSpecFixture(t, repo, cfg)
+	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
+	if err != nil {
+		t.Fatalf("EnsureRunMetadata: %v", err)
+	}
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -580,8 +654,8 @@ func TestRunSidecarTickProjectsSessionJournalStateIntoRuntime(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	state, err := LoadSessionsRuntimeState(SessionsRuntimeStatePath(runDir))
@@ -603,40 +677,25 @@ func TestRunSidecarTickProjectsSessionJournalStateIntoRuntime(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickDoesNotQueueRefreshContextWhenIdentityFenceUnchanged(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	repo := initGitRepo(t)
-	writeAndCommit(t, repo, "README.md", "base", "base commit")
-	cfg := &goalx.Config{
-		Name:      "sidecar-run",
-		Mode:      goalx.ModeWorker,
-		Objective: "ship feature",
-		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+func TestRunRuntimeHostTickDoesNotQueueRefreshContextWhenIdentityFenceUnchanged(t *testing.T) {
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	if err := EnsureSuccessCompilation(repo, runDir, cfg, meta); err != nil {
+		t.Fatalf("EnsureSuccessCompilation: %v", err)
 	}
-	runDir := writeRunSpecFixture(t, repo, cfg)
-	meta, err := EnsureRunMetadata(runDir, repo, cfg.Objective)
-	if err != nil {
-		t.Fatalf("EnsureRunMetadata: %v", err)
+	if _, err := RefreshRunGuidance(repo, cfg.Name, runDir); err != nil {
+		t.Fatalf("RefreshRunGuidance: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
-	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
-		t.Fatalf("EnsureRuntimeState: %v", err)
+	if _, _, err := RefreshIdentityFence(runDir, meta); err != nil {
+		t.Fatalf("RefreshIdentityFence: %v", err)
 	}
-	if err := EnsureControlState(runDir); err != nil {
-		t.Fatalf("EnsureControlState: %v", err)
+	if err := os.Remove(ControlRemindersPath(runDir)); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove reminders: %v", err)
 	}
 
-	fakeBin := t.TempDir()
-	tmuxPath := filepath.Join(fakeBin, "tmux")
-	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\nif [ \"$1\" = \"has-session\" ]; then exit 0; fi\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
-	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	installGuidanceFakeTmux(t, nil)
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
@@ -650,7 +709,7 @@ func TestRunSidecarTickDoesNotQueueRefreshContextWhenIdentityFenceUnchanged(t *t
 	}
 }
 
-func TestStopTerminatesSidecar(t *testing.T) {
+func TestStopTerminatesRuntimeHost(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -665,19 +724,18 @@ func TestStopTerminatesSidecar(t *testing.T) {
 		t.Fatalf("RegisterActiveRun: %v", err)
 	}
 
-	origStopSidecar := stopRunSidecar
-	defer func() { stopRunSidecar = origStopSidecar }()
-	var gotRunDir string
-	stopRunSidecar = func(runDir string) error {
-		gotRunDir = runDir
-		return nil
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	runtimeSupervisor = &runtimeSupervisorStub{
+		stopErr: nil,
 	}
+	supervisor := runtimeSupervisor.(*runtimeSupervisorStub)
 
 	if err := Stop(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if gotRunDir != runDir {
-		t.Fatalf("stopRunSidecar runDir = %q, want %q", gotRunDir, runDir)
+	if supervisor.stopCalls != 1 || supervisor.lastStopRunDir != runDir {
+		t.Fatalf("runtime supervisor stop runDir = %q, want %q", supervisor.lastStopRunDir, runDir)
 	}
 }
 
@@ -695,7 +753,7 @@ func TestStopTerminalizesControlStateWhenRunIsAlreadyInactive(t *testing.T) {
 	if err := RegisterActiveRun(repo, cfg); err != nil {
 		t.Fatalf("RegisterActiveRun: %v", err)
 	}
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 	if err := RenewControlLease(runDir, "master", "run_demo", 1, time.Minute, "tmux", exitedProcessPID(t)); err != nil {
@@ -721,9 +779,7 @@ func TestStopTerminalizesControlStateWhenRunIsAlreadyInactive(t *testing.T) {
 		t.Fatalf("SaveControlDeliveries: %v", err)
 	}
 
-	origStopSidecar := stopRunSidecar
-	defer func() { stopRunSidecar = origStopSidecar }()
-	stopRunSidecar = func(runDir string) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := Stop(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Stop: %v", err)
@@ -733,8 +789,8 @@ func TestStopTerminalizesControlStateWhenRunIsAlreadyInactive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if runState.LifecycleState != "stopped" {
-		t.Fatalf("lifecycle_state = %q, want stopped", runState.LifecycleState)
+	if runState.GoalState != "open" || runState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want open/stopped", runState)
 	}
 	masterLease, err := LoadControlLease(ControlLeasePath(runDir, "master"))
 	if err != nil {
@@ -773,7 +829,7 @@ func TestStopTerminalizesControlStateWhenRunIsAlreadyInactive(t *testing.T) {
 	}
 }
 
-func TestDropTerminatesSidecarBeforeRemovingRunDir(t *testing.T) {
+func TestDropTerminatesRuntimeHostBeforeRemovingRunDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -794,30 +850,29 @@ func TestDropTerminatesSidecarBeforeRemovingRunDir(t *testing.T) {
 		t.Fatalf("write run snapshot: %v", err)
 	}
 
-	origStopSidecar := stopRunSidecar
-	defer func() { stopRunSidecar = origStopSidecar }()
-	var gotRunDir string
-	stopRunSidecar = func(runDir string) error {
-		gotRunDir = runDir
-		return nil
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	runtimeSupervisor = &runtimeSupervisorStub{
+		stopErr: nil,
 	}
+	supervisor := runtimeSupervisor.(*runtimeSupervisorStub)
 
 	if err := Drop(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Drop: %v", err)
 	}
-	if gotRunDir != runDir {
-		t.Fatalf("stopRunSidecar runDir = %q, want %q", gotRunDir, runDir)
+	if supervisor.stopCalls != 1 || supervisor.lastStopRunDir != runDir {
+		t.Fatalf("runtime supervisor stop runDir = %q, want %q", supervisor.lastStopRunDir, runDir)
 	}
 }
 
-func TestSidecarRenewsLeaseUntilContextStops(t *testing.T) {
+func TestRuntimeHostRenewsLeaseUntilContextStops(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -827,7 +882,7 @@ func TestSidecarRenewsLeaseUntilContextStops(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -844,32 +899,32 @@ func TestSidecarRenewsLeaseUntilContextStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- runSidecarLoop(ctx, repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond)
+		done <- runRuntimeHostLoop(ctx, repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond)
 	}()
 
 	time.Sleep(120 * time.Millisecond)
 	cancel()
 	if err := <-done; err != nil {
-		t.Fatalf("runSidecarLoop: %v", err)
+		t.Fatalf("runRuntimeHostLoop: %v", err)
 	}
 
-	lease, err := LoadControlLease(ControlLeasePath(runDir, "sidecar"))
+	lease, err := LoadControlLease(ControlLeasePath(runDir, "runtime-host"))
 	if err != nil {
 		t.Fatalf("LoadControlLease: %v", err)
 	}
 	if lease.RenewedAt == "" {
-		t.Fatalf("sidecar lease renewed_at empty: %+v", lease)
+		t.Fatalf("runtime host renewed_at empty: %+v", lease)
 	}
 }
 
-func TestSidecarStopsWhenRunIdentityChanges(t *testing.T) {
+func TestRuntimeHostStopsWhenRunIdentityChanges(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "README.md", "base", "base commit")
 	cfg := &goalx.Config{
-		Name:      "sidecar-run",
+		Name:      "runtime-host-run",
 		Mode:      goalx.ModeWorker,
 		Objective: "ship feature",
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
@@ -879,7 +934,7 @@ func TestSidecarStopsWhenRunIdentityChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
@@ -898,7 +953,7 @@ func TestSidecarStopsWhenRunIdentityChanges(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- runSidecarLoop(ctx, repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond)
+		done <- runRuntimeHostLoop(ctx, repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond)
 	}()
 
 	time.Sleep(60 * time.Millisecond)
@@ -910,14 +965,14 @@ func TestSidecarStopsWhenRunIdentityChanges(t *testing.T) {
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("runSidecarLoop: %v", err)
+			t.Fatalf("runRuntimeHostLoop: %v", err)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("sidecar did not stop after run identity changed")
+		t.Fatal("runtime host did not stop after run identity changed")
 	}
 }
 
-func TestSidecarFinalizesCompletedRunWhenMasterSessionIsGone(t *testing.T) {
+func TestRuntimeHostFinalizesCompletedRunWhenMasterSessionIsGone(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -959,7 +1014,7 @@ func TestSidecarFinalizesCompletedRunWhenMasterSessionIsGone(t *testing.T) {
 	if err := os.WriteFile(CompletionStatePath(runDir), []byte(`{"completed_at":"2026-03-27T16:02:03Z"}`), 0o644); err != nil {
 		t.Fatalf("write completion proof: %v", err)
 	}
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 	if err := RenewControlLease(runDir, "master", "run_demo", 1, time.Minute, "tmux", exitedProcessPID(t)); err != nil {
@@ -1001,18 +1056,18 @@ func TestSidecarFinalizesCompletedRunWhenMasterSessionIsGone(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- runSidecarLoop(ctx, repo, runName, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond)
+		done <- runRuntimeHostLoop(ctx, repo, runName, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond)
 	}()
 
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("runSidecarLoop: %v", err)
+			t.Fatalf("runRuntimeHostLoop: %v", err)
 		}
 	case <-time.After(300 * time.Millisecond):
 		cancel()
 		<-done
-		t.Fatal("sidecar did not stop after completed run lost its master session")
+		t.Fatal("runtime host did not stop after completed run lost its master session")
 	}
 
 	runState, err = LoadRunRuntimeState(RunRuntimeStatePath(runDir))
@@ -1027,8 +1082,8 @@ func TestSidecarFinalizesCompletedRunWhenMasterSessionIsGone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadControlRunState after: %v", err)
 	}
-	if controlState.LifecycleState != "completed" {
-		t.Fatalf("lifecycle_state = %q, want completed", controlState.LifecycleState)
+	if controlState.GoalState != "completed" || controlState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want completed/stopped", controlState)
 	}
 
 	lease, err := LoadControlLease(ControlLeasePath(runDir, "master"))
@@ -1038,12 +1093,12 @@ func TestSidecarFinalizesCompletedRunWhenMasterSessionIsGone(t *testing.T) {
 	if lease.PID != 0 || lease.RunID != "" {
 		t.Fatalf("master lease not expired: %+v", lease)
 	}
-	lease, err = LoadControlLease(ControlLeasePath(runDir, "sidecar"))
+	lease, err = LoadControlLease(ControlLeasePath(runDir, "runtime-host"))
 	if err != nil {
-		t.Fatalf("LoadControlLease sidecar: %v", err)
+		t.Fatalf("LoadControlLease runtime-host: %v", err)
 	}
 	if lease.PID != 0 || lease.RunID != "" {
-		t.Fatalf("sidecar lease not expired: %+v", lease)
+		t.Fatalf("runtime host not expired: %+v", lease)
 	}
 
 	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
@@ -1071,7 +1126,7 @@ func TestSidecarFinalizesCompletedRunWhenMasterSessionIsGone(t *testing.T) {
 	}
 }
 
-func TestSidecarFinalizesCompletedRunWhenMasterSessionStillExists(t *testing.T) {
+func TestRuntimeHostFinalizesCompletedRunWhenMasterSessionStillExists(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1113,7 +1168,7 @@ func TestSidecarFinalizesCompletedRunWhenMasterSessionStillExists(t *testing.T) 
 	if err := os.WriteFile(CompletionStatePath(runDir), []byte(`{"completed_at":"2026-03-27T16:02:03Z"}`), 0o644); err != nil {
 		t.Fatalf("write completion proof: %v", err)
 	}
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 
@@ -1157,18 +1212,18 @@ esac
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- runSidecarLoop(ctx, repo, runName, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond)
+		done <- runRuntimeHostLoop(ctx, repo, runName, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond)
 	}()
 
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("runSidecarLoop: %v", err)
+			t.Fatalf("runRuntimeHostLoop: %v", err)
 		}
 	case <-time.After(300 * time.Millisecond):
 		cancel()
 		<-done
-		t.Fatal("sidecar did not stop after completed run with live master session")
+		t.Fatal("runtime host did not stop after completed run with live master session")
 	}
 
 	runState, err = LoadRunRuntimeState(RunRuntimeStatePath(runDir))
@@ -1183,8 +1238,8 @@ esac
 	if err != nil {
 		t.Fatalf("LoadControlRunState after: %v", err)
 	}
-	if controlState.LifecycleState != "completed" {
-		t.Fatalf("lifecycle_state = %q, want completed", controlState.LifecycleState)
+	if controlState.GoalState != "completed" || controlState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want completed/stopped", controlState)
 	}
 
 	logData, err := os.ReadFile(logPath)
@@ -1204,7 +1259,7 @@ esac
 	}
 }
 
-func TestSidecarKeepsCompletedRunAliveWhenUnreadMasterInboxExists(t *testing.T) {
+func TestRuntimeHostKeepsCompletedRunAliveWhenUnreadMasterInboxExists(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1243,7 +1298,7 @@ func TestSidecarKeepsCompletedRunAliveWhenUnreadMasterInboxExists(t *testing.T) 
 	if err := os.WriteFile(CompletionStatePath(runDir), []byte(`{"completed_at":"2026-03-27T16:02:03Z"}`), 0o644); err != nil {
 		t.Fatalf("write completion proof: %v", err)
 	}
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 	if _, err := appendControlInboxMessage(runDir, "master", "tell", "user", "reopen and fix verification", false); err != nil {
@@ -1275,19 +1330,19 @@ esac
 	t.Setenv("TMUX_LOG", logPath)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, runName, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState.LifecycleState == "completed" {
-		t.Fatalf("lifecycle_state = %q, want run kept active for unread master inbox", controlState.LifecycleState)
+	if controlState.GoalState == "completed" {
+		t.Fatalf("control state = %+v, want run kept open for unread master inbox", controlState)
 	}
 	if _, err := os.Stat(filepath.Join(ControlDir(runDir), "handoffs", "master.json")); !os.IsNotExist(err) {
-		t.Fatalf("sidecar relaunch should not create legacy handoff file, stat err = %v", err)
+		t.Fatalf("runtime host relaunch should not create legacy handoff file, stat err = %v", err)
 	}
 
 	logData, err := os.ReadFile(logPath)
@@ -1306,7 +1361,7 @@ esac
 	}
 }
 
-func TestSidecarFinalizesCompletedRunWhenMasterWindowMissingButWorkerWindowsRemain(t *testing.T) {
+func TestRuntimeHostFinalizesCompletedRunWhenMasterWindowMissingButWorkerWindowsRemain(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1348,7 +1403,7 @@ func TestSidecarFinalizesCompletedRunWhenMasterWindowMissingButWorkerWindowsRema
 	if err := os.WriteFile(CompletionStatePath(runDir), []byte(`{"completed_at":"2026-03-27T16:02:03Z"}`), 0o644); err != nil {
 		t.Fatalf("write completion proof: %v", err)
 	}
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 	if err := RenewControlLease(runDir, "master", "run_demo", 1, time.Minute, "tmux", exitedProcessPID(t)); err != nil {
@@ -1395,16 +1450,16 @@ esac
 	t.Setenv("TMUX_SESSION_NAME", goalx.TmuxSessionName(repo, runName))
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, 4242); err == nil || !errors.Is(err, errSidecarCompleted) {
-		t.Fatalf("runSidecarTick err = %v, want %v", err, errSidecarCompleted)
+	if err := runRuntimeHostTick(repo, runName, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, 4242); err == nil || !errors.Is(err, errRuntimeHostCompleted) {
+		t.Fatalf("runRuntimeHostTick err = %v, want %v", err, errRuntimeHostCompleted)
 	}
 
 	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if controlState.LifecycleState != "completed" {
-		t.Fatalf("lifecycle_state = %q, want completed", controlState.LifecycleState)
+	if controlState.GoalState != "completed" || controlState.ContinuityState != "stopped" {
+		t.Fatalf("control state = %+v, want completed/stopped", controlState)
 	}
 
 	runState, err = LoadRunRuntimeState(RunRuntimeStatePath(runDir))
@@ -1424,18 +1479,18 @@ esac
 	}
 }
 
-func TestRunSidecarTickAlertsMissingSessionWindowOnceWithoutRespawn(t *testing.T) {
+func TestRunRuntimeHostTickAlertsMissingSessionWindowOnceWithoutRespawn(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
 	logPath := installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick first: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick first: %v", err)
 	}
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick second: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick second: %v", err)
 	}
 
 	recovery, err := LoadTransportRecovery(TransportRecoveryPath(runDir))
@@ -1472,16 +1527,16 @@ func TestRunSidecarTickAlertsMissingSessionWindowOnceWithoutRespawn(t *testing.T
 		t.Fatalf("missing session should not respawn worker:\n%s", string(logData))
 	}
 
-	auditData, err := os.ReadFile(filepath.Join(runDir, "sidecar.log"))
+	auditData, err := os.ReadFile(filepath.Join(runDir, "runtime-host.log"))
 	if err != nil {
-		t.Fatalf("read sidecar audit log: %v", err)
+		t.Fatalf("read runtime-host audit log: %v", err)
 	}
 	if strings.Count(string(auditData), "target_missing_alert target=session-1 cause=window_missing") != 1 {
 		t.Fatalf("missing session alert should be recorded once:\n%s", string(auditData))
 	}
 }
 
-func TestRunSidecarTickDoesNotAlertMissingParkedSession(t *testing.T) {
+func TestRunRuntimeHostTickDoesNotAlertMissingParkedSession(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1504,8 +1559,8 @@ func TestRunSidecarTickDoesNotAlertMissingParkedSession(t *testing.T) {
 		t.Fatalf("SaveCoordinationState: %v", err)
 	}
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 50*time.Millisecond, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
@@ -1516,9 +1571,9 @@ func TestRunSidecarTickDoesNotAlertMissingParkedSession(t *testing.T) {
 		t.Fatalf("parked session should not trigger missing alert:\n%s", string(inboxData))
 	}
 
-	auditData, err := os.ReadFile(filepath.Join(runDir, "sidecar.log"))
+	auditData, err := os.ReadFile(filepath.Join(runDir, "runtime-host.log"))
 	if err != nil && !os.IsNotExist(err) {
-		t.Fatalf("read sidecar audit log: %v", err)
+		t.Fatalf("read runtime-host audit log: %v", err)
 	}
 	if strings.Contains(string(auditData), "target_missing_alert target=session-1") {
 		t.Fatalf("parked session should not emit missing alert:\n%s", string(auditData))
@@ -1614,7 +1669,7 @@ func TestProcessTargetAttentionAlertsMasterOnce(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickAlertsBlockedSessionAttentionOnce(t *testing.T) {
+func TestRunRuntimeHostTickAlertsBlockedSessionAttentionOnce(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1664,11 +1719,11 @@ func TestRunSidecarTickAlertsBlockedSessionAttentionOnce(t *testing.T) {
 		t.Fatalf("SaveControlDeliveries: %v", err)
 	}
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick first: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick first: %v", err)
 	}
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick second: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick second: %v", err)
 	}
 
 	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
@@ -1697,16 +1752,16 @@ func TestRunSidecarTickAlertsBlockedSessionAttentionOnce(t *testing.T) {
 		t.Fatalf("attention timestamps missing: %+v", target)
 	}
 
-	auditData, err := os.ReadFile(filepath.Join(runDir, "sidecar.log"))
+	auditData, err := os.ReadFile(filepath.Join(runDir, "runtime-host.log"))
 	if err != nil {
-		t.Fatalf("read sidecar audit log: %v", err)
+		t.Fatalf("read runtime-host audit log: %v", err)
 	}
 	if got := strings.Count(string(auditData), "target_attention_alert target=session-1 state=transport_blocked"); got != 1 {
 		t.Fatalf("target attention alert should be recorded once:\n%s", string(auditData))
 	}
 }
 
-func TestRunSidecarTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
+func TestRunRuntimeHostTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1766,25 +1821,25 @@ func TestRunSidecarTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
 		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
 	}
 
-	orig := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = orig }()
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick first: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick first: %v", err)
 	}
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick second: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick second: %v", err)
 	}
 
 	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
 	if err != nil {
 		t.Fatalf("read master inbox: %v", err)
 	}
-	if got := strings.Count(string(inboxData), `"type":"required-frontier"`); got != 3 {
-		t.Fatalf("master inbox required-frontier count = %d, want 3\n%s", got, string(inboxData))
+	if got := strings.Count(string(inboxData), `"type":"master-alert"`); got != 3 {
+		t.Fatalf("master inbox master-alert count = %d, want 3\n%s", got, string(inboxData))
 	}
 	for _, want := range []string{
 		"required=req-1 fact=master_orphaned",
@@ -1800,8 +1855,8 @@ func TestRunSidecarTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if len(controlState.RequiredFrontierAlerts) != 3 {
-		t.Fatalf("required frontier alerts = %+v, want 3 entries", controlState.RequiredFrontierAlerts)
+	if len(controlState.MasterAlerts) != 3 {
+		t.Fatalf("master alerts = %+v, want 3 entries", controlState.MasterAlerts)
 	}
 
 	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
@@ -1810,7 +1865,7 @@ func TestRunSidecarTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
 	}
 	count := 0
 	for _, item := range deliveries.Items {
-		if strings.HasPrefix(item.DedupeKey, "master-required-frontier:") {
+		if strings.HasPrefix(item.DedupeKey, "master-alert:") {
 			count++
 		}
 	}
@@ -1819,7 +1874,66 @@ func TestRunSidecarTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickRealertsRequiredFrontierWhenStateChanges(t *testing.T) {
+func TestRunRuntimeHostTickAlertsBudgetExhaustionOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	cfg.Budget.MaxDuration = time.Second
+	if err := SaveRunSpec(runDir, cfg); err != nil {
+		t.Fatalf("SaveRunSpec: %v", err)
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       cfg.Name,
+		Mode:      string(cfg.Mode),
+		Active:    true,
+		StartedAt: "2000-01-01T00:00:00Z",
+		UpdatedAt: "2000-01-01T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+	installGuidanceFakeTmux(t, nil)
+
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
+		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
+	}
+
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick first: %v", err)
+	}
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick second: %v", err)
+	}
+
+	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	if got := strings.Count(string(inboxData), `"type":"master-alert"`); got != 1 {
+		t.Fatalf("master inbox master-alert count = %d, want 1\n%s", got, string(inboxData))
+	}
+	if !strings.Contains(string(inboxData), "Budget exhausted") {
+		t.Fatalf("master inbox missing budget exhausted alert:\n%s", string(inboxData))
+	}
+
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if len(controlState.MasterAlerts) != 1 {
+		t.Fatalf("master alerts = %+v, want 1 entry", controlState.MasterAlerts)
+	}
+	for _, fingerprint := range controlState.MasterAlerts {
+		if !strings.Contains(fingerprint, "budget_exhausted") {
+			t.Fatalf("unexpected budget alert fingerprint: %q", fingerprint)
+		}
+	}
+}
+
+func TestRunRuntimeHostTickRealertsRequiredFrontierWhenStateChanges(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1869,26 +1983,26 @@ func TestRunSidecarTickRealertsRequiredFrontierWhenStateChanges(t *testing.T) {
 		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
 	}
 
-	orig := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = orig }()
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick probing: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick probing: %v", err)
 	}
 	writeCoordination(coordinationRequiredExecutionStateWaiting)
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick waiting: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick waiting: %v", err)
 	}
 
 	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
 	if err != nil {
 		t.Fatalf("read master inbox: %v", err)
 	}
-	if got := strings.Count(string(inboxData), `"type":"required-frontier"`); got != 2 {
-		t.Fatalf("master inbox required-frontier count = %d, want 2\n%s", got, string(inboxData))
+	if got := strings.Count(string(inboxData), `"type":"master-alert"`); got != 2 {
+		t.Fatalf("master inbox master-alert count = %d, want 2\n%s", got, string(inboxData))
 	}
 	if !strings.Contains(string(inboxData), "execution_state=probing") || !strings.Contains(string(inboxData), "execution_state=waiting") {
 		t.Fatalf("master inbox missing frontier state change:\n%s", string(inboxData))
@@ -1898,17 +2012,480 @@ func TestRunSidecarTickRealertsRequiredFrontierWhenStateChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadControlRunState: %v", err)
 	}
-	if len(controlState.RequiredFrontierAlerts) != 1 {
-		t.Fatalf("required frontier alerts = %+v, want 1 entry", controlState.RequiredFrontierAlerts)
+	if len(controlState.MasterAlerts) != 1 {
+		t.Fatalf("master alerts = %+v, want 1 entry", controlState.MasterAlerts)
 	}
-	for _, fingerprint := range controlState.RequiredFrontierAlerts {
+	for _, fingerprint := range controlState.MasterAlerts {
 		if !strings.Contains(fingerprint, "execution_state=waiting") {
 			t.Fatalf("required frontier fingerprint = %q, want waiting state", fingerprint)
 		}
 	}
 }
 
-func TestRunSidecarTickQueuesSessionWakeForUnreadSessionInbox(t *testing.T) {
+func TestRunRuntimeHostTickAlertsControlGapFacts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := os.WriteFile(RunStatusPath(runDir), []byte(`{"version":1,"phase":"working","required_remaining":2,"open_required_ids":["req-1"],"active_sessions":["session-9"],"updated_at":"2026-03-30T19:12:54Z"}`), 0o644); err != nil {
+		t.Fatalf("write status: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version:   1,
+		UpdatedAt: "2026-03-30T19:12:54Z",
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfaceActive,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfacePending,
+				},
+			},
+			"req-2": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfaceActive,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfacePending,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := SaveIntegrationState(IntegrationStatePath(runDir), &IntegrationState{
+		Version:             1,
+		CurrentExperimentID: "exp-2",
+		CurrentBranch:       "goalx/guidance-run/root",
+		CurrentCommit:       "abc123",
+		UpdatedAt:           "2026-03-31T01:05:35Z",
+	}); err != nil {
+		t.Fatalf("SaveIntegrationState: %v", err)
+	}
+	for _, session := range []SessionRuntimeState{
+		{Name: "session-5", State: "idle", Mode: string(goalx.ModeWorker)},
+		{Name: "session-4", State: "parked", Mode: string(goalx.ModeWorker)},
+	} {
+		if err := UpsertSessionRuntimeState(runDir, session); err != nil {
+			t.Fatalf("UpsertSessionRuntimeState %s: %v", session.Name, err)
+		}
+	}
+
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
+		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
+	}
+
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
+	}
+
+	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	for _, want := range []string{
+		"fact=status_drift",
+		"fact=coordination_stale",
+		"fact=serialized_required_frontier",
+	} {
+		if !strings.Contains(string(inboxData), want) {
+			t.Fatalf("master inbox missing %q:\n%s", want, string(inboxData))
+		}
+	}
+
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if len(controlState.MasterAlerts) != 3 {
+		t.Fatalf("master alerts = %+v, want 3 entries", controlState.MasterAlerts)
+	}
+}
+
+func TestRunRuntimeHostTickRealertsControlGapWhenFingerprintChanges(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveRunStatusRecord(RunStatusPath(runDir), &RunStatusRecord{
+		Version:           1,
+		Phase:             runStatusPhaseWorking,
+		RequiredRemaining: intPtr(2),
+		OpenRequiredIDs:   []string{"req-1", "req-2"},
+		ActiveSessions:    []string{"session-5"},
+		UpdatedAt:         "2026-03-30T19:12:54Z",
+	}); err != nil {
+		t.Fatalf("SaveRunStatusRecord: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version: 1,
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfaceActive,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfacePending,
+				},
+			},
+			"req-2": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfaceActive,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfacePending,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-5", State: "idle", Mode: string(goalx.ModeWorker)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-5: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-4", State: "parked", Mode: string(goalx.ModeWorker)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-4: %v", err)
+	}
+
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
+		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
+	}
+
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick first: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-3", State: "idle", Mode: string(goalx.ModeWorker)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState session-3: %v", err)
+	}
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick second: %v", err)
+	}
+
+	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	if got := strings.Count(string(inboxData), "fact=serialized_required_frontier"); got != 2 {
+		t.Fatalf("serialized control-gap alert count = %d, want 2\n%s", got, string(inboxData))
+	}
+
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	found := false
+	for key, fingerprint := range controlState.MasterAlerts {
+		if key != "control_gap:serialized_required_frontier" {
+			continue
+		}
+		found = true
+		if !strings.Contains(fingerprint, "reusable_sessions=session-3,session-4") {
+			t.Fatalf("serialized control-gap fingerprint = %q, want updated reusable sessions", fingerprint)
+		}
+	}
+	if !found {
+		t.Fatalf("serialized control-gap fingerprint missing: %+v", controlState.MasterAlerts)
+	}
+}
+
+func TestRunRuntimeHostTickRefreshesDomainPackFromPromotedSuccessPrior(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+
+	installGuidanceFakeTmux(t, nil)
+
+	now := time.Date(2026, time.March, 31, 13, 0, 0, 0, time.UTC)
+	if err := writeProposalShard(now, []MemoryProposal{
+		{
+			ID:        "prop_success_prior_guidance",
+			State:     "proposed",
+			Kind:      MemoryKindSuccessPrior,
+			Statement: "operator-console runs require critique and finisher passes before closeout",
+			Selectors: map[string]string{"project_id": goalx.ProjectID(repo)},
+			Evidence: []MemoryEvidence{
+				{Kind: "intervention_log", Path: "/tmp/intervention-log.jsonl"},
+				{Kind: "summary", Path: "/tmp/summary.md"},
+			},
+			SourceRuns: []string{"run-1", "run-2"},
+			CreatedAt:  "2026-03-31T13:00:00Z",
+			UpdatedAt:  "2026-03-31T13:00:00Z",
+		},
+	}); err != nil {
+		t.Fatalf("writeProposalShard: %v", err)
+	}
+
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
+	}
+
+	entries := loadCanonicalEntriesByKind(t, MemoryKindSuccessPrior)
+	if len(entries) != 1 {
+		t.Fatalf("success prior entries = %+v, want one promoted entry", entries)
+	}
+
+	pack, err := LoadDomainPack(DomainPackPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadDomainPack: %v", err)
+	}
+	if pack == nil || len(pack.PriorEntryIDs) != 1 {
+		t.Fatalf("domain pack = %+v, want one prior entry id", pack)
+	}
+	if len(pack.Signals) == 0 || !slices.Contains(pack.Signals, "success_prior_present") {
+		t.Fatalf("domain pack signals = %v, want success_prior_present", pack.Signals)
+	}
+	composition, err := buildProtocolComposition(runDir, ProtocolComposition{})
+	if err != nil {
+		t.Fatalf("buildProtocolComposition: %v", err)
+	}
+	if len(composition.SelectedPriorRefs) != 1 {
+		t.Fatalf("protocol composition selected prior refs = %v, want one selected prior", composition.SelectedPriorRefs)
+	}
+
+	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlReminders: %v", err)
+	}
+	found := false
+	for _, item := range reminders.Items {
+		if item.DedupeKey == "refresh-context" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected refresh-context reminder after success-context change: %+v", reminders.Items)
+	}
+}
+
+func TestRunRuntimeHostTickDoesNotRefreshCompilerContextOnIrrelevantMemoryChange(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	if err := os.WriteFile(filepath.Join(repo, "AGENTS.md"), []byte("repo policy"), 0o644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
+	}
+	if err := EnsureSuccessCompilation(repo, runDir, cfg, meta); err != nil {
+		t.Fatalf("EnsureSuccessCompilation: %v", err)
+	}
+
+	installGuidanceFakeTmux(t, nil)
+
+	now := time.Date(2026, time.March, 31, 13, 30, 0, 0, time.UTC)
+	if err := writeProposalShard(now, []MemoryProposal{
+		{
+			ID:         "prop_fact_irrelevant",
+			State:      "proposed",
+			Kind:       MemoryKindFact,
+			Statement:  "deploy host is ops-7",
+			Selectors:  map[string]string{"project_id": "other-project"},
+			Evidence:   []MemoryEvidence{{Kind: "summary", Path: "/tmp/summary.md"}},
+			SourceRuns: []string{"run-1"},
+			CreatedAt:  "2026-03-31T13:30:00Z",
+			UpdatedAt:  "2026-03-31T13:30:00Z",
+		},
+	}); err != nil {
+		t.Fatalf("writeProposalShard: %v", err)
+	}
+
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
+	}
+
+	reminders, err := LoadControlReminders(ControlRemindersPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlReminders: %v", err)
+	}
+	for _, item := range reminders.Items {
+		if item.DedupeKey == "refresh-context" {
+			t.Fatalf("unexpected refresh-context reminder after irrelevant memory change: %+v", reminders.Items)
+		}
+	}
+}
+
+func TestRunRuntimeHostTickAlertsQualityDebtAndEvolveManagementGap(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
+	meta.Intent = runIntentEvolve
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		t.Fatalf("SaveRunMetadata: %v", err)
+	}
+
+	masterCapture := filepath.Join(t.TempDir(), "master-pane.txt")
+	if err := os.WriteFile(masterCapture, []byte("master pane\n"), 0o644); err != nil {
+		t.Fatalf("write master capture: %v", err)
+	}
+	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
+	installGuidanceFakeTmux(t, nil)
+
+	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+			{ID: "req-2", Text: "ship polish", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+		Version: 1,
+		LastResult: AcceptanceResult{
+			CheckedAt: "2026-03-31T10:05:00Z",
+		},
+	}); err != nil {
+		t.Fatalf("SaveAcceptanceState: %v", err)
+	}
+	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:objective",
+		GoalHash:              "sha256:goal",
+		Dimensions: []SuccessDimension{
+			{ID: "req-1", Kind: "goal_item", Text: "ship cockpit", Required: true},
+			{ID: "req-2", Kind: "goal_item", Text: "ship polish", Required: true},
+		},
+		CloseoutRequirements: []string{"quality_debt_zero"},
+	}); err != nil {
+		t.Fatalf("SaveSuccessModel: %v", err)
+	}
+	if err := SaveProofPlan(ProofPlanPath(runDir), &ProofPlan{
+		Version: 1,
+		Items: []ProofPlanItem{
+			{ID: "proof-summary", CoversDimensions: []string{"req-1", "req-2"}, Kind: "run_artifact", Required: true, SourceSurface: "summary"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveProofPlan: %v", err)
+	}
+	if err := SaveWorkflowPlan(WorkflowPlanPath(runDir), &WorkflowPlan{
+		Version: 1,
+		RequiredRoles: []WorkflowRoleRequirement{
+			{ID: "builder", Required: true},
+			{ID: "critic", Required: true},
+			{ID: "finisher", Required: true},
+		},
+		Gates: []string{"builder_result_present", "critic_review_present", "finisher_pass_present"},
+	}); err != nil {
+		t.Fatalf("SaveWorkflowPlan: %v", err)
+	}
+	if err := SaveDomainPack(DomainPackPath(runDir), &DomainPack{Version: 1, Domain: "evolve"}); err != nil {
+		t.Fatalf("SaveDomainPack: %v", err)
+	}
+	if err := SaveRunStatusRecord(RunStatusPath(runDir), &RunStatusRecord{
+		Version:           1,
+		Phase:             runStatusPhaseWorking,
+		RequiredRemaining: intPtr(2),
+		OpenRequiredIDs:   []string{"req-1", "req-2"},
+		UpdatedAt:         "2026-03-31T10:05:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunStatusRecord: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version:   1,
+		UpdatedAt: "2026-03-31T10:05:00Z",
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-5",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfaceActive,
+					WebResearch:    coordinationRequiredSurfaceNotApplicable,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	appendExperimentEventForTest(t, runDir, `{"version":1,"kind":"experiment.created","at":"2026-03-31T10:00:00Z","actor":"master","body":{"experiment_id":"exp-1","created_at":"2026-03-31T10:00:00Z"}}`)
+
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
+		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
+	}
+
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
+	}
+
+	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
+	if err != nil {
+		t.Fatalf("read master inbox: %v", err)
+	}
+	inbox := string(inboxData)
+	for _, want := range []string{
+		"fact=quality_debt",
+		"fact=evolve_management_gap",
+		"gap=missing_stop_or_dispatch",
+	} {
+		if !strings.Contains(inbox, want) {
+			t.Fatalf("master inbox missing %q:\n%s", want, inbox)
+		}
+	}
+
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if len(controlState.MasterAlerts) == 0 {
+		t.Fatalf("master alerts unexpectedly empty: %+v", controlState)
+	}
+}
+
+func TestRunRuntimeHostTickQueuesSessionWakeForUnreadSessionInbox(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1950,21 +2527,21 @@ func TestRunSidecarTickQueuesSessionWakeForUnreadSessionInbox(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var nudges []string
 	sendAgentNudge = func(target, engine string) error {
 		nudges = append(nudges, target+"|"+engine)
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		nudges = append(nudges, target+"|"+engine)
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
-	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
@@ -1996,7 +2573,7 @@ func TestRunSidecarTickQueuesSessionWakeForUnreadSessionInbox(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickDoesNotQueueSessionWakeWhenCursorCaughtUp(t *testing.T) {
+func TestRunRuntimeHostTickDoesNotQueueSessionWakeWhenCursorCaughtUp(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -2037,21 +2614,21 @@ func TestRunSidecarTickDoesNotQueueSessionWakeWhenCursorCaughtUp(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var nudges []string
 	sendAgentNudge = func(target, engine string) error {
 		nudges = append(nudges, target+"|"+engine)
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		nudges = append(nudges, target+"|"+engine)
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
-	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
@@ -2070,7 +2647,7 @@ func TestRunSidecarTickDoesNotQueueSessionWakeWhenCursorCaughtUp(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickSkipsSessionWakeWhenWindowMissing(t *testing.T) {
+func TestRunRuntimeHostTickSkipsSessionWakeWhenWindowMissing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -2108,21 +2685,21 @@ func TestRunSidecarTickSkipsSessionWakeWhenWindowMissing(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var nudges []string
 	sendAgentNudge = func(target, engine string) error {
 		nudges = append(nudges, target+"|"+engine)
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		nudges = append(nudges, target+"|"+engine)
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
-	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
@@ -2141,7 +2718,7 @@ func TestRunSidecarTickSkipsSessionWakeWhenWindowMissing(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickSkipsSessionWakeDuringRecentSuccessfulTellGrace(t *testing.T) {
+func TestRunRuntimeHostTickSkipsSessionWakeDuringRecentSuccessfulTellGrace(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -2196,21 +2773,21 @@ func TestRunSidecarTickSkipsSessionWakeDuringRecentSuccessfulTellGrace(t *testin
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	var nudges []string
 	sendAgentNudge = func(target, engine string) error {
 		nudges = append(nudges, target+"|"+engine)
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		nudges = append(nudges, target+"|"+engine)
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
-	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
@@ -2233,7 +2810,7 @@ func TestRunSidecarTickSkipsSessionWakeDuringRecentSuccessfulTellGrace(t *testin
 	}
 }
 
-func TestRunSidecarTickQueuesSessionRepairWhenTransportStillBuffered(t *testing.T) {
+func TestRunRuntimeHostTickQueuesSessionRepairWhenTransportStillBuffered(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -2309,8 +2886,8 @@ func TestRunSidecarTickQueuesSessionRepairWhenTransportStillBuffered(t *testing.
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
@@ -2329,7 +2906,7 @@ func TestRunSidecarTickQueuesSessionRepairWhenTransportStillBuffered(t *testing.
 	}
 }
 
-func TestRunSidecarTickSkipsSessionWakeWhenTransportAlreadyAccepted(t *testing.T) {
+func TestRunRuntimeHostTickSkipsSessionWakeWhenTransportAlreadyAccepted(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -2388,8 +2965,8 @@ func TestRunSidecarTickSkipsSessionWakeWhenTransportAlreadyAccepted(t *testing.T
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	if err := runSidecarTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, runName, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
@@ -2403,7 +2980,7 @@ func TestRunSidecarTickSkipsSessionWakeWhenTransportAlreadyAccepted(t *testing.T
 	}
 }
 
-func TestRunSidecarTickElevatesProviderDialogToUrgentMasterFact(t *testing.T) {
+func TestRunRuntimeHostTickElevatesProviderDialogToUrgentMasterFact(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)
 
@@ -2419,8 +2996,8 @@ func TestRunSidecarTickElevatesProviderDialogToUrgentMasterFact(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
@@ -2454,7 +3031,7 @@ func TestRunSidecarTickElevatesProviderDialogToUrgentMasterFact(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickElevatesCapacityPickerDialogToUrgentMasterFact(t *testing.T) {
+func TestRunRuntimeHostTickElevatesCapacityPickerDialogToUrgentMasterFact(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)
 
@@ -2470,8 +3047,8 @@ func TestRunSidecarTickElevatesCapacityPickerDialogToUrgentMasterFact(t *testing
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	inboxData, err := os.ReadFile(MasterInboxPath(runDir))
@@ -2489,7 +3066,7 @@ func TestRunSidecarTickElevatesCapacityPickerDialogToUrgentMasterFact(t *testing
 	}
 }
 
-func TestRunSidecarTickImmediatelyNudgesMasterOnceForProviderDialog(t *testing.T) {
+func TestRunRuntimeHostTickImmediatelyNudgesMasterOnceForProviderDialog(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)
 
@@ -2505,19 +3082,19 @@ func TestRunSidecarTickImmediatelyNudgesMasterOnceForProviderDialog(t *testing.T
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	orig := sendAgentNudgeDetailed
-	defer func() { sendAgentNudgeDetailed = orig }()
+	orig := sendAgentNudgeDetailedInRunFunc
+	defer func() { sendAgentNudgeDetailedInRunFunc = orig }()
 	var nudges []string
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		nudges = append(nudges, target+"|"+engine)
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "sent"}, nil
 	}
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick first: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick first: %v", err)
 	}
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick second: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick second: %v", err)
 	}
 
 	deliveries, err := LoadControlDeliveries(ControlDeliveriesPath(runDir))
@@ -2549,7 +3126,7 @@ func TestRunSidecarTickImmediatelyNudgesMasterOnceForProviderDialog(t *testing.T
 	}
 }
 
-func bootstrapSidecarIdentityFixture(t *testing.T, runDir, repo string, cfg *goalx.Config, meta *RunMetadata) {
+func bootstrapRuntimeHostIdentityFixture(t *testing.T, runDir, repo string, cfg *goalx.Config, meta *RunMetadata) {
 	t.Helper()
 
 	goalState, err := EnsureGoalState(runDir)

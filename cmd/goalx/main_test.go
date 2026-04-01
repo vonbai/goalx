@@ -59,6 +59,16 @@ func writeSavedRunFixture(t *testing.T, projectRoot, runName string, cfg goalx.C
 	if err := os.WriteFile(filepath.Join(runDir, "run-spec.yaml"), data, 0o644); err != nil {
 		t.Fatalf("write run-spec.yaml: %v", err)
 	}
+	if err := cli.SaveRunIntake(cli.SavedRunIntakePath(runDir), &cli.RunIntake{
+		Version:      1,
+		Objective:    cfg.Objective,
+		Intent:       "deliver",
+		Readonly:     len(cfg.Target.Readonly) > 0,
+		ContextFiles: append([]string(nil), cfg.Context.Files...),
+		ContextRefs:  append([]string(nil), cfg.Context.Refs...),
+	}); err != nil {
+		t.Fatalf("write intake.json: %v", err)
+	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(runDir, name), []byte(content), 0o644); err != nil {
 			t.Fatalf("write %s: %v", name, err)
@@ -100,6 +110,16 @@ func TestMainSupportsResultCommand(t *testing.T) {
 
 	if !strings.Contains(out, "# summary from result") {
 		t.Fatalf("result output missing summary:\n%s", out)
+	}
+}
+
+func TestRootUsageOmitsRemovedGuidedFlag(t *testing.T) {
+	usageText := usage
+	if strings.Contains(usageText, "--guided") {
+		t.Fatalf("root usage should omit removed --guided flag:\n%s", usageText)
+	}
+	if !strings.Contains(usageText, `goalx run     "objective" [--readonly] [flags]`) {
+		t.Fatalf("root usage missing updated run syntax:\n%s", usageText)
 	}
 }
 
@@ -359,21 +379,21 @@ func TestRunCommandRejectsServe(t *testing.T) {
 	}
 }
 
-func TestRunCommandDispatchesSidecar(t *testing.T) {
-	oldSidecar := mainSidecar
-	defer func() { mainSidecar = oldSidecar }()
+func TestRunCommandDispatchesRuntimeHost(t *testing.T) {
+	oldRuntimeHost := mainRuntimeHost
+	defer func() { mainRuntimeHost = oldRuntimeHost }()
 
 	called := false
-	mainSidecar = func(string, []string) error {
+	mainRuntimeHost = func(string, []string) error {
 		called = true
 		return nil
 	}
 
-	if err := runCommand(t.TempDir(), "sidecar", []string{"--run", "demo"}); err != nil {
-		t.Fatalf("runCommand sidecar: %v", err)
+	if err := runCommand(t.TempDir(), "runtime-host", []string{"--run", "demo"}); err != nil {
+		t.Fatalf("runCommand runtime-host: %v", err)
 	}
 	if !called {
-		t.Fatal("sidecar command was not dispatched")
+		t.Fatal("runtime-host command was not dispatched")
 	}
 }
 
@@ -392,6 +412,24 @@ func TestRunCommandDispatchesLeaseLoop(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("lease-loop command was not dispatched")
+	}
+}
+
+func TestRunCommandDispatchesBudget(t *testing.T) {
+	oldBudget := mainBudget
+	defer func() { mainBudget = oldBudget }()
+
+	called := false
+	mainBudget = func(string, []string) error {
+		called = true
+		return nil
+	}
+
+	if err := runCommand(t.TempDir(), "budget", []string{"--run", "demo"}); err != nil {
+		t.Fatalf("runCommand budget: %v", err)
+	}
+	if !called {
+		t.Fatal("budget command was not dispatched")
 	}
 }
 

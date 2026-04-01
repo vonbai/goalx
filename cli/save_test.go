@@ -392,6 +392,48 @@ func TestSaveCopiesSelectionSnapshot(t *testing.T) {
 	}
 }
 
+func TestSaveCopiesCanonicalIntakeArtifact(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	runName := "demo"
+	runDir := goalx.RunDir(projectRoot, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+
+	cfg := goalx.Config{
+		Name:      runName,
+		Mode:      goalx.ModeWorker,
+		Objective: "ship feature",
+		Target:    goalx.TargetConfig{Files: []string{"README.md"}},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
+	if err := SaveRunIntake(IntakePath(runDir), &RunIntake{
+		Version:   1,
+		Objective: cfg.Objective,
+		Intent:    runIntentDeliver,
+	}); err != nil {
+		t.Fatalf("SaveRunIntake: %v", err)
+	}
+
+	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "intake.json")); err != nil {
+		t.Fatalf("saved intake missing: %v", err)
+	}
+}
+
 func TestSaveDoesNotMutateRunStateFromRunStatusRecord(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

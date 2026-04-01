@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,16 +15,13 @@ import (
 	goalx "github.com/vonbai/goalx"
 )
 
-const sidecarUsage = "usage: goalx sidecar --run RUN [--interval SECONDS]"
+const runtimeHostUsage = "usage: goalx runtime-host --run RUN [--interval SECONDS]"
 
-var launchRunSidecar = defaultLaunchRunSidecar
-var stopRunSidecar = defaultStopRunSidecar
+var errRuntimeHostStale = errors.New("runtime host run is stale")
+var errRuntimeHostCompleted = errors.New("runtime host run completed")
 
-var errSidecarStale = errors.New("sidecar run is stale")
-var errSidecarCompleted = errors.New("sidecar run completed")
-
-func Sidecar(projectRoot string, args []string) error {
-	runName, interval, err := parseSidecarArgs(args)
+func RuntimeHostCommand(projectRoot string, args []string) error {
+	runName, interval, err := parseRuntimeHostArgs(args)
 	if err != nil {
 		return err
 	}
@@ -39,16 +34,16 @@ func Sidecar(projectRoot string, args []string) error {
 		return err
 	}
 	if interval <= 0 {
-		checkSec, _ := normalizeSidecarInterval(rc.Config.Master.CheckInterval)
+		checkSec, _ := normalizeRuntimeHostInterval(rc.Config.Master.CheckInterval)
 		interval = time.Duration(checkSec) * time.Second
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return runSidecarLoop(ctx, rc.ProjectRoot, rc.Name, rc.RunDir, meta.RunID, meta.Epoch, interval)
+	return runRuntimeHostLoop(ctx, rc.ProjectRoot, rc.Name, rc.RunDir, meta.RunID, meta.Epoch, interval)
 }
 
-func parseSidecarArgs(args []string) (string, time.Duration, error) {
+func parseRuntimeHostArgs(args []string) (string, time.Duration, error) {
 	runName, rest, err := extractRunFlag(args)
 	if err != nil {
 		return "", 0, err
@@ -57,7 +52,7 @@ func parseSidecarArgs(args []string) (string, time.Duration, error) {
 	for i := 0; i < len(rest); i++ {
 		switch rest[i] {
 		case "--help", "-h":
-			return "", 0, fmt.Errorf(sidecarUsage)
+			return "", 0, fmt.Errorf(runtimeHostUsage)
 		case "--interval":
 			if i+1 >= len(rest) {
 				return "", 0, fmt.Errorf("missing value for --interval")
@@ -69,16 +64,16 @@ func parseSidecarArgs(args []string) (string, time.Duration, error) {
 			interval = time.Duration(seconds) * time.Second
 			i++
 		default:
-			return "", 0, fmt.Errorf(sidecarUsage)
+			return "", 0, fmt.Errorf(runtimeHostUsage)
 		}
 	}
 	if runName == "" {
-		return "", 0, fmt.Errorf(sidecarUsage)
+		return "", 0, fmt.Errorf(runtimeHostUsage)
 	}
 	return runName, interval, nil
 }
 
-func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID string, epoch int, interval time.Duration) error {
+func runRuntimeHostLoop(ctx context.Context, projectRoot, runName, runDir, runID string, epoch int, interval time.Duration) error {
 	if interval <= 0 {
 		interval = 5 * time.Minute
 	}
@@ -87,12 +82,12 @@ func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID str
 	var watcher *TmuxControlWatcher
 	defer func() {
 		if shouldExpire {
-			_ = ExpireControlLease(runDir, "sidecar")
+			_ = ExpireControlLease(runDir, "runtime-host")
 		}
 	}()
-	appendAuditLog(runDir, "sidecar started pid=%d runID=%s epoch=%d", os.Getpid(), runID, epoch)
+	appendAuditLog(runDir, "runtime-host started pid=%d runID=%s epoch=%d", os.Getpid(), runID, epoch)
 	defer func() {
-		appendAuditLog(runDir, "sidecar exiting reason=%s", exitReason)
+		appendAuditLog(runDir, "runtime-host exiting reason=%s", exitReason)
 	}()
 	defer func() {
 		if watcher != nil {
@@ -100,19 +95,19 @@ func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID str
 		}
 	}()
 	reportError := func(err error) error {
-		appendAuditLog(runDir, "sidecar error: %v", err)
+		appendAuditLog(runDir, "runtime-host error: %v", err)
 		exitReason = err.Error()
 		return err
 	}
-	watcher = ensureSidecarTransportWatcher(projectRoot, runName, runDir, watcher)
-	if err := runSidecarTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, os.Getpid(), watcher); err != nil {
-		if errors.Is(err, errSidecarStale) {
+	watcher = ensureRuntimeHostTransportWatcher(projectRoot, runName, runDir, watcher)
+	if err := runRuntimeHostTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, os.Getpid(), watcher); err != nil {
+		if errors.Is(err, errRuntimeHostStale) {
 			shouldExpire = false
-			exitReason = errSidecarStale.Error()
+			exitReason = errRuntimeHostStale.Error()
 			return nil
 		}
-		if errors.Is(err, errSidecarCompleted) {
-			exitReason = errSidecarCompleted.Error()
+		if errors.Is(err, errRuntimeHostCompleted) {
+			exitReason = errRuntimeHostCompleted.Error()
 			return nil
 		}
 		return reportError(err)
@@ -126,15 +121,15 @@ func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID str
 			exitReason = ctx.Err().Error()
 			return nil
 		case <-ticker.C:
-			watcher = ensureSidecarTransportWatcher(projectRoot, runName, runDir, watcher)
-			if err := runSidecarTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, os.Getpid(), watcher); err != nil {
-				if errors.Is(err, errSidecarStale) {
+			watcher = ensureRuntimeHostTransportWatcher(projectRoot, runName, runDir, watcher)
+			if err := runRuntimeHostTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, os.Getpid(), watcher); err != nil {
+				if errors.Is(err, errRuntimeHostStale) {
 					shouldExpire = false
-					exitReason = errSidecarStale.Error()
+					exitReason = errRuntimeHostStale.Error()
 					return nil
 				}
-				if errors.Is(err, errSidecarCompleted) {
-					exitReason = errSidecarCompleted.Error()
+				if errors.Is(err, errRuntimeHostCompleted) {
+					exitReason = errRuntimeHostCompleted.Error()
 					return nil
 				}
 				return reportError(err)
@@ -143,24 +138,24 @@ func runSidecarLoop(ctx context.Context, projectRoot, runName, runDir, runID str
 	}
 }
 
-func runSidecarTick(projectRoot, runName, runDir, runID string, epoch int, interval time.Duration, pid int) error {
-	return runSidecarTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, pid, nil)
+func runRuntimeHostTick(projectRoot, runName, runDir, runID string, epoch int, interval time.Duration, pid int) error {
+	return runRuntimeHostTickWithWatcher(projectRoot, runName, runDir, runID, epoch, interval, pid, nil)
 }
 
-func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch int, interval time.Duration, pid int, watcher *TmuxControlWatcher) error {
+func runRuntimeHostTickWithWatcher(projectRoot, runName, runDir, runID string, epoch int, interval time.Duration, pid int, watcher *TmuxControlWatcher) error {
 	meta, err := LoadRunMetadata(RunMetadataPath(runDir))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errSidecarStale
+			return errRuntimeHostStale
 		}
 		return err
 	}
 	if meta == nil || meta.RunID != runID || meta.Epoch != epoch {
-		return errSidecarStale
+		return errRuntimeHostStale
 	}
 	if _, err := os.Stat(RunSpecPath(runDir)); err != nil {
 		if os.IsNotExist(err) {
-			return errSidecarStale
+			return errRuntimeHostStale
 		}
 		return err
 	}
@@ -168,7 +163,7 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 	if err != nil {
 		return err
 	}
-	tmuxSession := goalx.TmuxSessionName(projectRoot, runName)
+	tmuxSession := resolveRunTmuxSession(projectRoot, runDir, runName)
 	runState, err := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
 	if err != nil {
 		return err
@@ -177,7 +172,7 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 	if ttl < time.Second {
 		ttl = time.Second
 	}
-	if err := RenewControlLease(runDir, "sidecar", runID, epoch, ttl, "process", pid); err != nil {
+	if err := RenewControlLease(runDir, "runtime-host", runID, epoch, ttl, "process", pid); err != nil {
 		return err
 	}
 	if err := ApplyPendingControlOps(runDir); err != nil {
@@ -221,10 +216,10 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 		}
 		return nil
 	case RunCloseoutMaintenanceActionFinalize:
-		if err := finalizeCompletedRunFromSidecar(projectRoot, runName, runDir, tmuxSession); err != nil {
+		if err := finalizeCompletedRunFromRuntimeHost(projectRoot, runName, runDir, tmuxSession); err != nil {
 			return err
 		}
-		return errSidecarCompleted
+		return errRuntimeHostCompleted
 	}
 	presence, err = reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession, cfg, runState, closeoutFacts.Complete, presence)
 	if err != nil {
@@ -234,7 +229,7 @@ func runSidecarTickWithWatcher(projectRoot, runName, runDir, runID string, epoch
 	if err != nil {
 		return err
 	}
-	if err := runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession, cfg, interval, presence, watcher, controlState); err != nil {
+	if err := runRuntimeHostMaintenanceCycle(projectRoot, runName, runDir, tmuxSession, cfg, interval, presence, watcher, controlState); err != nil {
 		return err
 	}
 	return nil
@@ -248,7 +243,7 @@ func refreshActivityFacts(runDir, projectRoot, runName string) error {
 	return SaveActivitySnapshot(runDir, snapshot)
 }
 
-func refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine string, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
+func refreshTransportFactsForRuntimeHost(runDir, tmuxSession, masterEngine string, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
 	if controlState == nil {
 		return fmt.Errorf("control run state is nil")
 	}
@@ -274,8 +269,11 @@ func refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine string, w
 	return reconcileProviderDialogAlerts(runDir, tmuxSession, masterEngine, controlState, facts)
 }
 
-func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string, cfg *goalx.Config, interval time.Duration, presence map[string]TargetPresenceFacts, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
-	if err := refreshSidecarTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "pre-queue"); err != nil {
+func runRuntimeHostMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string, cfg *goalx.Config, interval time.Duration, presence map[string]TargetPresenceFacts, watcher *TmuxControlWatcher, controlState *ControlRunState) error {
+	nudgeDeliver := func(target, engine string) (TransportDeliveryOutcome, error) {
+		return sendAgentNudgeDetailedInRunFunc(runDir, target, engine)
+	}
+	if err := refreshRuntimeHostTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "pre-queue"); err != nil {
 		return err
 	}
 	if err := processUrgentTransportTargets(runDir, runName, tmuxSession, cfg, presence); err != nil {
@@ -287,10 +285,10 @@ func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string
 	if err := queueMasterWakeReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
 		return err
 	}
-	if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, sendAgentNudgeDetailed); err != nil {
+	if err := DeliverDueControlReminders(runDir, cfg.Master.Engine, interval, nudgeDeliver); err != nil {
 		return err
 	}
-	if err := refreshSidecarTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "snapshot"); err != nil {
+	if err := refreshRuntimeHostTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "snapshot"); err != nil {
 		return err
 	}
 	if err := refreshActivityFacts(runDir, projectRoot, runName); err != nil {
@@ -299,7 +297,7 @@ func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string
 	if err := RefreshEvolveFacts(runDir); err != nil {
 		return err
 	}
-	if _, err := processRequiredFrontierAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
+	if _, err := processMasterAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
 		return err
 	}
 	if _, err := processTargetAttentionAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
@@ -314,20 +312,25 @@ func runSidecarMaintenanceCycle(projectRoot, runName, runDir, tmuxSession string
 	if err := PromoteMemoryProposals(); err != nil {
 		return err
 	}
-	if err := RefreshRunGuidance(projectRoot, runName, runDir); err != nil {
+	successContextChanged, err := RefreshRunGuidance(projectRoot, runName, runDir)
+	if err != nil {
 		appendAuditLog(runDir, "guidance refresh warning: %v", err)
+	} else if successContextChanged {
+		if err := queueRefreshContextReminder(runDir, tmuxSession, cfg.Master.Engine); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func refreshSidecarTransportFacts(runDir, tmuxSession, masterEngine string, watcher *TmuxControlWatcher, controlState *ControlRunState, warningPhase string) error {
+func refreshRuntimeHostTransportFacts(runDir, tmuxSession, masterEngine string, watcher *TmuxControlWatcher, controlState *ControlRunState, warningPhase string) error {
 	if watcher != nil && watcher.Alive() {
-		if err := refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine, watcher, controlState); err != nil {
+		if err := refreshTransportFactsForRuntimeHost(runDir, tmuxSession, masterEngine, watcher, controlState); err != nil {
 			appendAuditLog(runDir, "transport watcher %s warning: %v", warningPhase, err)
 		}
 		return nil
 	}
-	return refreshTransportFactsForSidecar(runDir, tmuxSession, masterEngine, nil, controlState)
+	return refreshTransportFactsForRuntimeHost(runDir, tmuxSession, masterEngine, nil, controlState)
 }
 
 func reconcileProviderDialogAlerts(runDir, tmuxSession, masterEngine string, controlState *ControlRunState, facts *TransportFacts) error {
@@ -345,11 +348,13 @@ func reconcileProviderDialogAlerts(runDir, tmuxSession, masterEngine string, con
 				continue
 			}
 			body := fmt.Sprintf("Provider dialog visible in unattended GoalX run; target=%s engine=%s kind=%s hint=%s", blankAsUnknown(target), blankAsUnknown(targetFacts.Engine), blankAsUnknown(targetFacts.ProviderDialogKind), blankAsUnknown(targetFacts.ProviderDialogHint))
-			if _, err := appendControlInboxMessage(runDir, "master", "provider-dialog-visible", "goalx sidecar", body, true); err != nil {
+			if _, err := appendControlInboxMessage(runDir, "master", "provider-dialog-visible", "goalx runtime-host", body, true); err != nil {
 				return err
 			}
 			dedupeKey := fmt.Sprintf("provider-dialog:%s:%s", target, current[target])
-			if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, sendAgentNudgeDetailed); err != nil {
+			if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, func(target, engine string) (TransportDeliveryOutcome, error) {
+				return sendAgentNudgeDetailedInRunFunc(runDir, target, engine)
+			}); err != nil {
 				return err
 			}
 		}
@@ -382,12 +387,12 @@ func mapsEqual(left, right map[string]string) bool {
 	return true
 }
 
-func ensureSidecarTransportWatcher(projectRoot, runName, runDir string, watcher *TmuxControlWatcher) *TmuxControlWatcher {
+func ensureRuntimeHostTransportWatcher(projectRoot, runName, runDir string, watcher *TmuxControlWatcher) *TmuxControlWatcher {
 	if watcher != nil && watcher.Alive() {
 		return watcher
 	}
-	tmuxSession := goalx.TmuxSessionName(projectRoot, runName)
-	if !SessionExists(tmuxSession) {
+	tmuxSession := resolveRunTmuxSession(projectRoot, runDir, runName)
+	if !SessionExistsInRun(runDir, tmuxSession) {
 		return nil
 	}
 	cfg, err := LoadRunSpec(runDir)
@@ -404,7 +409,7 @@ func ensureSidecarTransportWatcher(projectRoot, runName, runDir string, watcher 
 }
 
 func queueRefreshContextReminder(runDir, tmuxSession, engine string) error {
-	if !SessionExists(tmuxSession) {
+	if !SessionExistsInRun(runDir, tmuxSession) {
 		return nil
 	}
 	_, err := QueueControlReminderWithEngine(runDir, "refresh-context", "identity-fence-changed", tmuxSession+":master", engine)
@@ -481,14 +486,16 @@ func processTargetAttentionAlerts(runDir, tmuxSession, masterEngine string, pres
 		reason := formatBlockedTargetReason(facts)
 		appendAuditLog(runDir, "target_attention_alert target=%s state=%s reason=%s", target, state, reason)
 		body := fmt.Sprintf("Target attention needed in active GoalX run; target=%s state=%s %s", target, state, reason)
-		if _, err := appendControlInboxMessage(runDir, "master", "target-attention", "goalx sidecar", body, true); err != nil {
+		if _, err := appendControlInboxMessage(runDir, "master", "target-attention", "goalx runtime-host", body, true); err != nil {
 			return false, err
 		}
 		if err := recordTargetAttentionAlert(runDir, target, state, reason); err != nil {
 			return false, err
 		}
 		dedupeKey := fmt.Sprintf("master-attention:%s:%s", target, state)
-		if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, sendAgentNudgeDetailed); err != nil {
+		if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, func(target, engine string) (TransportDeliveryOutcome, error) {
+			return sendAgentNudgeDetailedInRunFunc(runDir, target, engine)
+		}); err != nil {
 			return false, err
 		}
 		alerted = true
@@ -522,13 +529,13 @@ func formatBlockedTargetReason(facts TargetAttentionFacts) string {
 	return strings.Join(parts, " ")
 }
 
-type requiredFrontierAlert struct {
+type masterAlert struct {
 	Key         string
 	Fingerprint string
 	Body        string
 }
 
-func processRequiredFrontierAlerts(runDir, tmuxSession, masterEngine string, presence map[string]TargetPresenceFacts) (bool, error) {
+func processMasterAlerts(runDir, tmuxSession, masterEngine string, presence map[string]TargetPresenceFacts) (bool, error) {
 	activity, err := LoadActivitySnapshot(ActivityPath(runDir))
 	if err != nil {
 		return false, err
@@ -537,15 +544,15 @@ func processRequiredFrontierAlerts(runDir, tmuxSession, masterEngine string, pre
 	if err != nil {
 		return false, err
 	}
-	alerts, current, err := buildRequiredFrontierAlerts(runDir, activity)
+	alerts, current, err := buildMasterAlerts(runDir, activity)
 	if err != nil {
 		return false, err
 	}
 	if len(current) == 0 {
-		if len(controlState.RequiredFrontierAlerts) == 0 {
+		if len(controlState.MasterAlerts) == 0 {
 			return false, nil
 		}
-		if err := submitAndApplyControlOp(runDir, controlOpRunStateRequiredFrontierAlerts, controlRunStateRequiredFrontierAlertsBody{}); err != nil {
+		if err := submitAndApplyControlOp(runDir, controlOpRunStateMasterAlerts, controlRunStateMasterAlertsBody{}); err != nil {
 			return false, err
 		}
 		return false, nil
@@ -557,23 +564,25 @@ func processRequiredFrontierAlerts(runDir, tmuxSession, masterEngine string, pre
 	}
 	alerted := false
 	for _, alert := range alerts {
-		if controlState.RequiredFrontierAlerts[alert.Key] == alert.Fingerprint {
+		if controlState.MasterAlerts[alert.Key] == alert.Fingerprint {
 			continue
 		}
-		appendAuditLog(runDir, "required_frontier_alert key=%s fingerprint=%s", alert.Key, alert.Fingerprint)
-		if _, err := appendControlInboxMessage(runDir, "master", "required-frontier", "goalx sidecar", alert.Body, true); err != nil {
+		appendAuditLog(runDir, "master_alert key=%s fingerprint=%s", alert.Key, alert.Fingerprint)
+		if _, err := appendControlInboxMessage(runDir, "master", "master-alert", "goalx runtime-host", alert.Body, true); err != nil {
 			return false, err
 		}
-		dedupeKey := "master-required-frontier:" + alert.Key + ":" + alert.Fingerprint
-		if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, sendAgentNudgeDetailed); err != nil {
+		dedupeKey := "master-alert:" + alert.Key + ":" + alert.Fingerprint
+		if _, err := deliverControlNudge(runDir, dedupeKey, dedupeKey, tmuxSession+":master", masterEngine, false, func(target, engine string) (TransportDeliveryOutcome, error) {
+			return sendAgentNudgeDetailedInRunFunc(runDir, target, engine)
+		}); err != nil {
 			return false, err
 		}
 		alerted = true
 	}
-	if mapsEqual(controlState.RequiredFrontierAlerts, current) {
+	if mapsEqual(controlState.MasterAlerts, current) {
 		return alerted, nil
 	}
-	if err := submitAndApplyControlOp(runDir, controlOpRunStateRequiredFrontierAlerts, controlRunStateRequiredFrontierAlertsBody{
+	if err := submitAndApplyControlOp(runDir, controlOpRunStateMasterAlerts, controlRunStateMasterAlertsBody{
 		Alerts: current,
 	}); err != nil {
 		return false, err
@@ -581,22 +590,56 @@ func processRequiredFrontierAlerts(runDir, tmuxSession, masterEngine string, pre
 	return alerted, nil
 }
 
-func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]requiredFrontierAlert, map[string]string, error) {
+func buildMasterAlerts(runDir string, activity *ActivitySnapshot) ([]masterAlert, map[string]string, error) {
+	alerts := make([]masterAlert, 0, 4)
+	current := map[string]string{}
+	if activity != nil && activity.Lifecycle.RunActive && activity.Budget.MaxDurationSeconds > 0 && activity.Budget.Exhausted {
+		summary := formatBudgetSummary(activity.Budget)
+		key := "budget_exhausted"
+		fingerprint := strings.Join([]string{
+			"budget_exhausted",
+			fmt.Sprintf("max_duration=%d", activity.Budget.MaxDurationSeconds),
+			"started_at=" + strings.TrimSpace(activity.Budget.StartedAt),
+			"deadline_at=" + strings.TrimSpace(activity.Budget.DeadlineAt),
+		}, "|")
+		body := "Budget exhausted in active GoalX run"
+		if summary != "" {
+			body += "; " + summary
+		}
+		alerts = append(alerts, masterAlert{
+			Key:         key,
+			Fingerprint: fingerprint,
+			Body:        body,
+		})
+		current[key] = fingerprint
+	}
 	if activity == nil || !activity.Coverage.RequiredPresent {
-		return nil, nil, nil
+		nonFrontierAlerts, nonFrontierCurrent, err := buildNonFrontierMasterAlerts(runDir)
+		if err != nil {
+			return nil, nil, err
+		}
+		alerts = append(alerts, nonFrontierAlerts...)
+		for key, fingerprint := range nonFrontierCurrent {
+			current[key] = fingerprint
+		}
+		if len(alerts) == 0 {
+			return nil, nil, nil
+		}
+		sort.Slice(alerts, func(i, j int) bool {
+			return alerts[i].Key < alerts[j].Key
+		})
+		return alerts, current, nil
 	}
 	coord, err := LoadCoordinationState(CoordinationPath(runDir))
 	if err != nil {
 		return nil, nil, err
 	}
 	coverage := activity.Coverage
-	alerts := make([]requiredFrontierAlert, 0, len(coverage.UnmappedRequiredIDs)+len(coverage.MasterOrphanedRequiredIDs)+len(coverage.PrematureBlockedRequiredIDs))
-	current := map[string]string{}
 
 	for _, id := range coverage.UnmappedRequiredIDs {
 		key := "unmapped_required:" + id
 		fingerprint := key
-		alerts = append(alerts, requiredFrontierAlert{
+		alerts = append(alerts, masterAlert{
 			Key:         key,
 			Fingerprint: fingerprint,
 			Body:        fmt.Sprintf("Required frontier gap in active GoalX run; required=%s fact=unmapped_required", id),
@@ -623,7 +666,7 @@ func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]r
 		if len(reusable) > 0 {
 			body += " reusable_sessions=" + strings.Join(reusable, ",")
 		}
-		alerts = append(alerts, requiredFrontierAlert{
+		alerts = append(alerts, masterAlert{
 			Key:         key,
 			Fingerprint: fingerprint,
 			Body:        body,
@@ -652,11 +695,84 @@ func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]r
 		if len(nonTerminal) > 0 {
 			body += " non_terminal_surfaces=" + strings.Join(nonTerminal, ",")
 		}
-		alerts = append(alerts, requiredFrontierAlert{
+		alerts = append(alerts, masterAlert{
 			Key:         key,
 			Fingerprint: fingerprint,
 			Body:        body,
 		})
+		current[key] = fingerprint
+	}
+	controlGapFacts, err := BuildControlGapFacts(runDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if controlGapFacts != nil {
+		if controlGapFacts.StatusDrift {
+			key := "control_gap:status_drift"
+			fingerprint := strings.Join([]string{
+				"status_drift",
+				"status_updated_at=" + strings.TrimSpace(controlGapFacts.StatusUpdatedAt),
+			}, "|")
+			body := "Control gap in active GoalX run; fact=status_drift"
+			if controlGapFacts.StatusUpdatedAt != "" {
+				body += " status_updated_at=" + controlGapFacts.StatusUpdatedAt
+			}
+			alerts = append(alerts, masterAlert{
+				Key:         key,
+				Fingerprint: fingerprint,
+				Body:        body,
+			})
+			current[key] = fingerprint
+		}
+		if controlGapFacts.CoordinationStale {
+			key := "control_gap:coordination_stale"
+			fingerprint := strings.Join([]string{
+				"coordination_stale",
+				"coordination_updated_at=" + strings.TrimSpace(controlGapFacts.CoordinationUpdatedAt),
+				"latest_control_change_at=" + strings.TrimSpace(controlGapFacts.LatestControlChangeAt),
+			}, "|")
+			body := "Control gap in active GoalX run; fact=coordination_stale"
+			if controlGapFacts.CoordinationUpdatedAt != "" {
+				body += " coordination_updated_at=" + controlGapFacts.CoordinationUpdatedAt
+			}
+			if controlGapFacts.LatestControlChangeAt != "" {
+				body += " latest_control_change_at=" + controlGapFacts.LatestControlChangeAt
+			}
+			alerts = append(alerts, masterAlert{
+				Key:         key,
+				Fingerprint: fingerprint,
+				Body:        body,
+			})
+			current[key] = fingerprint
+		}
+		if controlGapFacts.SerializedRequiredFrontier {
+			key := "control_gap:serialized_required_frontier"
+			fingerprint := strings.Join([]string{
+				"serialized_required_frontier",
+				"active_required_owners=" + strings.Join(controlGapFacts.ActiveRequiredOwners, ","),
+				"reusable_sessions=" + strings.Join(controlGapFacts.ReusableSessions, ","),
+				fmt.Sprintf("open_required_count=%d", controlGapFacts.OpenRequiredCount),
+			}, "|")
+			body := "Control gap in active GoalX run; fact=serialized_required_frontier"
+			body += " active_required_owners=" + strings.Join(controlGapFacts.ActiveRequiredOwners, ",")
+			body += fmt.Sprintf(" open_required_count=%d", controlGapFacts.OpenRequiredCount)
+			if len(controlGapFacts.ReusableSessions) > 0 {
+				body += " reusable_sessions=" + strings.Join(controlGapFacts.ReusableSessions, ",")
+			}
+			alerts = append(alerts, masterAlert{
+				Key:         key,
+				Fingerprint: fingerprint,
+				Body:        body,
+			})
+			current[key] = fingerprint
+		}
+	}
+	nonFrontierAlerts, nonFrontierCurrent, err := buildNonFrontierMasterAlerts(runDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	alerts = append(alerts, nonFrontierAlerts...)
+	for key, fingerprint := range nonFrontierCurrent {
 		current[key] = fingerprint
 	}
 	sort.Slice(alerts, func(i, j int) bool {
@@ -666,6 +782,97 @@ func buildRequiredFrontierAlerts(runDir string, activity *ActivitySnapshot) ([]r
 		return nil, nil, nil
 	}
 	return alerts, current, nil
+}
+
+func buildNonFrontierMasterAlerts(runDir string) ([]masterAlert, map[string]string, error) {
+	alerts := make([]masterAlert, 0, 2)
+	current := map[string]string{}
+
+	qualityDebt, err := BuildQualityDebt(runDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	acceptance, err := LoadAcceptanceState(AcceptanceStatePath(runDir))
+	if err != nil {
+		return nil, nil, err
+	}
+	if qualityDebt != nil && !qualityDebt.Zero() && hasBuilderEvidence(runDir, acceptance) {
+		parts := qualityDebtAlertParts(qualityDebt)
+		if len(parts) > 0 {
+			key := "quality_debt:open"
+			fingerprint := strings.Join(append([]string{"quality_debt"}, parts...), "|")
+			body := "Quality debt in active GoalX run; fact=quality_debt " + strings.Join(parts, " ")
+			alerts = append(alerts, masterAlert{
+				Key:         key,
+				Fingerprint: fingerprint,
+				Body:        body,
+			})
+			current[key] = fingerprint
+		}
+	}
+
+	status, err := LoadRunStatusRecord(RunStatusPath(runDir))
+	if err != nil {
+		return nil, nil, err
+	}
+	evolveFacts, err := LoadCurrentEvolveFacts(runDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if evolveFacts != nil && strings.TrimSpace(evolveFacts.ManagementGap) != "" {
+		parts := []string{
+			"gap=" + strings.TrimSpace(evolveFacts.ManagementGap),
+			"frontier_state=" + blankAsUnknown(evolveFacts.FrontierState),
+			fmt.Sprintf("open_candidate_count=%d", evolveFacts.OpenCandidateCount),
+			fmt.Sprintf("active_sessions=%d", evolveFacts.ActiveSessionCount),
+		}
+		if evolveFacts.LastManagementEventAt != "" {
+			parts = append(parts, "last_management_event_at="+evolveFacts.LastManagementEventAt)
+		}
+		if status != nil && strings.TrimSpace(status.Phase) != "" {
+			parts = append(parts, "phase="+strings.TrimSpace(status.Phase))
+		}
+		key := "evolve_management_gap:" + strings.TrimSpace(evolveFacts.ManagementGap)
+		fingerprint := strings.Join(append([]string{"evolve_management_gap"}, parts...), "|")
+		body := "Evolve management gap in active GoalX run; fact=evolve_management_gap " + strings.Join(parts, " ")
+		alerts = append(alerts, masterAlert{
+			Key:         key,
+			Fingerprint: fingerprint,
+			Body:        body,
+		})
+		current[key] = fingerprint
+	}
+
+	if len(alerts) == 0 {
+		return nil, nil, nil
+	}
+	return alerts, current, nil
+}
+
+func qualityDebtAlertParts(debt *QualityDebt) []string {
+	if debt == nil || debt.Zero() {
+		return nil
+	}
+	parts := make([]string, 0, 6)
+	if len(debt.SuccessDimensionUnowned) > 0 {
+		parts = append(parts, "success_dimension_unowned="+strings.Join(debt.SuccessDimensionUnowned, ","))
+	}
+	if len(debt.ProofPlanGap) > 0 {
+		parts = append(parts, "proof_plan_gap="+strings.Join(debt.ProofPlanGap, ","))
+	}
+	if debt.CriticGateMissing {
+		parts = append(parts, "critic_gate_missing")
+	}
+	if debt.FinisherGateMissing {
+		parts = append(parts, "finisher_gate_missing")
+	}
+	if debt.OnlyCorrectnessEvidence {
+		parts = append(parts, "only_correctness_evidence_present")
+	}
+	if debt.DomainPackMissing {
+		parts = append(parts, "domain_pack_missing_for_nontrivial_run")
+	}
+	return parts
 }
 
 func coordinationRequiredByID(coord *CoordinationState, id string) (CoordinationRequiredItem, bool) {
@@ -751,7 +958,7 @@ func processUrgentTransportTargets(runDir, runName, tmuxSession string, cfg *goa
 		case TUIStateProviderDialog, TUIStateBlank:
 			continue
 		case TUIStateInterrupted:
-			outcome, err := EscalateInterruptTransport(target.tmux, target.engine, "urgent_unread")
+			outcome, err := escalateInterruptTransportInRunFunc(runDir, target.tmux, target.engine, "urgent_unread")
 			if err != nil {
 				return err
 			}
@@ -759,7 +966,7 @@ func processUrgentTransportTargets(runDir, runName, tmuxSession string, cfg *goa
 				return err
 			}
 		default:
-			outcome, err := sendAgentNudgeDetailed(target.tmux, target.engine)
+			outcome, err := sendAgentNudgeDetailedInRunFunc(runDir, target.tmux, target.engine)
 			if err != nil {
 				return err
 			}
@@ -784,17 +991,30 @@ func reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession string, cf
 		}
 	}
 	masterFacts := presence["master"]
-	if masterFacts.SessionExists && targetPresenceMissing(masterFacts) {
+	if targetPresenceMissing(masterFacts) {
 		recovery := loadTransportRecoveryTarget(runDir, "master")
 		if recovery.CurrentMissingLastRelaunchAt == "" || recovery.CurrentMissingLastRelaunchResult != "success" {
 			if err := recordMissingTargetRelaunchAttempt(runDir, "master", masterFacts.State); err != nil {
 				return nil, err
 			}
-			if err := relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession, cfg); err != nil {
-				if recordErr := recordMissingTargetRelaunchResult(runDir, "master", masterFacts.State, "failure", err); recordErr != nil {
+			var relaunchErr error
+			if masterFacts.SessionExists {
+				relaunchErr = relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession, cfg)
+			} else {
+				appendAuditLog(runDir, "target_relaunch_attempt target=master cause=%s session_exists=%t window_exists=%t", blankAsUnknown(masterFacts.State), masterFacts.SessionExists, masterFacts.WindowExists)
+				relaunchErr = relaunchMaster(projectRoot, runDir, tmuxSession, cfg)
+			}
+			if relaunchErr != nil {
+				if !masterFacts.SessionExists {
+					appendAuditLog(runDir, "target_relaunch_result target=master result=failure cause=%s err=%v", blankAsUnknown(masterFacts.State), relaunchErr)
+				}
+				if recordErr := recordMissingTargetRelaunchResult(runDir, "master", masterFacts.State, "failure", relaunchErr); recordErr != nil {
 					return nil, recordErr
 				}
-				return nil, err
+				return nil, relaunchErr
+			}
+			if !masterFacts.SessionExists {
+				appendAuditLog(runDir, "target_relaunch_result target=master result=success cause=%s", blankAsUnknown(masterFacts.State))
 			}
 			if err := recordMissingTargetRelaunchResult(runDir, "master", masterFacts.State, "success", nil); err != nil {
 				return nil, err
@@ -829,7 +1049,7 @@ func reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession string, cf
 		reason := fmt.Sprintf("target missing: %s state=%s first_seen=%s", sessionName, sessionFacts.State, blankAsUnknown(recovery.CurrentMissingFirstSeenAt))
 		appendAuditLog(runDir, "target_missing_alert target=%s cause=%s first_seen=%s", sessionName, sessionFacts.State, blankAsUnknown(recovery.CurrentMissingFirstSeenAt))
 		body := fmt.Sprintf("Target missing in active GoalX run; target=%s state=%s first_seen=%s action=do_not_respawn_worker", sessionName, sessionFacts.State, blankAsUnknown(recovery.CurrentMissingFirstSeenAt))
-		if _, err := appendControlInboxMessage(runDir, "master", "target-missing", "goalx sidecar", body, true); err != nil {
+		if _, err := appendControlInboxMessage(runDir, "master", "target-missing", "goalx runtime-host", body, true); err != nil {
 			return nil, err
 		}
 		if err := recordMissingTargetAlert(runDir, sessionName, sessionFacts.State, reason); err != nil {
@@ -855,54 +1075,9 @@ func transportAcceptedRecently(facts TransportTargetFacts, window time.Duration,
 	return false
 }
 
-func defaultLaunchRunSidecar(projectRoot, runName string, interval time.Duration) error {
-	goalxBin, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("resolve goalx executable: %w", err)
-	}
-	seconds := int(interval.Seconds())
-	if seconds <= 0 {
-		seconds = 300
-	}
-
-	// Resolve run directory using configured or legacy path
-	rc, err := ResolveRun(projectRoot, runName)
-	if err != nil {
-		return fmt.Errorf("resolve run: %w", err)
-	}
-	runDir := rc.RunDir
-	logFile, err := os.OpenFile(filepath.Join(runDir, "sidecar.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("open sidecar log: %w", err)
-	}
-	defer logFile.Close()
-
-	cmd := exec.Command(goalxBin, "sidecar", "--run", runName, "--interval", strconv.Itoa(seconds))
-	cmd.Dir = projectRoot
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start sidecar: %w", err)
-	}
+func defaultStopRunRuntimeHost(runDir string) error {
 	meta, _ := LoadRunMetadata(RunMetadataPath(runDir))
-	epoch := 1
-	if meta != nil && meta.Epoch > 0 {
-		epoch = meta.Epoch
-	}
-	runID := ""
-	if meta != nil {
-		runID = meta.RunID
-	}
-	if err := RenewControlLease(runDir, "sidecar", runID, epoch, interval*2, "process", cmd.Process.Pid); err != nil {
-		return err
-	}
-	return cmd.Process.Release()
-}
-
-func defaultStopRunSidecar(runDir string) error {
-	meta, _ := LoadRunMetadata(RunMetadataPath(runDir))
-	lease, err := LoadControlLease(ControlLeasePath(runDir, "sidecar"))
+	lease, err := LoadControlLease(ControlLeasePath(runDir, "runtime-host"))
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return err
@@ -918,7 +1093,7 @@ func defaultStopRunSidecar(runDir string) error {
 			_ = proc.Signal(syscall.SIGTERM)
 			deadline := time.Now().Add(2 * time.Second)
 			for time.Now().Before(deadline) {
-				current, loadErr := LoadControlLease(ControlLeasePath(runDir, "sidecar"))
+				current, loadErr := LoadControlLease(ControlLeasePath(runDir, "runtime-host"))
 				if loadErr == nil && current.PID == 0 {
 					return nil
 				}
@@ -930,5 +1105,5 @@ func defaultStopRunSidecar(runDir string) error {
 			_ = proc.Signal(syscall.SIGKILL)
 		}
 	}
-	return ExpireControlLease(runDir, "sidecar")
+	return ExpireControlLease(runDir, "runtime-host")
 }

@@ -60,11 +60,11 @@ func ScanLiveness(runDir string) (*LivenessState, error) {
 		if parkedTargets[sessionName] {
 			continue
 		}
-		if shouldNotifySessionDied(previous, sessionName, entry) {
-			if _, err := AppendMasterInboxMessage(runDir, "session-died", "goalx sidecar", fmt.Sprintf("%s lease expired and its process is no longer alive.", sessionName)); err != nil {
-				return nil, err
+			if shouldNotifySessionDied(previous, sessionName, entry) {
+				if _, err := AppendMasterInboxMessage(runDir, "session-died", "goalx runtime-host", fmt.Sprintf("%s lease expired and its process is no longer alive.", sessionName)); err != nil {
+					return nil, err
+				}
 			}
-		}
 	}
 	if len(state.Sessions) == 0 {
 		state.Sessions = nil

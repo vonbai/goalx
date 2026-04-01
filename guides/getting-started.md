@@ -90,13 +90,11 @@ goalx save
 ## 8. Choose Intent Only When It Helps
 
 ```bash
-goalx run "goal" --intent research
-goalx run "goal" --intent develop
+goalx run "goal" --intent explore
 goalx run "goal" --intent evolve --budget 8h
 ```
 
-- `research`: findings and reports
-- `develop`: code and verification
+- `explore`: findings, evidence expansion, and reports before commitment
 - `evolve`: open-ended iterative improvement
 
 ## 9. Understand The Worktree Boundary

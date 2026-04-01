@@ -37,8 +37,13 @@ var sendAgentNudge = func(target, engine string) error {
 	return err
 }
 var sendAgentNudgeDetailed = SendAgentNudgeDetailed
+var sendAgentNudgeDetailedInRunFunc = SendAgentNudgeDetailedInRun
+var escalateInterruptTransportInRunFunc = EscalateInterruptTransportInRun
 var sendAgentKeys = sendKeysWithSubmit
 var captureAgentPane = CapturePaneTargetOutput
+var sendAgentKeysInRun = sendKeysWithSubmitInRun
+var sendAgentEscapeInRun = SendEscapeInRun
+var captureAgentPaneInRun = CapturePaneTargetOutputInRun
 
 func ControlDir(runDir string) string {
 	return filepath.Join(runDir, "control")
@@ -347,8 +352,20 @@ func SendAgentNudgeDetailed(target, engine string) (TransportDeliveryOutcome, er
 	return SubmitWakeTransport(target, engine)
 }
 
+func SendAgentNudgeDetailedInRun(runDir, target, engine string) (TransportDeliveryOutcome, error) {
+	return SubmitWakeTransportInRun(runDir, target, engine)
+}
+
 func SubmitWakeTransport(target, engine string) (TransportDeliveryOutcome, error) {
-	before := inspectTransportTarget(target, "", "", engine)
+	return submitWakeTransport("", target, engine)
+}
+
+func SubmitWakeTransportInRun(runDir, target, engine string) (TransportDeliveryOutcome, error) {
+	return submitWakeTransport(runDir, target, engine)
+}
+
+func submitWakeTransport(runDir, target, engine string) (TransportDeliveryOutcome, error) {
+	before := inspectTransportTargetWithRun(runDir, target, "", "", engine)
 	switch normalizeTUITransportState(before.TransportState) {
 	case TUIStateQueued:
 		return TransportDeliveryOutcome{SubmitMode: "accepted_existing_queue", TransportState: before.TransportState}, nil
@@ -358,31 +375,31 @@ func SubmitWakeTransport(target, engine string) (TransportDeliveryOutcome, error
 	switch strings.TrimSpace(engine) {
 	case "codex":
 		if normalizeTUITransportState(before.TransportState) == TUIStateBufferedInput {
-			if err := sendAgentKeys(target, "", "Enter"); err != nil {
+			if err := sendAgentKeysForRun(runDir, target, "", "Enter"); err != nil {
 				return TransportDeliveryOutcome{SubmitMode: "enter_only_repair", TransportState: before.TransportState}, err
 			}
 			time.Sleep(150 * time.Millisecond)
-			after := inspectTransportTarget(target, "", "", engine)
+			after := inspectTransportTargetWithRun(runDir, target, "", "", engine)
 			return TransportDeliveryOutcome{
 				SubmitMode:     "enter_only_repair",
 				TransportState: classifyTransportOutcome(before, after),
 			}, nil
 		}
-		if err := sendAgentKeys(target, transportWakeToken, ""); err != nil {
+		if err := sendAgentKeysForRun(runDir, target, transportWakeToken, ""); err != nil {
 			return TransportDeliveryOutcome{SubmitMode: "payload_then_enter", TransportState: before.TransportState}, err
 		}
 		time.Sleep(150 * time.Millisecond)
-		if err := sendAgentKeys(target, "", "Enter"); err != nil {
+		if err := sendAgentKeysForRun(runDir, target, "", "Enter"); err != nil {
 			return TransportDeliveryOutcome{SubmitMode: "payload_then_enter", TransportState: before.TransportState}, err
 		}
 		time.Sleep(150 * time.Millisecond)
-		after := inspectTransportTarget(target, "", "", engine)
+		after := inspectTransportTargetWithRun(runDir, target, "", "", engine)
 		if normalizeTUITransportState(after.TransportState) == TUIStateBufferedInput {
-			if err := sendAgentKeys(target, "", "Enter"); err != nil {
+			if err := sendAgentKeysForRun(runDir, target, "", "Enter"); err != nil {
 				return TransportDeliveryOutcome{SubmitMode: "enter_only_repair", TransportState: after.TransportState}, err
 			}
 			time.Sleep(150 * time.Millisecond)
-			after = inspectTransportTarget(target, "", "", engine)
+			after = inspectTransportTargetWithRun(runDir, target, "", "", engine)
 			return TransportDeliveryOutcome{
 				SubmitMode:     "enter_only_repair",
 				TransportState: classifyTransportOutcome(before, after),
@@ -394,22 +411,22 @@ func SubmitWakeTransport(target, engine string) (TransportDeliveryOutcome, error
 		}, nil
 	case "claude-code":
 		if normalizeTUITransportState(before.TransportState) == TUIStateBufferedInput {
-			if err := sendAgentKeys(target, "", "Enter"); err != nil {
+			if err := sendAgentKeysForRun(runDir, target, "", "Enter"); err != nil {
 				return TransportDeliveryOutcome{SubmitMode: "enter_only_repair", TransportState: before.TransportState}, err
 			}
 			time.Sleep(150 * time.Millisecond)
-			after := inspectTransportTarget(target, "", "", engine)
+			after := inspectTransportTargetWithRun(runDir, target, "", "", engine)
 			return TransportDeliveryOutcome{
 				SubmitMode:     "enter_only_repair",
 				TransportState: classifyTransportOutcome(before, after),
 			}, nil
 		}
 	}
-	if err := sendAgentKeys(target, transportWakeToken, "Enter"); err != nil {
+	if err := sendAgentKeysForRun(runDir, target, transportWakeToken, "Enter"); err != nil {
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: before.TransportState}, err
 	}
 	time.Sleep(150 * time.Millisecond)
-	after := inspectTransportTarget(target, "", "", engine)
+	after := inspectTransportTargetWithRun(runDir, target, "", "", engine)
 	return TransportDeliveryOutcome{
 		SubmitMode:     "payload_enter",
 		TransportState: classifyTransportOutcome(before, after),
@@ -417,11 +434,19 @@ func SubmitWakeTransport(target, engine string) (TransportDeliveryOutcome, error
 }
 
 func EscalateInterruptTransport(target, engine, reason string) (TransportDeliveryOutcome, error) {
-	if err := SendEscape(target); err != nil {
+	return escalateInterruptTransport("", target, engine, reason)
+}
+
+func EscalateInterruptTransportInRun(runDir, target, engine, reason string) (TransportDeliveryOutcome, error) {
+	return escalateInterruptTransport(runDir, target, engine, reason)
+}
+
+func escalateInterruptTransport(runDir, target, engine, reason string) (TransportDeliveryOutcome, error) {
+	if err := sendAgentEscapeForRun(runDir, target); err != nil {
 		return TransportDeliveryOutcome{SubmitMode: "interrupt_escape"}, err
 	}
 	time.Sleep(150 * time.Millisecond)
-	afterInterrupt := inspectTransportTarget(target, "", "", engine)
+	afterInterrupt := inspectTransportTargetWithRun(runDir, target, "", "", engine)
 	result := TransportDeliveryOutcome{
 		SubmitMode:     "interrupt_escape",
 		TransportState: afterInterrupt.TransportState,
@@ -432,7 +457,7 @@ func EscalateInterruptTransport(target, engine, reason string) (TransportDeliver
 	case TUIStateProviderDialog, TUIStateInterrupted, TUIStateBlank, TUIStateUnknown:
 		return result, nil
 	default:
-		follow, err := SubmitWakeTransport(target, engine)
+		follow, err := submitWakeTransport(runDir, target, engine)
 		if err != nil {
 			return result, err
 		}
@@ -444,6 +469,27 @@ func EscalateInterruptTransport(target, engine, reason string) (TransportDeliver
 		}
 		return result, nil
 	}
+}
+
+func sendAgentKeysForRun(runDir, target, keys, submitKey string) error {
+	if strings.TrimSpace(runDir) == "" {
+		return sendAgentKeys(target, keys, submitKey)
+	}
+	return sendAgentKeysInRun(runDir, target, keys, submitKey)
+}
+
+func sendAgentEscapeForRun(runDir, target string) error {
+	if strings.TrimSpace(runDir) == "" {
+		return SendEscape(target)
+	}
+	return sendAgentEscapeInRun(runDir, target)
+}
+
+func inspectTransportTargetWithRun(runDir, target, logicalTarget, window, engine string) TransportTargetFacts {
+	if strings.TrimSpace(runDir) == "" {
+		return inspectTransportTarget(target, logicalTarget, window, engine)
+	}
+	return inspectTransportTargetInRun(runDir, target, logicalTarget, window, engine)
 }
 
 func classifyTransportOutcome(before, after TransportTargetFacts) string {

@@ -168,10 +168,10 @@ func TestResumeRelaunchesParkedSessionAndMarksActive(t *testing.T) {
 	if !strings.Contains(logText, "new-window -t "+wantSession+" -n session-1 -c "+WorktreePath(runDir, runName, 1)+" env ") {
 		t.Fatalf("tmux log missing new-window:\n%s", logText)
 	}
-	for _, want := range []string{"/bin/bash -c ", "lease-loop --run", "--holder", "session-1"} {
-		if !strings.Contains(logText, want) {
-			t.Fatalf("tmux log missing %q:\n%s", want, logText)
-		}
+		for _, want := range []string{"target-runner --run", "--holder", "session-1"} {
+			if !strings.Contains(logText, want) {
+				t.Fatalf("tmux log missing %q:\n%s", want, logText)
+			}
 	}
 	if strings.Contains(logText, "send-keys -t "+wantSession+":session-1") {
 		t.Fatalf("resume should launch directly, not via send-keys:\n%s", logText)
@@ -425,7 +425,7 @@ func TestResumeUsesDurableSessionIdentityInsteadOfCurrentConfig(t *testing.T) {
 	if strings.Contains(logText, "claude ") {
 		t.Fatalf("resume launch should not recompute current config engine:\n%s", logText)
 	}
-	if !strings.Contains(logText, "exec codex ") {
+	if !strings.Contains(logText, "--engine-command 'codex ") {
 		t.Fatalf("resume launch should use durable session identity engine:\n%s", logText)
 	}
 	protocolText, err := os.ReadFile(filepath.Join(runDir, "program-1.md"))

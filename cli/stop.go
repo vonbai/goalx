@@ -26,12 +26,12 @@ func Stop(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := stopRunSidecar(rc.RunDir); err != nil {
+	if err := runtimeSupervisor.Stop(rc.RunDir); err != nil {
 		return err
 	}
 	finalLifecycle := stopLifecycleForRun(rc.RunDir)
 
-	if !SessionExists(rc.TmuxSession) {
+	if !SessionExistsInRun(rc.RunDir, rc.TmuxSession) {
 		killRunPaneProcessTrees(rc.RunDir, rc.TmuxSession)
 		_ = MarkRunInactive(rc.ProjectRoot, rc.Name)
 		if state, err := LoadRunRuntimeState(RunRuntimeStatePath(rc.RunDir)); err == nil && state != nil {
@@ -55,7 +55,7 @@ func Stop(projectRoot string, args []string) error {
 	// Stopping a run preserves the run worktree for inspection or later reuse.
 	killRunPaneProcessTrees(rc.RunDir, rc.TmuxSession)
 	killAllLeasedProcesses(rc.RunDir)
-	if err := KillSessionIfExists(rc.TmuxSession); err != nil {
+	if err := KillSessionIfExistsInRun(rc.RunDir, rc.TmuxSession); err != nil {
 		return fmt.Errorf("kill tmux session %s: %w", rc.TmuxSession, err)
 	}
 	if state, err := LoadRunRuntimeState(RunRuntimeStatePath(rc.RunDir)); err == nil && state != nil {

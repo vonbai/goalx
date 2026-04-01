@@ -26,7 +26,6 @@ func TestEnsureMasterControlCreatesFiles(t *testing.T) {
 		ControlRunIdentityPath(runDir),
 		ControlRunStatePath(runDir),
 		ControlLeasePath(runDir, "master"),
-		ControlLeasePath(runDir, "sidecar"),
 		ControlInboxPath(runDir, "master"),
 		ControlRemindersPath(runDir),
 		ControlDeliveriesPath(runDir),
@@ -37,6 +36,9 @@ func TestEnsureMasterControlCreatesFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(ControlDir(runDir), "events.jsonl")); !os.IsNotExist(err) {
 		t.Fatalf("legacy event log should not exist, stat err = %v", err)
+	}
+	if _, err := os.Stat(ControlLeasePath(runDir, "runtime-host")); !os.IsNotExist(err) {
+		t.Fatalf("runtime host should not be precreated, stat err = %v", err)
 	}
 }
 

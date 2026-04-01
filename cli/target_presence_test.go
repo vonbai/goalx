@@ -17,8 +17,8 @@ func TestBuildTargetPresenceFactsReportsMasterAndSessionPresence(t *testing.T) {
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
 	installFakePresenceTmux(t, true, "master session-1", "%0\\tmaster\\n%1\\tsession-1\\n")
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 
 	facts, err := BuildTargetPresenceFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name))
@@ -42,12 +42,12 @@ func TestBuildTargetPresenceFactsReportsMasterAndSessionPresence(t *testing.T) {
 		t.Fatalf("session presence incomplete: %+v", sessionFacts)
 	}
 
-	sidecarFacts := facts["sidecar"]
+	sidecarFacts := facts["runtime-host"]
 	if sidecarFacts.State != TargetPresencePresent {
-		t.Fatalf("sidecar state = %q, want %q", sidecarFacts.State, TargetPresencePresent)
+		t.Fatalf("runtime host state = %q, want %q", sidecarFacts.State, TargetPresencePresent)
 	}
 	if !sidecarFacts.LeasePresent || !sidecarFacts.LeaseHealthy || !sidecarFacts.ProcessPIDAlive {
-		t.Fatalf("sidecar presence incomplete: %+v", sidecarFacts)
+		t.Fatalf("runtime host presence incomplete: %+v", sidecarFacts)
 	}
 }
 
@@ -57,8 +57,8 @@ func TestBuildTargetPresenceFactsReportsMissingMasterWindow(t *testing.T) {
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
 	installFakePresenceTmux(t, true, "session-1", "%1\\tsession-1\\n")
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 
 	facts, err := BuildTargetPresenceFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name))
@@ -81,8 +81,8 @@ func TestBuildTargetPresenceFactsReportsMissingSessionWindow(t *testing.T) {
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
 	installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 
 	facts, err := BuildTargetPresenceFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name))
@@ -105,8 +105,8 @@ func TestBuildTargetPresenceFactsTreatsParkedSessionAsNotMissing(t *testing.T) {
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
 	installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
 		Name:  "session-1",
@@ -148,8 +148,8 @@ func TestBuildTargetPresenceFactsReportsTmuxSessionMissingForTmuxTargets(t *test
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
 	installFakePresenceTmux(t, false, "", "")
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 
 	facts, err := BuildTargetPresenceFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name))
@@ -168,14 +168,14 @@ func TestBuildTargetPresenceFactsReportsTmuxSessionMissingForTmuxTargets(t *test
 	}
 }
 
-func TestBuildTargetPresenceFactsReportsMissingSidecarLease(t *testing.T) {
+func TestBuildTargetPresenceFactsReportsMissingRuntimeHostLease(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo, runDir, cfg, _ := writeTargetPresenceFixture(t)
 	installFakePresenceTmux(t, true, "master session-1", "%0\\tmaster\\n%1\\tsession-1\\n")
-	if err := os.Remove(ControlLeasePath(runDir, "sidecar")); err != nil && !os.IsNotExist(err) {
-		t.Fatalf("remove sidecar lease: %v", err)
+	if err := os.Remove(ControlLeasePath(runDir, "runtime-host")); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove runtime host: %v", err)
 	}
 
 	facts, err := BuildTargetPresenceFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name))
@@ -183,9 +183,9 @@ func TestBuildTargetPresenceFactsReportsMissingSidecarLease(t *testing.T) {
 		t.Fatalf("BuildTargetPresenceFacts: %v", err)
 	}
 
-	sidecarFacts := facts["sidecar"]
+	sidecarFacts := facts["runtime-host"]
 	if sidecarFacts.State != TargetPresenceLeaseExpired {
-		t.Fatalf("sidecar state = %q, want %q", sidecarFacts.State, TargetPresenceLeaseExpired)
+		t.Fatalf("runtime host state = %q, want %q", sidecarFacts.State, TargetPresenceLeaseExpired)
 	}
 }
 
@@ -194,8 +194,8 @@ func TestBuildTargetPresenceFactsUsesSessionWidePaneEnumeration(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 
 	sessionName := goalx.TmuxSessionName(repo, cfg.Name)
@@ -309,11 +309,11 @@ func TestLoadDerivedRunStateMarksMasterMissingAsDegraded(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState active: %v", err)
 	}
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 	installFakePresenceTmux(t, true, "session-1", "%1\\tsession-1\\n")
 
@@ -324,24 +324,133 @@ func TestLoadDerivedRunStateMarksMasterMissingAsDegraded(t *testing.T) {
 	if state.Status != "degraded" {
 		t.Fatalf("derived status = %q, want degraded", state.Status)
 	}
-	if state.LifecycleState != "active" {
-		t.Fatalf("lifecycle state = %q, want active", state.LifecycleState)
+	if state.GoalState != "open" {
+		t.Fatalf("goal state = %q, want open", state.GoalState)
+	}
+	if state.ContinuityState != "running" {
+		t.Fatalf("continuity state = %q, want running", state.ContinuityState)
 	}
 	if state.Name != cfg.Name {
 		t.Fatalf("derived name = %q, want %q", state.Name, cfg.Name)
 	}
 }
 
-func TestLoadDerivedRunStateMarksSidecarMissingAsDegraded(t *testing.T) {
+func TestLoadDerivedRunStatePrefersCanonicalContinuityOverRuntimeBits(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, _ := writeTargetPresenceFixture(t)
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "stranded",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState stranded: %v", err)
+	}
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       cfg.Name,
+		Mode:      string(cfg.Mode),
+		Active:    true,
+		Phase:     "working",
+		StartedAt: time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+	installFakePresenceTmux(t, true, "master session-1", "%0\\tmaster\\n%1\\tsession-1\\n")
+
+	state, err := loadDerivedRunState(repo, runDir)
+	if err != nil {
+		t.Fatalf("loadDerivedRunState: %v", err)
+	}
+	if state.GoalState != "open" {
+		t.Fatalf("goal state = %q, want open", state.GoalState)
+	}
+	if state.ContinuityState != "stranded" {
+		t.Fatalf("continuity state = %q, want stranded", state.ContinuityState)
+	}
+	if state.Status != "stranded" {
+		t.Fatalf("derived status = %q, want stranded", state.Status)
+	}
+}
+
+func TestLoadDerivedRunStateReconcilesStoppedRuntimeHostToStranded(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, _ := writeTargetPresenceFixture(t)
+	if err := RegisterActiveRun(repo, cfg); err != nil {
+		t.Fatalf("RegisterActiveRun: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := SaveRunHostState(RunHostStatePath(runDir), &RunHostState{
+		Version:   1,
+		Kind:      "runtime_host",
+		Launcher:  "process",
+		RunDir:    runDir,
+		RunName:   cfg.Name,
+		Running:   true,
+		PID:       999,
+		UpdatedAt: "2026-03-31T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveRunHostState: %v", err)
+	}
+
+	origRuntimeSupervisor := runtimeSupervisor
+	defer func() { runtimeSupervisor = origRuntimeSupervisor }()
+	runtimeSupervisor = &runtimeSupervisorStub{
+		inspectState: &RunHostState{
+			Version:   1,
+			Kind:      "runtime_host",
+			Launcher:  "process",
+			RunDir:    runDir,
+			RunName:   cfg.Name,
+			Running:   false,
+			PID:       0,
+			UpdatedAt: "2026-03-31T00:10:00Z",
+		},
+	}
+
+	state, err := loadDerivedRunState(repo, runDir)
+	if err != nil {
+		t.Fatalf("loadDerivedRunState: %v", err)
+	}
+	if state.ContinuityState != "stranded" || state.Status != "stranded" {
+		t.Fatalf("derived state = %+v, want stranded continuity/status", state)
+	}
+	controlState, err := LoadControlRunState(ControlRunStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunState: %v", err)
+	}
+	if controlState.ContinuityState != "stranded" {
+		t.Fatalf("control state continuity = %q, want stranded", controlState.ContinuityState)
+	}
+	reg, err := LoadProjectRegistry(repo)
+	if err != nil {
+		t.Fatalf("LoadProjectRegistry: %v", err)
+	}
+	if _, ok := reg.ActiveRuns[cfg.Name]; ok {
+		t.Fatalf("run %q still active after derived reconcile", cfg.Name)
+	}
+}
+
+func TestLoadDerivedRunStateMarksRuntimeHostMissingAsDegraded(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	repo, runDir, _, _ := writeTargetPresenceFixture(t)
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState active: %v", err)
 	}
-	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
-		t.Fatalf("ExpireControlLease sidecar: %v", err)
+	if err := ExpireControlLease(runDir, "runtime-host"); err != nil {
+		t.Fatalf("ExpireControlLease runtime-host: %v", err)
 	}
 	installFakePresenceTmux(t, true, "master session-1", "%0\\tmaster\\n%1\\tsession-1\\n")
 
@@ -359,11 +468,11 @@ func TestLoadDerivedRunStateMarksSessionMissingAsDegraded(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	repo, runDir, _, meta := writeTargetPresenceFixture(t)
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState active: %v", err)
 	}
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 	installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
 
@@ -381,11 +490,11 @@ func TestStatusReportsDegradedRunAndMissingActors(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	repo, runDir, cfg, _ := writeTargetPresenceFixture(t)
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState active: %v", err)
 	}
-	if err := ExpireControlLease(runDir, "sidecar"); err != nil {
-		t.Fatalf("ExpireControlLease sidecar: %v", err)
+	if err := ExpireControlLease(runDir, "runtime-host"); err != nil {
+		t.Fatalf("ExpireControlLease runtime-host: %v", err)
 	}
 	installFakePresenceTmux(t, true, "session-1", "%1\\tsession-1\\n")
 	origCapture := captureAgentPane
@@ -399,7 +508,7 @@ func TestStatusReportsDegradedRunAndMissingActors(t *testing.T) {
 			t.Fatalf("Status: %v", err)
 		}
 	})
-	for _, want := range []string{"run_status=degraded", "master window missing", "sidecar missing"} {
+	for _, want := range []string{"run_status=degraded", "master window missing", "runtime host missing"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status output missing %q:\n%s", want, out)
 		}
@@ -411,11 +520,11 @@ func TestObserveReportsSessionWindowMissingExplicitly(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState active: %v", err)
 	}
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 	installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
 	origCapture := captureAgentPane
@@ -439,11 +548,11 @@ func TestObserveReportsParkedSessionExplicitly(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState active: %v", err)
 	}
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-1", State: "parked", Mode: string(goalx.ModeWorker)}); err != nil {
 		t.Fatalf("UpsertSessionRuntimeState: %v", err)
@@ -476,11 +585,11 @@ func TestResolveDefaultRunNameTreatsDegradedRunAsOpen(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState active: %v", err)
 	}
-	if err := RenewControlLease(runDir, "sidecar", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
-		t.Fatalf("RenewControlLease sidecar: %v", err)
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
 	}
 	installFakePresenceTmux(t, true, "session-1", "%1\\tsession-1\\n")
 	if _, err := loadDerivedRunState(repo, runDir); err != nil {
@@ -494,7 +603,7 @@ func TestResolveDefaultRunNameTreatsDegradedRunAsOpen(t *testing.T) {
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
 	}
 	otherRunDir := writeRunSpecFixture(t, repo, otherCfg)
-	if err := SaveControlRunState(ControlRunStatePath(otherRunDir), &ControlRunState{Version: 1, LifecycleState: "stopped"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(otherRunDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "stopped"}); err != nil {
 		t.Fatalf("SaveControlRunState stopped: %v", err)
 	}
 
@@ -561,7 +670,7 @@ func TestDeliverTellSkipsMasterNudgeWhenMasterWindowMissing(t *testing.T) {
 	}
 }
 
-func TestRunSidecarTickDoesNotKillCompactingMasterWindow(t *testing.T) {
+func TestRunRuntimeHostTickDoesNotKillCompactingMasterWindow(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -572,14 +681,14 @@ func TestRunSidecarTickDoesNotKillCompactingMasterWindow(t *testing.T) {
 		t.Fatalf("write master capture: %v", err)
 	}
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
-	writeFakeSidecarTmux(t, logPath, "")
+	writeFakeRuntimeHostTmux(t, logPath, "")
 
 	orig := sendAgentNudge
 	defer func() { sendAgentNudge = orig }()
 	sendAgentNudge = func(target, engine string) error { return nil }
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, 2*time.Minute, 4242); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	logData, err := os.ReadFile(logPath)
@@ -607,7 +716,7 @@ func writeTargetPresenceFixture(t *testing.T) (string, string, *goalx.Config, *R
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	bootstrapSidecarIdentityFixture(t, runDir, repo, cfg, meta)
+	bootstrapRuntimeHostIdentityFixture(t, runDir, repo, cfg, meta)
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}

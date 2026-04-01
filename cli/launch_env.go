@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -46,22 +45,22 @@ func buildLeaseWrappedLaunchCommand(goalxBin, runName, runDir, holder, runID str
 }
 
 func buildLeaseWrappedLaunchCommandWithEnv(launchEnv map[string]string, goalxBin, runName, runDir, holder, runID string, epoch int, ttl time.Duration, engineCmd, prompt string) string {
-	ttlSeconds := int(ttl.Seconds())
-	if ttlSeconds <= 0 {
-		ttlSeconds = 30
+	command, err := targetRunner.BuildCommand(TargetRunnerLaunchSpec{
+		LaunchEnv: launchEnv,
+		GoalxBin:  goalxBin,
+		RunName:   runName,
+		RunDir:    runDir,
+		Holder:    holder,
+		RunID:     runID,
+		Epoch:     epoch,
+		TTL:       ttl,
+		EngineCmd: engineCmd,
+		Prompt:    prompt,
+	})
+	if err != nil {
+		panic(err)
 	}
-	script := fmt.Sprintf(
-		"%s lease-loop --run %s --run-dir %s --holder %s --run-id %s --epoch %d --ttl-seconds %d --transport tmux --pid $$ >/dev/null 2>&1 & exec %s",
-		shellQuote(goalxBin),
-		shellQuote(runName),
-		shellQuote(runDir),
-		shellQuote(holder),
-		shellQuote(runID),
-		epoch,
-		ttlSeconds,
-		buildEngineExecCommand(engineCmd, prompt),
-	)
-	return buildLaunchEnvPrefix(launchEnv) + " /bin/bash -c " + shellQuote(script)
+	return command
 }
 
 func buildEngineExecCommand(engineCmd, prompt string) string {

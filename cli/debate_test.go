@@ -405,9 +405,54 @@ func TestDebateReadsLegacyProjectScopedSavedRun(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runDir, "session-1-report.md"), []byte("# report\n"), 0o644); err != nil {
 		t.Fatalf("write report: %v", err)
 	}
+	if err := SaveRunIntake(SavedRunIntakePath(runDir), &RunIntake{
+		Version:   1,
+		Objective: cfg.Objective,
+		Intent:    runIntentDeliver,
+	}); err != nil {
+		t.Fatalf("write intake: %v", err)
+	}
 
 	if err := Debate(projectRoot, []string{"--from", "research-a", "--write-config"}); err != nil {
 		t.Fatalf("Debate: %v", err)
+	}
+}
+
+func TestDebateRejectsSavedRunMissingCanonicalIntake(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	runDir := SavedRunDir(projectRoot, "research-a")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir saved run: %v", err)
+	}
+	cfg := goalx.Config{
+		Name:      "research-a",
+		Mode:      goalx.ModeWorker,
+		Objective: "audit auth flow",
+		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		Roles: goalx.RoleDefaultsConfig{
+			Worker: goalx.SessionConfig{Engine: "claude-code", Model: "sonnet"},
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
+		t.Fatalf("write run spec: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "summary.md"), []byte("# summary\n"), 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+
+	err = Debate(projectRoot, []string{"--from", "research-a", "--write-config"})
+	if err == nil {
+		t.Fatal("Debate unexpectedly succeeded without canonical intake")
+	}
+	if !strings.Contains(err.Error(), "intake") || !strings.Contains(err.Error(), "legacy") {
+		t.Fatalf("Debate error = %v, want legacy intake rejection", err)
 	}
 }
 
@@ -440,7 +485,7 @@ func TestDebateStartCreatesFreshCharterWithPreservedRootLineage(t *testing.T) {
 	writeAndCommit(t, projectRoot, "base.txt", "base", "base commit")
 	sourceMeta, sourceCharter := writeSavedPhaseSourceFixture(t, projectRoot, "research-a", "research")
 	installPhaseStartFakeTmux(t)
-	stubLaunchRunSidecar(t)
+	stubLaunchRunRuntimeHost(t)
 
 	if err := Debate(projectRoot, []string{"--from", "research-a"}); err != nil {
 		t.Fatalf("Debate: %v", err)

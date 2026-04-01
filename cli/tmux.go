@@ -8,9 +8,26 @@ import (
 	"time"
 )
 
+func tmuxCommandWithSocketDir(socketDir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("tmux", args...)
+	if strings.TrimSpace(socketDir) != "" {
+		_ = os.MkdirAll(socketDir, 0o755)
+		cmd.Env = tmuxRunEnvironment(socketDir)
+	}
+	return cmd
+}
+
+func tmuxOutputWithSocketDir(socketDir string, args ...string) ([]byte, error) {
+	return tmuxCommandWithSocketDir(socketDir, args...).Output()
+}
+
 // SessionExists returns true if a tmux session with the given name exists.
 func SessionExists(name string) bool {
-	return exec.Command("tmux", "has-session", "-t", name).Run() == nil
+	return tmuxCommandWithSocketDir("", "has-session", "-t", name).Run() == nil
+}
+
+func SessionExistsInRun(runDir, name string) bool {
+	return tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "has-session", "-t", name).Run() == nil
 }
 
 // NewSession creates a new detached tmux session with its first window named.
@@ -20,7 +37,12 @@ func NewSession(name, firstWindow string) error {
 
 // NewSessionWithCommand creates a new detached tmux session with its first window named.
 func NewSessionWithCommand(name, firstWindow, workdir, command string) error {
-	if err := syncTmuxGlobalPath(); err != nil {
+	return NewSessionWithCommandInRun("", name, firstWindow, workdir, command)
+}
+
+func NewSessionWithCommandInRun(runDir, name, firstWindow, workdir, command string) error {
+	socketDir := resolveRunTmuxSocketDir("", runDir, "")
+	if err := syncTmuxPath(socketDir); err != nil {
 		return err
 	}
 	args := []string{"new-session", "-d", "-s", name, "-n", firstWindow}
@@ -30,7 +52,7 @@ func NewSessionWithCommand(name, firstWindow, workdir, command string) error {
 	if command != "" {
 		args = append(args, command)
 	}
-	return exec.Command("tmux", args...).Run()
+	return tmuxCommandWithSocketDir(socketDir, args...).Run()
 }
 
 // NewWindow creates a new window in the given tmux session.
@@ -40,7 +62,12 @@ func NewWindow(session, window, workdir string) error {
 
 // NewWindowWithCommand creates a new window in the given tmux session.
 func NewWindowWithCommand(session, window, workdir, command string) error {
-	if err := syncTmuxGlobalPath(); err != nil {
+	return NewWindowWithCommandInRun("", session, window, workdir, command)
+}
+
+func NewWindowWithCommandInRun(runDir, session, window, workdir, command string) error {
+	socketDir := resolveRunTmuxSocketDir("", runDir, "")
+	if err := syncTmuxPath(socketDir); err != nil {
 		return err
 	}
 	args := []string{"new-window", "-t", session, "-n", window}
@@ -50,13 +77,13 @@ func NewWindowWithCommand(session, window, workdir, command string) error {
 	if command != "" {
 		args = append(args, command)
 	}
-	return exec.Command("tmux", args...).Run()
+	return tmuxCommandWithSocketDir(socketDir, args...).Run()
 }
 
 // RenameWindow renames a window by index in the given tmux session.
 func RenameWindow(session string, index int, name string) error {
 	target := session + ":" + strconv.Itoa(index)
-	return exec.Command("tmux", "rename-window", "-t", target, name).Run()
+	return tmuxCommandWithSocketDir("", "rename-window", "-t", target, name).Run()
 }
 
 // SendKeys sends keystrokes to a tmux target, followed by Enter.
@@ -67,7 +94,11 @@ func SendKeys(target, keys string) error {
 
 // SendEscape sends Escape to a tmux target without submitting Enter.
 func SendEscape(target string) error {
-	return exec.Command("tmux", "send-keys", "-t", target, "Escape").Run()
+	return tmuxCommandWithSocketDir("", "send-keys", "-t", target, "Escape").Run()
+}
+
+func SendEscapeInRun(runDir, target string) error {
+	return tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "send-keys", "-t", target, "Escape").Run()
 }
 
 func sendKeysWithSubmit(target, keys, submitKey string) error {
@@ -79,18 +110,34 @@ func sendKeysWithSubmit(target, keys, submitKey string) error {
 	if submitKey != "" {
 		args = append(args, submitKey)
 	}
-	return exec.Command("tmux", args...).Run()
+	return tmuxCommandWithSocketDir("", args...).Run()
+}
+
+func sendKeysWithSubmitInRun(runDir, target, keys, submitKey string) error {
+	time.Sleep(200 * time.Millisecond)
+	args := []string{"send-keys", "-t", target}
+	if keys != "" {
+		args = append(args, keys)
+	}
+	if submitKey != "" {
+		args = append(args, submitKey)
+	}
+	return tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), args...).Run()
 }
 
 // AttachSession attaches to a tmux session at the specified window.
 func AttachSession(session string, window string) error {
+	return AttachSessionInRun("", session, window)
+}
+
+func AttachSessionInRun(runDir, session string, window string) error {
 	target := session + ":" + window
-	return exec.Command("tmux", "attach-session", "-t", target).Run()
+	return tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "attach-session", "-t", target).Run()
 }
 
 // KillSession destroys a tmux session.
 func KillSession(session string) error {
-	return exec.Command("tmux", "kill-session", "-t", session).Run()
+	return tmuxCommandWithSocketDir("", "kill-session", "-t", session).Run()
 }
 
 // KillSessionIfExists treats an already-exited tmux session as a successful kill.
@@ -107,10 +154,27 @@ func KillSessionIfExists(session string) error {
 	return nil
 }
 
+func KillSessionIfExistsInRun(runDir, session string) error {
+	if !SessionExistsInRun(runDir, session) {
+		return nil
+	}
+	if err := tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "kill-session", "-t", session).Run(); err != nil {
+		if !SessionExistsInRun(runDir, session) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 // KillWindow destroys a single window in a tmux session.
 func KillWindow(session, window string) error {
+	return KillWindowInRun("", session, window)
+}
+
+func KillWindowInRun(runDir, session, window string) error {
 	target := session + ":" + window
-	return exec.Command("tmux", "kill-window", "-t", target).Run()
+	return tmuxCommandWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "kill-window", "-t", target).Run()
 }
 
 // WindowExists returns true if a tmux window with the given name exists.
@@ -123,8 +187,21 @@ func WindowExists(session, window string) bool {
 	return ok
 }
 
+func WindowExistsInRun(runDir, session, window string) bool {
+	windows, err := tmuxWindowsByNameInRun(runDir, session)
+	if err != nil {
+		return false
+	}
+	_, ok := windows[window]
+	return ok
+}
+
 func tmuxWindowsByName(session string) (map[string]struct{}, error) {
-	out, err := exec.Command("tmux", "list-windows", "-t", session, "-F", "#{window_name}").Output()
+	return tmuxWindowsByNameInRun("", session)
+}
+
+func tmuxWindowsByNameInRun(runDir, session string) (map[string]struct{}, error) {
+	out, err := tmuxOutputWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "list-windows", "-t", session, "-F", "#{window_name}")
 	if err != nil {
 		return nil, err
 	}
@@ -147,23 +224,44 @@ func CapturePaneOutput(session, window string) (string, error) {
 
 // CapturePaneTargetOutput captures the visible content of a tmux pane target.
 func CapturePaneTargetOutput(target string) (string, error) {
-	out, err := exec.Command("tmux", "capture-pane", "-t", target, "-p").Output()
+	return CapturePaneTargetOutputInRun("", target)
+}
+
+func CapturePaneTargetOutputInRun(runDir, target string) (string, error) {
+	out, err := tmuxOutputWithSocketDir(resolveRunTmuxSocketDir("", runDir, ""), "capture-pane", "-t", target, "-p")
 	if err != nil {
 		return "", err
 	}
 	return string(out), nil
 }
 
-func syncTmuxGlobalPath() error {
+func syncTmuxPath(socketDir string) error {
 	path := strings.TrimSpace(os.Getenv("PATH"))
 	if path == "" {
 		return nil
 	}
-	output, err := exec.Command("tmux", "set-environment", "-g", "PATH", path).CombinedOutput()
+	output, err := tmuxCommandWithSocketDir(socketDir, "set-environment", "-g", "PATH", path).CombinedOutput()
 	if err != nil && tmuxNoServerError(string(output)) {
 		return nil
 	}
 	return err
+}
+
+func tmuxRunEnvironment(socketDir string) []string {
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "TMUX=") {
+			continue
+		}
+		if strings.HasPrefix(entry, "TMUX_TMPDIR=") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	if strings.TrimSpace(socketDir) != "" {
+		env = append(env, "TMUX_TMPDIR="+socketDir)
+	}
+	return env
 }
 
 func tmuxNoServerError(output string) bool {

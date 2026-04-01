@@ -18,17 +18,19 @@ mkdir -p ~/.goalx
 cp deploy/config.example.yaml ~/.goalx/config.yaml
 ```
 
-Edit the config to match your local defaults, engine presets, routing rules, and validation command.
+Edit the config to match your local defaults, selection candidate pools, and validation command.
 
 ## Run
 
 ```bash
 cd /your/project
 goalx run "objective"
+goalx run "objective" --guided
 goalx observe
 goalx status
+goalx schema status
 goalx verify --run your-run
 goalx save --run your-run
 ```
 
-`goalx status` and `goalx observe` surface `run_id`, `epoch`, and charter health alongside lease state. `goalx save` exports durable run metadata for later inspection.
+`goalx status` and `goalx observe` surface `run_id`, `epoch`, and charter health alongside lease state. `goalx schema` is the canonical durable authoring-contract surface. `goalx save` exports durable run metadata for later inspection.

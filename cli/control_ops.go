@@ -18,7 +18,7 @@ const (
 	controlOpDeliveryComplete               = "delivery.complete"
 	controlOpDeliveryReconcileTarget        = "delivery.reconcile_target"
 	controlOpRunStateProviderDialogAlerts   = "run_state.provider_dialog_alerts"
-	controlOpRunStateRequiredFrontierAlerts = "run_state.required_frontier_alerts"
+	controlOpRunStateMasterAlerts           = "run_state.master_alerts"
 	controlOpFinalizeControlSurfaces        = "control.finalize_surfaces"
 	controlOpOperationUpsertTarget          = "operation.upsert_target"
 	controlOpOperationClearTarget           = "operation.clear_target"
@@ -85,7 +85,7 @@ type controlRunStateProviderDialogAlertsBody struct {
 	Alerts map[string]string `json:"alerts,omitempty"`
 }
 
-type controlRunStateRequiredFrontierAlertsBody struct {
+type controlRunStateMasterAlertsBody struct {
 	Alerts map[string]string `json:"alerts,omitempty"`
 }
 
@@ -349,12 +349,12 @@ func applyControlOp(runDir string, op ControlOp) error {
 			return err
 		}
 		return applyRunStateProviderDialogAlertsOp(runDir, body)
-	case controlOpRunStateRequiredFrontierAlerts:
-		var body controlRunStateRequiredFrontierAlertsBody
+	case controlOpRunStateMasterAlerts:
+		var body controlRunStateMasterAlertsBody
 		if err := json.Unmarshal(op.Body, &body); err != nil {
 			return err
 		}
-		return applyRunStateRequiredFrontierAlertsOp(runDir, body)
+		return applyRunStateMasterAlertsOp(runDir, body)
 	case controlOpFinalizeControlSurfaces:
 		var body controlFinalizeControlSurfacesBody
 		if err := json.Unmarshal(op.Body, &body); err != nil {
@@ -573,15 +573,15 @@ func applyRunStateProviderDialogAlertsOp(runDir string, body controlRunStateProv
 	return SaveControlRunState(ControlRunStatePath(runDir), state)
 }
 
-func applyRunStateRequiredFrontierAlertsOp(runDir string, body controlRunStateRequiredFrontierAlertsBody) error {
+func applyRunStateMasterAlertsOp(runDir string, body controlRunStateMasterAlertsBody) error {
 	state, err := LoadControlRunState(ControlRunStatePath(runDir))
 	if err != nil {
 		return err
 	}
 	if len(body.Alerts) == 0 {
-		state.RequiredFrontierAlerts = nil
+		state.MasterAlerts = nil
 	} else {
-		state.RequiredFrontierAlerts = body.Alerts
+		state.MasterAlerts = body.Alerts
 	}
 	state.UpdatedAt = ""
 	return SaveControlRunState(ControlRunStatePath(runDir), state)
@@ -596,7 +596,17 @@ func applyFinalizeControlSurfacesOp(runDir string, body controlFinalizeControlSu
 	if err != nil {
 		return err
 	}
-	runState.LifecycleState = body.Lifecycle
+	switch strings.TrimSpace(body.Lifecycle) {
+	case "completed":
+		runState.GoalState = "completed"
+		runState.ContinuityState = "stopped"
+	case "dropped":
+		runState.GoalState = "dropped"
+		runState.ContinuityState = "stopped"
+	default:
+		runState.GoalState = "open"
+		runState.ContinuityState = "stopped"
+	}
 	runState.UpdatedAt = body.UpdatedAt
 	if err := SaveControlRunState(ControlRunStatePath(runDir), runState); err != nil {
 		return err

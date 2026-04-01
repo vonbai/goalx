@@ -393,6 +393,14 @@ func TestLoadSavedPhaseSourceUsesConfiguredSavedRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(savedDir, "summary.md"), []byte("# summary\n"), 0o644); err != nil {
 		t.Fatalf("write summary: %v", err)
 	}
+	if err := SaveRunIntake(SavedRunIntakePath(savedDir), &RunIntake{
+		Version:      1,
+		Objective:    cfg.Objective,
+		Intent:       runIntentDeliver,
+		ContextFiles: []string{"report.md"},
+	}); err != nil {
+		t.Fatalf("write intake: %v", err)
+	}
 
 	source, err := loadSavedPhaseSource(projectRoot, "demo")
 	if err != nil {
@@ -548,6 +556,14 @@ func TestLoadSavedPhaseSourceFallsBackToRegistryAfterSavedRunRootConfigChange(t 
 	}
 	if err := os.WriteFile(filepath.Join(savedDir, "summary.md"), []byte("# summary\n"), 0o644); err != nil {
 		t.Fatalf("write summary: %v", err)
+	}
+	if err := SaveRunIntake(SavedRunIntakePath(savedDir), &RunIntake{
+		Version:      1,
+		Objective:    layers.Config.Objective,
+		Intent:       runIntentDeliver,
+		ContextFiles: []string{"report.md"},
+	}); err != nil {
+		t.Fatalf("write intake: %v", err)
 	}
 	if err := RegisterSavedRun(projectRoot, &layers.Config); err != nil {
 		t.Fatalf("RegisterSavedRun: %v", err)

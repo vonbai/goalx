@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	goalx "github.com/vonbai/goalx"
+	"gopkg.in/yaml.v3"
 )
 
 func TestImplementUsesSharedMasterConfigInsteadOfSavedRun(t *testing.T) {
@@ -335,6 +336,44 @@ func TestImplementUsesDistinctNameForLongSourceRun(t *testing.T) {
 	}
 }
 
+func TestImplementRejectsSavedRunMissingCanonicalIntake(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	runDir := SavedRunDir(projectRoot, "debate")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir saved run: %v", err)
+	}
+	cfg := goalx.Config{
+		Name:      "debate",
+		Mode:      goalx.ModeWorker,
+		Objective: "consensus fixes",
+		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		Roles: goalx.RoleDefaultsConfig{
+			Worker: goalx.SessionConfig{Engine: "claude-code", Model: "opus"},
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
+		t.Fatalf("write run spec: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "summary.md"), []byte("# summary\n"), 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+
+	err = Implement(projectRoot, []string{"--from", "debate", "--write-config"})
+	if err == nil {
+		t.Fatal("Implement unexpectedly succeeded without canonical intake")
+	}
+	if !strings.Contains(err.Error(), "intake") || !strings.Contains(err.Error(), "legacy") {
+		t.Fatalf("Implement error = %v, want legacy intake rejection", err)
+	}
+}
+
 func TestImplementStartCreatesFreshCharterWithPreservedRootLineage(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -343,7 +382,7 @@ func TestImplementStartCreatesFreshCharterWithPreservedRootLineage(t *testing.T)
 	writeAndCommit(t, projectRoot, "base.txt", "base", "base commit")
 	sourceMeta, sourceCharter := writeSavedPhaseSourceFixture(t, projectRoot, "debate", "debate")
 	installPhaseStartFakeTmux(t)
-	stubLaunchRunSidecar(t)
+	stubLaunchRunRuntimeHost(t)
 
 	if err := Implement(projectRoot, []string{"--from", "debate"}); err != nil {
 		t.Fatalf("Implement: %v", err)

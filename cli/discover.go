@@ -9,6 +9,41 @@ import (
 	goalx "github.com/vonbai/goalx"
 )
 
+func splitContextFlagValue(raw string) ([]string, error) {
+	var (
+		items   []string
+		current strings.Builder
+		escape  bool
+	)
+
+	flush := func() {
+		item := strings.TrimSpace(current.String())
+		if item != "" {
+			items = append(items, item)
+		}
+		current.Reset()
+	}
+
+	for _, r := range raw {
+		switch {
+		case escape:
+			current.WriteRune(r)
+			escape = false
+		case r == '\\':
+			escape = true
+		case r == ',':
+			flush()
+		default:
+			current.WriteRune(r)
+		}
+	}
+	if escape {
+		return nil, fmt.Errorf("invalid --context value %q: trailing escape", raw)
+	}
+	flush()
+	return items, nil
+}
+
 // DiscoverContextFiles expands paths relative to the current working directory.
 func DiscoverContextFiles(paths []string) ([]string, error) {
 	return DiscoverContextFilesFrom("", paths)

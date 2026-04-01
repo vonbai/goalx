@@ -24,6 +24,16 @@ func writeSavedRunFixture(t *testing.T, projectRoot, runName string, cfg goalx.C
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run-spec.yaml: %v", err)
 	}
+	if err := SaveRunIntake(SavedRunIntakePath(runDir), &RunIntake{
+		Version:      1,
+		Objective:    cfg.Objective,
+		Intent:       runIntentDeliver,
+		Readonly:     len(cfg.Target.Readonly) > 0,
+		ContextFiles: append([]string(nil), cfg.Context.Files...),
+		ContextRefs:  append([]string(nil), cfg.Context.Refs...),
+	}); err != nil {
+		t.Fatalf("write intake.json: %v", err)
+	}
 
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(runDir, name), []byte(content), 0o644); err != nil {

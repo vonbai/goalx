@@ -146,7 +146,7 @@ func buildRunContext(projectRoot, runDir, runName string) (*RunContext, error) {
 	rc := &RunContext{
 		Name:        runName,
 		RunDir:      runDir,
-		TmuxSession: goalx.TmuxSessionName(projectRoot, runName),
+		TmuxSession: resolveRunTmuxSession(projectRoot, runDir, runName),
 		ProjectRoot: projectRoot,
 		Config:      snapshot,
 	}

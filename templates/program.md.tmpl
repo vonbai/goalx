@@ -18,6 +18,10 @@
 {{if .SessionsStatePath}}- Session runtime state: `{{.SessionsStatePath}}`{{end}}
 {{if .ActivityPath}}- Run activity facts: `{{.ActivityPath}}`{{end}}
 {{if .IntegrationStatePath}}- Run integration state: `{{.IntegrationStatePath}}`{{end}}
+{{if .SuccessModelPath}}- Success model: `{{.SuccessModelPath}}`{{end}}
+{{if .ProofPlanPath}}- Proof plan: `{{.ProofPlanPath}}`{{end}}
+{{if .WorkflowPlanPath}}- Workflow plan: `{{.WorkflowPlanPath}}`{{end}}
+{{if .DomainPackPath}}- Domain pack: `{{.DomainPackPath}}`{{end}}
 {{if .ContextIndexPath}}- Run context index: `{{.ContextIndexPath}}`{{end}}
 {{if .AffordancesPath}}- Run affordances: `{{.AffordancesPath}}`{{end}}
 {{if .RunWorktreePath}}- Run-root worktree: `{{.RunWorktreePath}}` — master integrates reviewed code here before anything reaches the source root{{end}}
@@ -92,7 +96,9 @@ You are a worker session. The assignment may ask for code, reports, or a mixed s
 - Ground findings in code references, real command output, tests, measurements, or concrete examples. Quantify what you can.
 - If the slice is code-heavy, your changes will be reviewed. Every change must be justified and minimal.
 - If the slice is analysis-heavy, produce evidence-backed findings and package them so the master can compare paths without guessing.
-- If the slice reveals actionable follow-up work, emit `dispatchable_slices` the master can dispatch or directly adopt.
+- If the slice reveals actionable follow-up work, emit `dispatchable_slices` the master can dispatch or directly adopt. If you uncover a reusable success-bar correction, record it in the journal or report; it may later promote through the memory proposal path instead of direct canonical-memory edits.
+- If your assignment or session role acts as `builder`, `critic`, or `finisher`, treat that as a real workflow gate: builders implement, critics find correctness-only drift or missing proof, finishers seal polish/proof for closeout, and builder output alone does not close a non-trivial run. If `compiler-input` or `compiler-report` is present in run context, use them to understand which priors and source slots shaped the current success bar before proposing a redirect.
+{{if .Composition.Enabled}}- Compiler-composed doctrine for this run: philosophy={{range $i, $item := .Composition.Philosophy}}{{if $i}}, {{end}}`{{$item}}`{{end}}; contract={{range $i, $item := .Composition.BehaviorContract}}{{if $i}}, {{end}}`{{$item}}`{{end}}{{if .Composition.RequiredRoles}}; roles={{range $i, $item := .Composition.RequiredRoles}}{{if $i}}, {{end}}`{{$item}}`{{end}}{{end}}{{if .Composition.RequiredGates}}; gates={{range $i, $item := .Composition.RequiredGates}}{{if $i}}, {{end}}`{{$item}}`{{end}}{{end}}{{if .Composition.SelectedPriorRefs}}; priors={{range $i, $item := .Composition.SelectedPriorRefs}}{{if $i}}, {{end}}`{{$item}}`{{end}}{{end}}.{{end}}
 - If you narrow a likely root cause, label it as a hypothesis until regression tests or decisive runtime evidence confirm it.
 - Work one coherent capability slice at a time. State the file:line scope, keep the change minimal, and split medium+ work into smaller steps.
 - Prefer test-first changes: verify an existing failing test or write one before the fix when applicable.
@@ -143,11 +149,6 @@ Quality rubric:
 - C=preliminary flag for deepening
 
 The extra blocker fields are optional unless you are stuck. If you are blocked, append a `status:"stuck"` entry with the blocker, dependency, ownership scope, and the next smallest useful split the master could dispatch. Never list your own session name in `depends_on`. If you have actionable next steps, prefer `dispatchable_slices` over prose so the master can either dispatch them or directly adopt them.
-
-## Budget
-
-{{if .Budget.MaxRounds}}- Max rounds: {{.Budget.MaxRounds}}{{end}}
-{{if .Budget.MaxDuration}}- Max duration: {{.Budget.MaxDuration}}{{end}}
 
 ## Autonomy Persistence
 

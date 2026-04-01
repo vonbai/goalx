@@ -369,9 +369,7 @@ func TestDropSkipsSourceRootGitCleanupWhenProjectRootMissing(t *testing.T) {
 		t.Fatalf("CreateWorktree run root: %v", err)
 	}
 
-	origStopSidecar := stopRunSidecar
-	defer func() { stopRunSidecar = origStopSidecar }()
-	stopRunSidecar = func(runDir string) error { return nil }
+	_ = stubRuntimeSupervisor(t)
 
 	if err := os.RemoveAll(repo); err != nil {
 		t.Fatalf("remove repo: %v", err)
@@ -538,7 +536,7 @@ func TestAttachDistinguishesDegradedTransportFromStoppedRun(t *testing.T) {
 		Objective: "ship it",
 		Master:    goalx.MasterConfig{Engine: "codex"},
 	})
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "active"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
 		t.Fatalf("SaveControlRunState active: %v", err)
 	}
 	if err := SaveProjectRegistry(repo, &ProjectRegistry{
@@ -554,7 +552,7 @@ func TestAttachDistinguishesDegradedTransportFromStoppedRun(t *testing.T) {
 		t.Fatalf("Attach degraded err = %v, want transport unavailable", err)
 	}
 
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "stopped"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "stopped"}); err != nil {
 		t.Fatalf("SaveControlRunState stopped: %v", err)
 	}
 	err = Attach(repo, []string{"--run", "attach-run"})

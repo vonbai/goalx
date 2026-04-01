@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -80,7 +81,7 @@ func applyLaunchBudgetOverride(cfg *goalx.Config, opts launchOptions) {
 
 func buildLaunchResolveRequest(projectRoot string, baseCfg goalx.Config, opts launchOptions) (goalx.ResolveRequest, error) {
 	req := goalx.ResolveRequest{
-		Name:          launchConfigName(opts),
+		Name:          launchConfigName(projectRoot, opts),
 		Mode:          opts.Mode,
 		Objective:     opts.Objective,
 		Parallel:      opts.Parallel,
@@ -102,11 +103,25 @@ func buildLaunchResolveRequest(projectRoot string, baseCfg goalx.Config, opts la
 	return req, nil
 }
 
-func launchConfigName(opts launchOptions) string {
+func launchConfigName(projectRoot string, opts launchOptions) string {
 	if opts.Name != "" {
 		return opts.Name
 	}
-	return goalx.Slugify(opts.Objective)
+	return nextAvailableRunName(projectRoot, goalx.Slugify(opts.Objective))
+}
+
+func nextAvailableRunName(projectRoot, base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "run"
+	}
+	candidate := base
+	for i := 2; ; i++ {
+		if _, err := os.Stat(goalx.RunDir(projectRoot, candidate)); os.IsNotExist(err) {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s-%d", base, i)
+	}
 }
 
 func applyLaunchSessionOverrides(cfg *goalx.Config, opts launchOptions, dimensions map[string]string) error {

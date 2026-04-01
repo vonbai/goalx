@@ -80,6 +80,10 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 		return nil, err
 	}
 	normalizedTarget := normalizedAffordanceTarget(target)
+	compilerDoctrinePaths := []string{SuccessModelPath(runDir), ProofPlanPath(runDir), WorkflowPlanPath(runDir), DomainPackPath(runDir), CompilerInputPath(runDir), CompilerReportPath(runDir)}
+	if fileExists(IntakePath(runDir)) {
+		compilerDoctrinePaths = append(compilerDoctrinePaths, IntakePath(runDir))
+	}
 	doc := &AffordancesDocument{
 		Version:    1,
 		CheckedAt:  time.Now().UTC().Format(time.RFC3339),
@@ -104,11 +108,25 @@ func BuildAffordances(projectRoot, runName, runDir, target string) (*Affordances
 			Paths:   []string{ActivityPath(runDir), TransportFactsPath(runDir)},
 		},
 		{
+			ID:      "budget",
+			Kind:    "control",
+			Summary: "Read the current run budget boundary or adjust it through the canonical budget control surface.",
+			Command: fmt.Sprintf("goalx budget --run %s", runName),
+			Paths:   []string{RunSpecPath(runDir), ActivityPath(runDir)},
+		},
+		{
 			ID:      "context",
 			Kind:    "context",
 			Summary: "Read the structural context index for this run.",
 			Command: fmt.Sprintf("goalx context --run %s", runName),
-			Paths:   []string{ContextIndexPath(runDir)},
+			Paths:   []string{ContextIndexPath(runDir), CompilerInputPath(runDir), CompilerReportPath(runDir)},
+		},
+		{
+			ID:      "compiler-doctrine",
+			Kind:    "fact",
+			Summary: "Read the compiler-composed doctrine currently shaping protocol behavior.",
+			Facts:   buildCompilerDoctrineFacts(index),
+			Paths:   compilerDoctrinePaths,
 		},
 		{
 			ID:      "afford",
@@ -317,6 +335,32 @@ func buildCloseoutAffordanceFacts(index *ContextIndex) []string {
 	return facts
 }
 
+func buildCompilerDoctrineFacts(index *ContextIndex) []string {
+	if index == nil || index.ProtocolComposition == nil {
+		return nil
+	}
+	facts := []string{}
+	if len(index.ProtocolComposition.Philosophy) > 0 {
+		facts = append(facts, "philosophy="+strings.Join(index.ProtocolComposition.Philosophy, ","))
+	}
+	if len(index.ProtocolComposition.BehaviorContract) > 0 {
+		facts = append(facts, "contract="+strings.Join(index.ProtocolComposition.BehaviorContract, ","))
+	}
+	if len(index.ProtocolComposition.RequiredRoles) > 0 {
+		facts = append(facts, "roles="+strings.Join(index.ProtocolComposition.RequiredRoles, ","))
+	}
+	if len(index.ProtocolComposition.RequiredGates) > 0 {
+		facts = append(facts, "gates="+strings.Join(index.ProtocolComposition.RequiredGates, ","))
+	}
+	if len(index.ProtocolComposition.RequiredProofKinds) > 0 {
+		facts = append(facts, "proof_kinds="+strings.Join(index.ProtocolComposition.RequiredProofKinds, ","))
+	}
+	if len(index.ProtocolComposition.SelectedPriorRefs) > 0 {
+		facts = append(facts, "selected_priors="+strings.Join(index.ProtocolComposition.SelectedPriorRefs, ","))
+	}
+	return facts
+}
+
 func buildEvolveFactsAffordance(index *ContextIndex) *AffordanceItem {
 	if index == nil || strings.TrimSpace(index.EvolveFactsPath) == "" {
 		return nil
@@ -506,38 +550,39 @@ func RenderAffordancesMarkdown(doc *AffordancesDocument) string {
 	return b.String()
 }
 
-func RefreshRunGuidance(projectRoot, runName, runDir string) error {
+func RefreshRunGuidance(projectRoot, runName, runDir string) (bool, error) {
 	if err := RefreshSessionRuntimeProjection(runDir, runName); err != nil {
-		return err
+		return false, err
 	}
 	if err := RefreshWorktreeSnapshot(runDir); err != nil {
-		return err
+		return false, err
 	}
-	if err := RefreshRunMemoryContext(runDir); err != nil {
-		return err
+	successContextChanged, err := RefreshRunSuccessContextForRun(projectRoot, runDir)
+	if err != nil {
+		return false, err
 	}
 	if err := RefreshEvolveFacts(runDir); err != nil {
-		return err
+		return false, err
 	}
 	activity, err := BuildActivitySnapshot(projectRoot, runName, runDir)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := SaveActivitySnapshot(runDir, activity); err != nil {
-		return err
+		return false, err
 	}
 	index, err := BuildContextIndex(projectRoot, runName, runDir)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := SaveContextIndex(runDir, index); err != nil {
-		return err
+		return false, err
 	}
 	affordances, err := BuildAffordances(projectRoot, runName, runDir, "")
 	if err != nil {
-		return err
+		return false, err
 	}
-	return SaveAffordances(runDir, affordances)
+	return successContextChanged, SaveAffordances(runDir, affordances)
 }
 
 func buildAffordanceCommand(runName, target string) string {

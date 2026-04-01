@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	goalx "github.com/vonbai/goalx"
 )
@@ -1073,7 +1074,7 @@ func TestRenderMasterProtocolRequiresBoundaryDesignBeforeFirstDispatch(t *testin
 	}
 	text := string(out)
 	for _, want := range []string{
-		"Before the first `goalx add` or `goalx tell`, finish the initial boundary design: draft and lock `objective-contract`, replace `goal`, append the first `goal-log` decision, synchronize `acceptance`, and write `coordination`.",
+		"Before the first `goalx add` or `goalx tell`, finish the initial boundary design: draft and lock `objective-contract`, replace `goal`, append the first `goal-log` decision, synchronize `acceptance`, write `coordination`, and inspect `success-model`, `proof-plan`, `workflow-plan`, `domain-pack`, `compiler-input`, and `compiler-report` for this run.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
@@ -1681,11 +1682,13 @@ func TestRenderMasterProtocolIncludesNoChangeFastPathGuidance(t *testing.T) {
 func TestRenderMasterProtocolBindsRequiredFrontierFactsToImmediateIntervention(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:     "demo",
-		Objective:   "ship it",
-		Mode:        goalx.ModeWorker,
-		Engine:      "codex",
-		ProjectRoot: "/tmp/project",
+		RunName:          "demo",
+		Objective:        "ship it",
+		Mode:             goalx.ModeWorker,
+		Engine:           "codex",
+		ProjectRoot:      "/tmp/project",
+		StatusPath:       "/tmp/status.json",
+		CoordinationPath: "/tmp/coordination.json",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -1701,6 +1704,8 @@ func TestRenderMasterProtocolBindsRequiredFrontierFactsToImmediateIntervention(t
 		"A required item with frontier facts such as `unmapped_required`, `session_owner_missing`, `master_orphaned`, or `premature_blocked` is **not** a no-change fast path.",
 		"If `premature_blocked` appears, the required item is not durably blocked yet. Keep probing reachable machine surfaces or dispatch or take over the next concrete lane now.",
 		"If `master_orphaned` appears, resolve it in the current control cycle: dispatch or resume a worker, take the work over directly, or durably update the required frontier before you wait.",
+		"After any `keep`, `integrate`, or frontier-changing redirect, refresh `/tmp/status.json` and `/tmp/coordination.json` before you idle or return to `goalx wait`.",
+		"If reusable worker capacity exists but open required work stays serialized onto one execution lane, either dispatch or reassign more work now, or durably record why this control cycle stays serial.",
 		"If a required item's execution lane is blocked or risky, resolve it in the current control cycle: inspect directly (including shell/tmux if needed), redirect, park+replace, or take the work over yourself.",
 		"If an active session becomes `active_idle`, treat that as \"worker result or next-step handoff is waiting on you\" and review, redirect, keep, or take over in the current control cycle.",
 	} {
@@ -2099,6 +2104,105 @@ func TestRenderMasterProtocolIncludesCurrentTimeAndEvolveIntentFacts(t *testing.
 	} {
 		if strings.Contains(text, unwanted) {
 			t.Fatalf("rendered master protocol should omit legacy evolve wording %q:\n%s", unwanted, text)
+		}
+	}
+}
+
+func TestRenderMasterProtocolIncludesBudgetExhaustionGracefulStopDoctrine(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:           "ship it",
+		RunName:             "demo",
+		Mode:                goalx.ModeAuto,
+		Intent:              runIntentDeliver,
+		Master:              goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		ActivityPath:        "/tmp/activity.json",
+		SummaryPath:         "/tmp/summary.md",
+		AcceptanceStatePath: "/tmp/acceptance.json",
+		GoalPath:            "/tmp/goal.json",
+		StatusPath:          "/tmp/status.json",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"do not dispatch more work",
+		"Inspect current outputs",
+		"keep/adopt if warranted",
+		"save if continuation or artifact preservation matters",
+		"stop explicitly",
+		"do not auto-drop",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestRenderMasterProtocolOmitsStaticBudgetLiteral(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:    "ship it",
+		RunName:      "demo",
+		Mode:         goalx.ModeAuto,
+		Intent:       runIntentDeliver,
+		Master:       goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		ActivityPath: "/tmp/activity.json",
+		Budget:       goalx.BudgetConfig{MaxDuration: 8 * time.Hour},
+		SummaryPath:  "/tmp/summary.md",
+		StatusPath:   "/tmp/status.json",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	if strings.Contains(text, "Budget: 8h0m0s") {
+		t.Fatalf("rendered master protocol should omit static budget literal:\n%s", text)
+	}
+	if !strings.Contains(text, "current run facts show exhausted budget") {
+		t.Fatalf("rendered master protocol missing budget-facts doctrine:\n%s", text)
+	}
+}
+
+func TestRenderSubagentProtocolOmitsBudgetSection(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		RunName:      "demo",
+		Objective:    "ship it",
+		Mode:         goalx.ModeWorker,
+		Engine:       "codex",
+		SessionName:  "session-1",
+		SessionInboxPath: "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath: "/tmp/control/session-1-cursor.json",
+		JournalPath:  "/tmp/journal.jsonl",
+		Budget:       goalx.BudgetConfig{MaxDuration: 8 * time.Hour, MaxRounds: 5},
+	}
+
+	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
+		t.Fatalf("RenderSubagentProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "program-1.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, unwanted := range []string{"## Budget", "Max rounds:", "Max duration:"} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("rendered subagent protocol should omit %q:\n%s", unwanted, text)
 		}
 	}
 }
@@ -2920,6 +3024,147 @@ func TestRenderMasterProtocolStatusRecordIsFactsOnly(t *testing.T) {
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestRenderMasterProtocolIncludesSuccessModelCloseoutDoctrine(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		RunName:             "demo",
+		Objective:           "ship it",
+		Mode:                goalx.ModeWorker,
+		Engine:              "codex",
+		ProjectRoot:         "/tmp/project",
+		GoalPath:            "/tmp/goal.json",
+		AcceptanceStatePath: "/tmp/acceptance.json",
+		StatusPath:          "/tmp/status.json",
+		CoordinationPath:    "/tmp/coordination.json",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"`goalx schema success-model`",
+		"`goalx schema proof-plan`",
+		"`goalx schema workflow-plan`",
+		"`goalx schema domain-pack`",
+		"`goalx schema intervention-log`",
+		"Builder-only correctness is insufficient by default.",
+		"treat them as closeout surfaces: required dimensions must stay owned, required proof items must be present, and critic/finisher gates must be satisfied before finalization.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestRenderMasterProtocolIncludesPriorPromotionBoundary(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		RunName:             "demo",
+		Objective:           "ship it",
+		Mode:                goalx.ModeWorker,
+		Engine:              "codex",
+		ProjectRoot:         "/tmp/project",
+		GoalPath:            "/tmp/goal.json",
+		AcceptanceStatePath: "/tmp/acceptance.json",
+		StatusPath:          "/tmp/status.json",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	want := "Validated success-delta lessons may become priors only through the memory proposal and promotion path; do not hand-edit canonical priors."
+	if !strings.Contains(text, want) {
+		t.Fatalf("rendered master protocol missing prior promotion boundary %q:\n%s", want, text)
+	}
+}
+
+func TestRenderMasterProtocolIncludesCompilerReportGuidance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		RunName:             "demo",
+		Objective:           "ship it",
+		Mode:                goalx.ModeWorker,
+		Engine:              "codex",
+		ProjectRoot:         "/tmp/project",
+		GoalPath:            "/tmp/goal.json",
+		AcceptanceStatePath: "/tmp/acceptance.json",
+		StatusPath:          "/tmp/status.json",
+		CoordinationPath:    "/tmp/coordination.json",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"`goalx schema compiler-input`",
+		"`goalx schema compiler-report`",
+		"inspect `success-model`, `proof-plan`, `workflow-plan`, `domain-pack`, `compiler-input`, and `compiler-report`",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestRenderSubagentProtocolIncludesCriticFinisherAndPriorGuidance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		RunName:             "demo",
+		Objective:           "ship it",
+		Mode:                goalx.ModeWorker,
+		Engine:              "codex",
+		ProjectRoot:         "/tmp/project",
+		SessionName:         "session-1",
+		SessionInboxPath:    "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:   "/tmp/control/session-1-cursor.json",
+		JournalPath:         "/tmp/journal.jsonl",
+		GoalPath:            "/tmp/goal.json",
+		AcceptanceStatePath: "/tmp/acceptance.json",
+		WorktreePath:        "/tmp/worktree",
+	}
+
+	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
+		t.Fatalf("RenderSubagentProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "program-1.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"Success model: `",
+		"Proof plan: `",
+		"Workflow plan: `",
+		"Domain pack: `",
+		"If your assignment or session role acts as `builder`, `critic`, or `finisher`, treat that as a real workflow gate:",
+		"builder output alone does not close a non-trivial run.",
+		"it may later promote through the memory proposal path instead of direct canonical-memory edits.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered subagent protocol missing %q:\n%s", want, text)
 		}
 	}
 }

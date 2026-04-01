@@ -149,3 +149,52 @@ func TestRelaunchMasterUsesSelectionSnapshotWhenPresent(t *testing.T) {
 		t.Fatalf("tmux log missing snapshot-selected claude launch:\n%s", logText)
 	}
 }
+
+func TestRelaunchMasterRestoresMissingSuccessCompilationArtifacts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	installFakeTmux(t, "master")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	for _, path := range []string{
+		SuccessModelPath(runDir),
+		ProofPlanPath(runDir),
+		WorkflowPlanPath(runDir),
+		DomainPackPath(runDir),
+		CompilerInputPath(runDir),
+	} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove %s: %v", path, err)
+		}
+	}
+
+	if err := relaunchMaster(repo, runDir, goalx.TmuxSessionName(repo, runName), cfg); err != nil {
+		t.Fatalf("relaunchMaster: %v", err)
+	}
+
+	for _, path := range []string{
+		SuccessModelPath(runDir),
+		ProofPlanPath(runDir),
+		WorkflowPlanPath(runDir),
+		DomainPackPath(runDir),
+		CompilerInputPath(runDir),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected %s to exist after relaunch: %v", path, err)
+		}
+	}
+	compilerInput, err := LoadCompilerInput(CompilerInputPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadCompilerInput: %v", err)
+	}
+	if compilerInput == nil || compilerInput.ObjectiveContractRef != "objective-contract.json" {
+		t.Fatalf("compiler input = %+v, want objective-contract reference", compilerInput)
+	}
+}

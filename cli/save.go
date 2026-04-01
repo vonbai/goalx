@@ -82,6 +82,9 @@ func Save(projectRoot string, args []string) error {
 	if err := copyFileIfExists(RunStatusPath(rc.RunDir), filepath.Join(saveDir, "status.json")); err != nil {
 		return fmt.Errorf("copy run status: %w", err)
 	}
+	if err := copyFileIfExists(IntakePath(rc.RunDir), filepath.Join(saveDir, "intake.json")); err != nil {
+		return fmt.Errorf("copy intake: %w", err)
+	}
 
 	if err := copyFileIfExists(ObjectiveContractPath(rc.RunDir), filepath.Join(saveDir, "objective-contract.json")); err != nil {
 		return fmt.Errorf("copy objective contract: %w", err)

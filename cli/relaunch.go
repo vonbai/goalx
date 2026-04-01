@@ -39,6 +39,9 @@ func relaunchMaster(projectRoot, runDir, tmuxSession string, cfg *goalx.Config) 
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
 	}
+	if err := EnsureSuccessCompilation(projectRoot, runDir, effectiveCfg, meta); err != nil {
+		return fmt.Errorf("compile success plane: %w", err)
+	}
 	if err := ensureExperimentsSurface(runDir); err != nil {
 		return fmt.Errorf("init experiments surface: %w", err)
 	}
@@ -53,19 +56,19 @@ func relaunchMaster(projectRoot, runDir, tmuxSession string, cfg *goalx.Config) 
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
 	}
-	checkSec, _ := normalizeSidecarInterval(cfg.Master.CheckInterval)
+	checkSec, _ := normalizeRuntimeHostInterval(cfg.Master.CheckInterval)
 	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
 	workdir := RunWorktreePath(runDir)
 	launchCmd := buildMasterLaunchCommand(goalxBin, cfg.Name, runDir, meta.RunID, meta.Epoch, masterLeaseTTL, engineCmd, prompt)
 
-	if !SessionExists(tmuxSession) {
-		if err := NewSessionWithCommand(tmuxSession, "master", workdir, launchCmd); err != nil {
+	if !SessionExistsInRun(runDir, tmuxSession) {
+		if err := NewSessionWithCommandInRun(runDir, tmuxSession, "master", workdir, launchCmd); err != nil {
 			return fmt.Errorf("create master session: %w", err)
 		}
 		return nil
 	}
-	_ = KillWindow(tmuxSession, "master")
-	if err := NewWindowWithCommand(tmuxSession, "master", workdir, launchCmd); err != nil {
+	_ = KillWindowInRun(runDir, tmuxSession, "master")
+	if err := NewWindowWithCommandInRun(runDir, tmuxSession, "master", workdir, launchCmd); err != nil {
 		return fmt.Errorf("create master window: %w", err)
 	}
 	return nil
@@ -110,6 +113,10 @@ func relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession string, cfg *g
 	if err != nil {
 		return fmt.Errorf("load run metadata: %w", err)
 	}
+	if err := EnsureSuccessCompilation(projectRoot, runDir, effectiveCfg, meta); err != nil {
+		appendAuditLog(runDir, "target_relaunch_result target=master result=failure cause=%s err=%v", blankAsUnknown(masterPresence.State), err)
+		return fmt.Errorf("compile success plane: %w", err)
+	}
 	if err := ensureExperimentsSurface(runDir); err != nil {
 		return fmt.Errorf("init experiments surface: %w", err)
 	}
@@ -124,12 +131,12 @@ func relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession string, cfg *g
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
 	}
-	checkSec, _ := normalizeSidecarInterval(cfg.Master.CheckInterval)
+	checkSec, _ := normalizeRuntimeHostInterval(cfg.Master.CheckInterval)
 	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
 	workdir := RunWorktreePath(runDir)
 	launchCmd := buildMasterLaunchCommand(goalxBin, cfg.Name, runDir, meta.RunID, meta.Epoch, masterLeaseTTL, engineCmd, prompt)
 
-	if err := NewWindowWithCommand(tmuxSession, "master", workdir, launchCmd); err != nil {
+	if err := NewWindowWithCommandInRun(runDir, tmuxSession, "master", workdir, launchCmd); err != nil {
 		appendAuditLog(runDir, "target_relaunch_result target=master result=failure cause=%s err=%v", blankAsUnknown(masterPresence.State), err)
 		return fmt.Errorf("create master window: %w", err)
 	}

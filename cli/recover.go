@@ -27,7 +27,18 @@ func Recover(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if SessionExists(rc.TmuxSession) {
+	controlState, err := LoadControlRunState(ControlRunStatePath(rc.RunDir))
+	if err != nil {
+		return err
+	}
+	runtimeState, err := LoadRunRuntimeState(RunRuntimeStatePath(rc.RunDir))
+	if err != nil {
+		return err
+	}
+	if runBootstrapStillLaunching(rc.RunDir, controlState, runtimeState) {
+		return fmt.Errorf("run %q bootstrap is still in progress; wait for start to finish before recovering it", rc.Name)
+	}
+	if SessionExistsInRun(rc.RunDir, rc.TmuxSession) {
 		return fmt.Errorf("run '%s' is already active (tmux session %s exists)", rc.Name, rc.TmuxSession)
 	}
 	if err := requireRunBudgetAvailable(rc.RunDir, rc.Config); err != nil {
@@ -41,11 +52,26 @@ func Recover(projectRoot string, args []string) error {
 	if err := EnsureMasterControl(rc.RunDir); err != nil {
 		return fmt.Errorf("init master control: %w", err)
 	}
-	if err := stopRunSidecar(rc.RunDir); err != nil {
+	if err := runtimeSupervisor.Stop(rc.RunDir); err != nil {
 		return err
 	}
 	killRunPaneProcessTrees(rc.RunDir, rc.TmuxSession)
 	killAllLeasedProcesses(rc.RunDir)
+
+	if err := RefreshRunMemorySeeds(rc.RunDir); err != nil {
+		return fmt.Errorf("refresh run memory seeds: %w", err)
+	}
+	if err := AppendExtractedMemoryProposals(rc.RunDir, time.Now().UTC()); err != nil {
+		return fmt.Errorf("append extracted memory proposals: %w", err)
+	}
+	if err := PromoteMemoryProposals(); err != nil {
+		return fmt.Errorf("promote memory proposals: %w", err)
+	}
+	if tmuxSession, err := ensureRunTmuxLocator(rc.ProjectRoot, rc.RunDir, rc.Name); err != nil {
+		return fmt.Errorf("rewrite tmux locator: %w", err)
+	} else if tmuxSession != "" {
+		rc.TmuxSession = tmuxSession
+	}
 
 	if err := relaunchMaster(rc.ProjectRoot, rc.RunDir, rc.TmuxSession, rc.Config); err != nil {
 		return err
@@ -55,10 +81,6 @@ func Recover(projectRoot string, args []string) error {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	runtimeState, err := LoadRunRuntimeState(RunRuntimeStatePath(rc.RunDir))
-	if err != nil {
-		return err
-	}
 	if runtimeState == nil {
 		runtimeState = &RunRuntimeState{
 			Version:   1,
@@ -81,14 +103,11 @@ func Recover(projectRoot string, args []string) error {
 		return err
 	}
 
-	controlState, err := LoadControlRunState(ControlRunStatePath(rc.RunDir))
-	if err != nil {
-		return err
-	}
 	if controlState == nil {
 		controlState = &ControlRunState{Version: 1}
 	}
-	controlState.LifecycleState = "active"
+	controlState.GoalState = "open"
+	controlState.ContinuityState = "running"
 	controlState.UpdatedAt = now
 	if err := SaveControlRunState(ControlRunStatePath(rc.RunDir), controlState); err != nil {
 		return err
@@ -101,11 +120,16 @@ func Recover(projectRoot string, args []string) error {
 		return fmt.Errorf("focus active run: %w", err)
 	}
 
-	checkSec, _ := normalizeSidecarInterval(rc.Config.Master.CheckInterval)
-	if err := launchRunSidecar(rc.ProjectRoot, rc.Name, time.Duration(checkSec)*time.Second); err != nil {
-		return fmt.Errorf("launch sidecar: %w", err)
+	checkSec, _ := normalizeRuntimeHostInterval(rc.Config.Master.CheckInterval)
+	if _, err := runtimeSupervisor.Start(RuntimeSupervisorStartSpec{
+		ProjectRoot: rc.ProjectRoot,
+		RunName:     rc.Name,
+		RunDir:      rc.RunDir,
+		Interval:    time.Duration(checkSec) * time.Second,
+	}); err != nil {
+		return fmt.Errorf("launch runtime supervisor: %w", err)
 	}
-	if err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
+	if _, err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 	}
 

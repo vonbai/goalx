@@ -22,7 +22,7 @@ func Context(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := RefreshRunMemoryContext(rc.RunDir); err != nil {
+	if _, err := RefreshRunSuccessContextForRun(rc.ProjectRoot, rc.RunDir); err != nil {
 		return err
 	}
 	if err := RefreshEvolveFacts(rc.RunDir); err != nil {
@@ -106,6 +106,9 @@ func renderContextIndex(index *ContextIndex) string {
 	writeContextLine("Selection snapshot", index.SelectionSnapshotPath)
 	writeContextLine("Memory query", index.MemoryQueryPath)
 	writeContextLine("Memory context", index.MemoryContextPath)
+	writeContextLine("Intake", index.IntakePath)
+	writeContextLine("Compiler input", index.CompilerInputPath)
+	writeContextLine("Compiler report", index.CompilerReportPath)
 	writeContextLine("Context index", index.ContextIndexPath)
 	writeContextLine("Affordances", index.AffordancesMarkdown)
 	if identity := index.RunIdentity; identity.RunID != "" || identity.Objective != "" {
@@ -164,6 +167,10 @@ func renderContextIndex(index *ContextIndex) string {
 		writeContextLine("Goal remaining IDs", strings.Join(index.RunStatus.GoalRemainingRequiredIDs, ", "))
 		writeContextLine("Last verified at", index.RunStatus.LastVerifiedAt)
 	}
+	if index.Budget != nil {
+		b.WriteString("\n## Budget\n\n")
+		writeContextLine("Summary", formatBudgetSummary(*index.Budget))
+	}
 	if index.Acceptance != nil {
 		b.WriteString("\n## Acceptance\n\n")
 		writeContextLine("Active checks", fmt.Sprintf("%d", index.Acceptance.ActiveCheckCount))
@@ -172,6 +179,16 @@ func renderContextIndex(index *ContextIndex) string {
 			writeContextLine("Last exit code", fmt.Sprintf("%d", *index.Acceptance.LastExitCode))
 		}
 		writeContextLine("Evidence path", index.Acceptance.EvidencePath)
+	}
+	if index.QualityDebt != nil {
+		b.WriteString("\n## Quality Debt\n\n")
+		writeContextLine("Zero debt", fmt.Sprintf("%t", index.QualityDebt.Zero))
+		writeContextLine("Success dimensions unowned", strings.Join(index.QualityDebt.SuccessDimensionUnowned, ", "))
+		writeContextLine("Proof plan gaps", strings.Join(index.QualityDebt.ProofPlanGap, ", "))
+		writeContextLine("Critic gate missing", fmt.Sprintf("%t", index.QualityDebt.CriticGateMissing))
+		writeContextLine("Finisher gate missing", fmt.Sprintf("%t", index.QualityDebt.FinisherGateMissing))
+		writeContextLine("Only correctness evidence present", fmt.Sprintf("%t", index.QualityDebt.OnlyCorrectnessEvidence))
+		writeContextLine("Domain pack missing", fmt.Sprintf("%t", index.QualityDebt.DomainPackMissing))
 	}
 	if index.Closeout != nil {
 		b.WriteString("\n## Closeout\n\n")
@@ -252,6 +269,15 @@ func renderContextIndex(index *ContextIndex) string {
 		if len(index.Selection.DisabledTargets) > 0 {
 			writeContextLine("Disabled targets", strings.Join(index.Selection.DisabledTargets, ", "))
 		}
+	}
+	if index.ProtocolComposition != nil {
+		b.WriteString("\n## Protocol Composition\n\n")
+		writeContextLine("Philosophy", strings.Join(index.ProtocolComposition.Philosophy, ", "))
+		writeContextLine("Behavior contract", strings.Join(index.ProtocolComposition.BehaviorContract, ", "))
+		writeContextLine("Required roles", strings.Join(index.ProtocolComposition.RequiredRoles, ", "))
+		writeContextLine("Required gates", strings.Join(index.ProtocolComposition.RequiredGates, ", "))
+		writeContextLine("Required proof kinds", strings.Join(index.ProtocolComposition.RequiredProofKinds, ", "))
+		writeContextLine("Selected prior refs", strings.Join(index.ProtocolComposition.SelectedPriorRefs, ", "))
 	}
 	if index.ClaudeCodeAvailable || index.CodexAvailable || index.GitAvailable || index.TmuxAvailable {
 		b.WriteString("## Capabilities\n\n")

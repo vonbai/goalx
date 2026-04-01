@@ -47,6 +47,9 @@ func loadSavedPhaseSource(projectRoot, runName string) (*savedPhaseSource, error
 	if err != nil {
 		return nil, fmt.Errorf("load saved run %q: %w", runName, err)
 	}
+	if _, err := RequireSavedRunIntake(runDir); err != nil {
+		return nil, fmt.Errorf("load saved run %q intake: %w", runName, err)
+	}
 	parallel := cfg.Parallel
 	if parallel < len(cfg.Sessions) {
 		parallel = len(cfg.Sessions)
@@ -221,7 +224,7 @@ func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.M
 		parallel = source.Parallel
 	}
 	req := goalx.ResolveRequest{
-		Name:                      derivePhaseRunName(source.Run, phaseKind, opts.Name),
+		Name:                      phaseRunName(projectRoot, source.Run, phaseKind, opts.Name),
 		Mode:                      mode,
 		Objective:                 resolvePhaseObjective(phaseKind, source.Run, opts.Objective),
 		Parallel:                  parallel,
@@ -234,6 +237,13 @@ func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.M
 		req.TargetOverride = &goalx.TargetConfig{Readonly: []string{"."}}
 	}
 	return req, nil
+}
+
+func phaseRunName(projectRoot, sourceRun, phaseKind, explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	return nextAvailableRunName(projectRoot, derivePhaseRunName(sourceRun, phaseKind, ""))
 }
 
 func phaseSelectionOverrideRequested(opts phaseOptions) bool {

@@ -96,8 +96,11 @@ func TestEnsureControlStateMapsRunMetadataIntoRunIdentity(t *testing.T) {
 	if runState == nil {
 		t.Fatal("run state missing")
 	}
-	if runState.LifecycleState != "active" {
-		t.Fatalf("run state lifecycle = %q, want active", runState.LifecycleState)
+	if runState.GoalState != "open" {
+		t.Fatalf("run state goal_state = %q, want open", runState.GoalState)
+	}
+	if runState.ContinuityState != "running" {
+		t.Fatalf("run state continuity_state = %q, want running", runState.ContinuityState)
 	}
 	if _, err := os.Stat(ControlOperationsPath(runDir)); err != nil {
 		t.Fatalf("stat control operations: %v", err)
@@ -166,9 +169,10 @@ func TestSaveControlRunStateDoesNotPersistRecommendationField(t *testing.T) {
 	runDir := t.TempDir()
 	path := ControlRunStatePath(runDir)
 	if err := SaveControlRunState(path, &ControlRunState{
-		Version:        1,
-		LifecycleState: "active",
-		Phase:          "working",
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
+		Phase:           "working",
 	}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
@@ -180,5 +184,8 @@ func TestSaveControlRunStateDoesNotPersistRecommendationField(t *testing.T) {
 	text := string(data)
 	if strings.Contains(text, `"recommendation"`) {
 		t.Fatalf("control run state should not persist recommendation:\n%s", text)
+	}
+	if strings.Contains(text, `"lifecycle_state"`) {
+		t.Fatalf("control run state should not persist legacy lifecycle_state:\n%s", text)
 	}
 }

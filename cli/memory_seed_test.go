@@ -212,7 +212,7 @@ func TestCollectRunMemorySeedsIncludesConfiguredSavedArtifacts(t *testing.T) {
 	}
 }
 
-func TestSidecarRefreshesMemorySeedsWithoutCanonicalMutation(t *testing.T) {
+func TestRuntimeHostRefreshesMemorySeedsWithoutCanonicalMutation(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)
 
@@ -234,8 +234,8 @@ func TestSidecarRefreshesMemorySeedsWithoutCanonicalMutation(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	seeds, err := LoadMemorySeeds(MemorySeedsPath(runDir))
@@ -256,7 +256,7 @@ func TestSidecarRefreshesMemorySeedsWithoutCanonicalMutation(t *testing.T) {
 	}
 }
 
-func TestSidecarRefreshesCompiledMemoryContext(t *testing.T) {
+func TestRuntimeHostRefreshesCompiledMemoryContext(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)
 	if err := EnsureMemoryStore(); err != nil {
@@ -290,8 +290,8 @@ func TestSidecarRefreshesCompiledMemoryContext(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	if err := runSidecarTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
-		t.Fatalf("runSidecarTick: %v", err)
+	if err := runRuntimeHostTick(repo, cfg.Name, runDir, meta.RunID, meta.Epoch, time.Minute, os.Getpid()); err != nil {
+		t.Fatalf("runRuntimeHostTick: %v", err)
 	}
 
 	var query MemoryQuery

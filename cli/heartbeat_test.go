@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-func TestNormalizeSidecarIntervalUsesDefaultFloor(t *testing.T) {
-	seconds, warning := normalizeSidecarInterval(20 * time.Second)
+func TestNormalizeRuntimeHostIntervalUsesDefaultFloor(t *testing.T) {
+	seconds, warning := normalizeRuntimeHostInterval(20 * time.Second)
 	if seconds != 300 {
 		t.Fatalf("seconds = %d, want 300", seconds)
 	}
@@ -16,8 +16,8 @@ func TestNormalizeSidecarIntervalUsesDefaultFloor(t *testing.T) {
 	}
 }
 
-func TestNormalizeSidecarIntervalKeepsConfiguredValue(t *testing.T) {
-	seconds, warning := normalizeSidecarInterval(5 * time.Minute)
+func TestNormalizeRuntimeHostIntervalKeepsConfiguredValue(t *testing.T) {
+	seconds, warning := normalizeRuntimeHostInterval(5 * time.Minute)
 	if seconds != 300 {
 		t.Fatalf("seconds = %d, want 300", seconds)
 	}

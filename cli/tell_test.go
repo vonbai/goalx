@@ -20,16 +20,16 @@ func TestTellWritesSessionInboxAndNudges(t *testing.T) {
 	installFakePresenceTmux(t, true, "master session-1", "%0\\tmaster\\n%1\\tsession-1\\n")
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 
 	var gotTarget, gotEngine string
 	sendAgentNudge = func(target, engine string) error {
 		gotTarget, gotEngine = target, engine
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		gotTarget, gotEngine = target, engine
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "queued"}, nil
 	}
@@ -84,13 +84,13 @@ func TestTellKeepsDurableSessionMessageWhenImmediateNudgeFails(t *testing.T) {
 	installFakePresenceTmux(t, true, "master session-1", "%0\\tmaster\\n%1\\tsession-1\\n")
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	sendAgentNudge = func(target, engine string) error {
 		return fmt.Errorf("tmux target missing")
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		return TransportDeliveryOutcome{}, fmt.Errorf("tmux target missing")
 	}
 
@@ -144,15 +144,15 @@ func TestTellResolvesExplicitProjectSelectorOutsideProjectRoot(t *testing.T) {
 	writeAndCommit(t, repoB, "other.txt", "other", "other commit")
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 	called := false
 	sendAgentNudge = func(target, engine string) error {
 		called = true
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		called = true
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "queued"}, nil
 	}
@@ -190,16 +190,16 @@ func TestTellUrgentWritesUrgentMasterInboxMessage(t *testing.T) {
 	installFakePresenceTmux(t, true, "master session-1", "%0\\tmaster\\n%1\\tsession-1\\n")
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 
 	var gotTarget, gotEngine string
 	sendAgentNudge = func(target, engine string) error {
 		gotTarget, gotEngine = target, engine
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		gotTarget, gotEngine = target, engine
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "queued"}, nil
 	}
@@ -239,7 +239,7 @@ func TestTellRejectsCompletedRun(t *testing.T) {
 	writeAndCommit(t, repo, "base.txt", "base", "base commit")
 	runName, runDir := writeLifecycleRunFixture(t, repo)
 
-	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, LifecycleState: "completed"}); err != nil {
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{Version: 1, GoalState: "completed", ContinuityState: "stopped"}); err != nil {
 		t.Fatalf("SaveControlRunState: %v", err)
 	}
 
@@ -266,16 +266,16 @@ func TestTellHelpDoesNotDeliverAnything(t *testing.T) {
 	runName, runDir := writeLifecycleRunFixture(t, repo)
 
 	orig := sendAgentNudge
-	origDetailed := sendAgentNudgeDetailed
+	origDetailed := sendAgentNudgeDetailedInRunFunc
 	defer func() { sendAgentNudge = orig }()
-	defer func() { sendAgentNudgeDetailed = origDetailed }()
+	defer func() { sendAgentNudgeDetailedInRunFunc = origDetailed }()
 
 	called := false
 	sendAgentNudge = func(target, engine string) error {
 		called = true
 		return nil
 	}
-	sendAgentNudgeDetailed = func(target, engine string) (TransportDeliveryOutcome, error) {
+	sendAgentNudgeDetailedInRunFunc = func(_ string, target, engine string) (TransportDeliveryOutcome, error) {
 		called = true
 		return TransportDeliveryOutcome{SubmitMode: "payload_enter", TransportState: "queued"}, nil
 	}

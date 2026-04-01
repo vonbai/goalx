@@ -12,10 +12,11 @@ import (
 type MemoryKind string
 
 const (
-	MemoryKindFact      MemoryKind = "fact"
-	MemoryKindProcedure MemoryKind = "procedure"
-	MemoryKindPitfall   MemoryKind = "pitfall"
-	MemoryKindSecretRef MemoryKind = "secret_ref"
+	MemoryKindFact         MemoryKind = "fact"
+	MemoryKindProcedure    MemoryKind = "procedure"
+	MemoryKindPitfall      MemoryKind = "pitfall"
+	MemoryKindSecretRef    MemoryKind = "secret_ref"
+	MemoryKindSuccessPrior MemoryKind = "success_prior"
 )
 
 type MemoryEvidence struct {
@@ -69,11 +70,12 @@ type MemoryQuery struct {
 }
 
 type MemoryContext struct {
-	Facts      []string `json:"facts,omitempty"`
-	Procedures []string `json:"procedures,omitempty"`
-	Pitfalls   []string `json:"pitfalls,omitempty"`
-	SecretRefs []string `json:"secret_refs,omitempty"`
-	BuiltAt    string   `json:"built_at,omitempty"`
+	Facts         []string `json:"facts,omitempty"`
+	Procedures    []string `json:"procedures,omitempty"`
+	Pitfalls      []string `json:"pitfalls,omitempty"`
+	SecretRefs    []string `json:"secret_refs,omitempty"`
+	SuccessPriors []string `json:"success_priors,omitempty"`
+	BuiltAt       string   `json:"built_at,omitempty"`
 }
 
 func EnsureMemoryStore() error {
@@ -89,7 +91,13 @@ func EnsureMemoryStore() error {
 	if err := ensureEmptyFile(MemoryEntryPath(MemoryKindSecretRef)); err != nil {
 		return err
 	}
+	if err := ensureEmptyFile(MemoryEntryPath(MemoryKindSuccessPrior)); err != nil {
+		return err
+	}
 	if err := ensureDir(MemoryProposalsDir()); err != nil {
+		return err
+	}
+	if err := ensureEmptyFile(MemoryPriorGovernancePath()); err != nil {
 		return err
 	}
 	if err := ensureJSONFile(filepath.Join(MemoryIndexesDir(), "selectors.json"), map[string]any{}); err != nil {
@@ -140,13 +148,13 @@ func NormalizeMemoryEntry(entry *MemoryEntry) (*MemoryEntry, error) {
 		return nil, fmt.Errorf("memory entry statement is required")
 	}
 	switch normalized.Kind {
-	case MemoryKindFact, MemoryKindProcedure, MemoryKindPitfall, MemoryKindSecretRef:
+	case MemoryKindFact, MemoryKindProcedure, MemoryKindPitfall, MemoryKindSecretRef, MemoryKindSuccessPrior:
 	default:
 		return nil, fmt.Errorf("unknown memory kind %q", normalized.Kind)
 	}
 	normalized.Selectors = normalizeMemorySelectors(normalized.Selectors)
-	if normalized.Kind == MemoryKindSecretRef && len(normalized.Selectors) == 0 {
-		return nil, fmt.Errorf("secret_ref memory entries require selectors")
+	if (normalized.Kind == MemoryKindSecretRef || normalized.Kind == MemoryKindSuccessPrior) && len(normalized.Selectors) == 0 {
+		return nil, fmt.Errorf("%s memory entries require selectors", normalized.Kind)
 	}
 	return &normalized, nil
 }
@@ -169,13 +177,13 @@ func NormalizeMemoryProposal(proposal *MemoryProposal) (*MemoryProposal, error) 
 		return nil, fmt.Errorf("memory proposal statement is required")
 	}
 	switch normalized.Kind {
-	case MemoryKindFact, MemoryKindProcedure, MemoryKindPitfall, MemoryKindSecretRef:
+	case MemoryKindFact, MemoryKindProcedure, MemoryKindPitfall, MemoryKindSecretRef, MemoryKindSuccessPrior:
 	default:
 		return nil, fmt.Errorf("unknown memory proposal kind %q", normalized.Kind)
 	}
 	normalized.Selectors = normalizeMemorySelectors(normalized.Selectors)
-	if normalized.Kind == MemoryKindSecretRef && len(normalized.Selectors) == 0 {
-		return nil, fmt.Errorf("secret_ref memory proposals require selectors")
+	if (normalized.Kind == MemoryKindSecretRef || normalized.Kind == MemoryKindSuccessPrior) && len(normalized.Selectors) == 0 {
+		return nil, fmt.Errorf("%s memory proposals require selectors", normalized.Kind)
 	}
 	normalized.Evidence = normalizeMemoryEvidence(normalized.Evidence)
 	normalized.SourceRuns = compactStrings(normalized.SourceRuns)
