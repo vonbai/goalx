@@ -146,13 +146,15 @@ func UpsertGlobalRun(projectRoot string, cfg *goalx.Config, state string) error 
 		return fmt.Errorf("config is nil")
 	}
 	key := globalRunKey(projectRoot, cfg.Name)
+	// Use config-aware run directory resolution
+	runDir := goalx.ResolveRunDir(projectRoot, cfg.Name, cfg)
 	return mutateGlobalRunRegistry(func(reg *GlobalRunRegistry) error {
 		reg.Runs[key] = GlobalRunRef{
 			Key:         key,
 			Name:        cfg.Name,
 			ProjectID:   goalx.ProjectID(projectRoot),
 			ProjectRoot: projectRoot,
-			RunDir:      goalx.RunDir(projectRoot, cfg.Name),
+			RunDir:      runDir,
 			TmuxSession: goalx.TmuxSessionName(projectRoot, cfg.Name),
 			State:       state,
 			UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
@@ -167,6 +169,7 @@ func UpdateGlobalRunState(projectRoot, runName, state string) error {
 	return mutateGlobalRunRegistry(func(reg *GlobalRunRegistry) error {
 		ref, ok := reg.Runs[key]
 		if !ok {
+			// For new entries, use legacy path (will be updated when run is properly registered)
 			ref = GlobalRunRef{
 				Key:         key,
 				Name:        runName,

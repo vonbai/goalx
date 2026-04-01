@@ -167,7 +167,31 @@ func deriveRunIdentitySurface(runDir, fallbackObjective string) (string, int, st
 }
 
 func listDerivedRunStates(projectRoot string) ([]DerivedRunState, error) {
-	runsDir := ProjectDataDir(projectRoot)
+	// Collect runs from configured run root and legacy location
+	seenDirs := make(map[string]bool)
+	states := make([]DerivedRunState, 0)
+
+	// Scan configured run root first
+	if layers, err := goalx.LoadConfigLayers(projectRoot); err == nil && layers.Config.RunRoot != "" {
+		configuredRoot := goalx.ResolveRunRoot(projectRoot, &layers.Config)
+		if configuredStates, err := scanRunDirs(projectRoot, configuredRoot, seenDirs); err == nil {
+			states = append(states, configuredStates...)
+		}
+	}
+
+	// Scan legacy location (user-scoped)
+	legacyRoot := ProjectDataDir(projectRoot)
+	if legacyStates, err := scanRunDirs(projectRoot, legacyRoot, seenDirs); err == nil {
+		states = append(states, legacyStates...)
+	}
+
+	sort.Slice(states, func(i, j int) bool {
+		return states[i].Name < states[j].Name
+	})
+	return states, nil
+}
+
+func scanRunDirs(projectRoot, runsDir string, seenDirs map[string]bool) ([]DerivedRunState, error) {
 	entries, err := os.ReadDir(runsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -175,21 +199,22 @@ func listDerivedRunStates(projectRoot string) ([]DerivedRunState, error) {
 		}
 		return nil, err
 	}
-	states := make([]DerivedRunState, 0, len(entries))
+	states := make([]DerivedRunState, 0)
 	for _, entry := range entries {
 		if !entry.IsDir() || entry.Name() == "saved" {
 			continue
 		}
 		runDir := filepath.Join(runsDir, entry.Name())
+		if seenDirs[runDir] {
+			continue
+		}
+		seenDirs[runDir] = true
 		state, err := loadDerivedRunState(projectRoot, runDir)
 		if err != nil {
 			continue
 		}
 		states = append(states, *state)
 	}
-	sort.Slice(states, func(i, j int) bool {
-		return states[i].Name < states[j].Name
-	})
 	return states, nil
 }
 
