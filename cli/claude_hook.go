@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	goalx "github.com/vonbai/goalx"
 )
 
 const claudeHookUsage = "usage: goalx claude-hook permission-request|elicitation|notification"
@@ -180,9 +178,11 @@ func resolveClaudeHookRunContext(cwd string) (runDir, target string, ok bool) {
 				runNames = append(runNames, name)
 			}
 			for _, runName := range runNames {
-				candidateRunDir := goalx.RunDir(projectRoot, runName)
-				if runDir, target, ok := resolveClaudeHookRunContextForRun(absCWD, candidateRunDir); ok {
-					return runDir, target, true
+				// Check configured run root first, then legacy location
+				for _, candidateRunDir := range resolveRunDirCandidates(projectRoot, runName) {
+					if runDir, target, ok := resolveClaudeHookRunContextForRun(absCWD, candidateRunDir); ok {
+						return runDir, target, true
+					}
 				}
 			}
 		}

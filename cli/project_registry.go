@@ -238,8 +238,11 @@ func ResolveDefaultRunName(projectRoot string) (string, error) {
 		return "", err
 	}
 	if reg.FocusedRun != "" {
-		if state, err := loadDerivedRunState(projectRoot, goalx.RunDir(projectRoot, reg.FocusedRun)); err == nil && state != nil && derivedRunStatusOpen(state.Status) {
-			return reg.FocusedRun, nil
+		// Check configured run root first, then legacy location
+		for _, runDir := range resolveRunDirCandidates(projectRoot, reg.FocusedRun) {
+			if state, err := loadDerivedRunState(projectRoot, runDir); err == nil && state != nil && derivedRunStatusOpen(state.Status) {
+				return reg.FocusedRun, nil
+			}
 		}
 		if _, err := resolveLocalRun(projectRoot, reg.FocusedRun); err == nil {
 			return reg.FocusedRun, nil

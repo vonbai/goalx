@@ -865,7 +865,12 @@ func defaultLaunchRunSidecar(projectRoot, runName string, interval time.Duration
 		seconds = 300
 	}
 
-	runDir := goalx.RunDir(projectRoot, runName)
+	// Resolve run directory using configured or legacy path
+	rc, err := ResolveRun(projectRoot, runName)
+	if err != nil {
+		return fmt.Errorf("resolve run: %w", err)
+	}
+	runDir := rc.RunDir
 	logFile, err := os.OpenFile(filepath.Join(runDir, "sidecar.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open sidecar log: %w", err)

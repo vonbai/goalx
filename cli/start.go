@@ -80,7 +80,7 @@ func newStartRunState(projectRoot string, cfg *goalx.Config) *startRunState {
 	if cfg != nil {
 		runName = cfg.Name
 	}
-	runDir := goalx.RunDir(projectRoot, runName)
+	runDir := goalx.ResolveRunDir(projectRoot, runName, cfg)
 	return &startRunState{
 		projectRoot:    projectRoot,
 		runDir:         runDir,
