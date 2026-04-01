@@ -405,3 +405,163 @@ func TestLoadSavedPhaseSourceUsesConfiguredSavedRoot(t *testing.T) {
 		t.Fatalf("expected saved phase context files, got none")
 	}
 }
+
+func TestResolveSavedRunLocationFallsBackToRegistryAfterSavedRunRootConfigChange(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("saved_run_root: ./saved-a\n"), 0o644); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+
+	runName := "saved-drift"
+	layers.Config.Name = runName
+	layers.Config.Mode = goalx.ModeWorker
+	layers.Config.Objective = "inspect drift"
+	layers.Config.Target = goalx.TargetConfig{Files: []string{"report.md"}}
+
+	savedDir := goalx.ResolveSavedRunDir(projectRoot, runName, &layers.Config)
+	if err := os.MkdirAll(savedDir, 0o755); err != nil {
+		t.Fatalf("mkdir saved dir: %v", err)
+	}
+	data, err := yaml.Marshal(&layers.Config)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(savedDir), data, 0o644); err != nil {
+		t.Fatalf("write run spec: %v", err)
+	}
+	if err := RegisterSavedRun(projectRoot, &layers.Config); err != nil {
+		t.Fatalf("RegisterSavedRun: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("saved_run_root: ./saved-b\n"), 0o644); err != nil {
+		t.Fatalf("write updated config: %v", err)
+	}
+
+	location, err := ResolveSavedRunLocation(projectRoot, runName)
+	if err != nil {
+		t.Fatalf("ResolveSavedRunLocation: %v", err)
+	}
+	if location.Dir != savedDir {
+		t.Errorf("Dir = %q, want %q", location.Dir, savedDir)
+	}
+}
+
+func TestResolveSavedRunLocationListsRegistrySavedRunAfterSavedRunRootConfigChange(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("saved_run_root: ./saved-a\n"), 0o644); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+
+	runName := "saved-list-drift"
+	layers.Config.Name = runName
+	layers.Config.Mode = goalx.ModeWorker
+	layers.Config.Objective = "inspect drift list"
+	layers.Config.Target = goalx.TargetConfig{Files: []string{"report.md"}}
+
+	savedDir := goalx.ResolveSavedRunDir(projectRoot, runName, &layers.Config)
+	if err := os.MkdirAll(savedDir, 0o755); err != nil {
+		t.Fatalf("mkdir saved dir: %v", err)
+	}
+	data, err := yaml.Marshal(&layers.Config)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(savedDir), data, 0o644); err != nil {
+		t.Fatalf("write run spec: %v", err)
+	}
+	if err := RegisterSavedRun(projectRoot, &layers.Config); err != nil {
+		t.Fatalf("RegisterSavedRun: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("saved_run_root: ./saved-b\n"), 0o644); err != nil {
+		t.Fatalf("write updated config: %v", err)
+	}
+
+	location, err := ResolveSavedRunLocation(projectRoot, "")
+	if err != nil {
+		t.Fatalf("ResolveSavedRunLocation: %v", err)
+	}
+	if location.Name != runName {
+		t.Errorf("Name = %q, want %q", location.Name, runName)
+	}
+	if location.Dir != savedDir {
+		t.Errorf("Dir = %q, want %q", location.Dir, savedDir)
+	}
+}
+
+func TestLoadSavedPhaseSourceFallsBackToRegistryAfterSavedRunRootConfigChange(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("saved_run_root: ./saved-a\n"), 0o644); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+
+	runName := "phase-drift"
+	layers.Config.Name = runName
+	layers.Config.Mode = goalx.ModeWorker
+	layers.Config.Objective = "inspect phase drift"
+	layers.Config.Context = goalx.ContextConfig{Files: []string{"report.md"}}
+	layers.Config.Target = goalx.TargetConfig{Files: []string{"report.md"}}
+
+	savedDir := goalx.ResolveSavedRunDir(projectRoot, runName, &layers.Config)
+	if err := os.MkdirAll(savedDir, 0o755); err != nil {
+		t.Fatalf("mkdir saved dir: %v", err)
+	}
+	data, err := yaml.Marshal(&layers.Config)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(savedDir), data, 0o644); err != nil {
+		t.Fatalf("write saved run spec: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(savedDir, "summary.md"), []byte("# summary\n"), 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+	if err := RegisterSavedRun(projectRoot, &layers.Config); err != nil {
+		t.Fatalf("RegisterSavedRun: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("saved_run_root: ./saved-b\n"), 0o644); err != nil {
+		t.Fatalf("write updated config: %v", err)
+	}
+
+	source, err := loadSavedPhaseSource(projectRoot, runName)
+	if err != nil {
+		t.Fatalf("loadSavedPhaseSource: %v", err)
+	}
+	if source.Dir != savedDir {
+		t.Errorf("Dir = %q, want %q", source.Dir, savedDir)
+	}
+}

@@ -14,6 +14,7 @@ import (
 
 type ProjectRunRef struct {
 	Name      string `json:"name"`
+	Dir       string `json:"dir,omitempty"`
 	Objective string `json:"objective,omitempty"`
 	State     string `json:"state,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
@@ -205,9 +206,11 @@ func RegisterSavedRun(projectRoot string, cfg *goalx.Config) error {
 	if cfg == nil {
 		return fmt.Errorf("config is nil")
 	}
+	saveDir := goalx.ResolveSavedRunDir(projectRoot, cfg.Name, cfg)
 	if err := mutateProjectRegistry(projectRoot, func(reg *ProjectRegistry) error {
 		reg.SavedRuns[cfg.Name] = ProjectRunRef{
 			Name:      cfg.Name,
+			Dir:       saveDir,
 			State:     "saved",
 			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 		}
@@ -216,6 +219,28 @@ func RegisterSavedRun(projectRoot string, cfg *goalx.Config) error {
 		return err
 	}
 	return UpsertGlobalRun(projectRoot, cfg, "saved")
+}
+
+func LookupProjectSavedRun(projectRoot, runName string) (ProjectRunRef, bool, error) {
+	reg, err := LoadProjectRegistry(projectRoot)
+	if err != nil {
+		return ProjectRunRef{}, false, err
+	}
+	ref, ok := reg.SavedRuns[runName]
+	return ref, ok, nil
+}
+
+func ListProjectSavedRuns(projectRoot string) ([]ProjectRunRef, error) {
+	reg, err := LoadProjectRegistry(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	names := sortedRunNames(reg.SavedRuns)
+	refs := make([]ProjectRunRef, 0, len(names))
+	for _, name := range names {
+		refs = append(refs, reg.SavedRuns[name])
+	}
+	return refs, nil
 }
 
 func RemoveRunRegistration(projectRoot, runName string) error {
