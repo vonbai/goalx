@@ -14,12 +14,13 @@ goalx run --from RUN --intent explore
 ## Observe
 
 ```bash
-goalx status [NAME] [session-N]
-goalx observe [NAME]
 goalx list
-goalx context
-goalx afford
-goalx attach --run NAME
+goalx status [--run NAME]
+goalx observe [--run NAME]
+goalx context [--run NAME]
+goalx afford [--run NAME] [target]
+goalx attach [--run NAME] [master|session-N]
+goalx wait [--run NAME] [target] --timeout ...
 ```
 
 ## Control
@@ -27,15 +28,15 @@ goalx attach --run NAME
 ```bash
 goalx tell [--run NAME] [master|session-N] "message"
 goalx tell --urgent [--run NAME] [master|session-N] "message"
-goalx add --run NAME "goal"
-goalx add --run NAME --worktree "goal"
+goalx add --run NAME "task"
+goalx add --run NAME --worktree "task"
 goalx replace --run NAME session-N --engine ENGINE --model MODEL --effort LEVEL
 goalx dimension --run NAME session-N --set depth,evidence
 goalx budget --run NAME --extend 2h
 goalx focus --run NAME
 ```
 
-## Session Lifecycle
+## Worktree And Merge
 
 ```bash
 goalx park --run NAME session-N
@@ -45,10 +46,6 @@ goalx integrate --run NAME --method partial_adopt --from run-root,session-N
 goalx keep --run NAME
 goalx archive --run NAME session-N
 ```
-
-- `goalx keep --run NAME session-N` merges a reviewed develop session branch into the run worktree only.
-- `goalx integrate --run NAME --method ... --from ...` records the current run-root result after master manually merged, cherry-picked, or partially adopted work there.
-- `goalx keep --run NAME` merges the run worktree into the source root, but only when source-root `HEAD` still descends from the run base revision.
 
 ## Closeout
 
@@ -73,19 +70,20 @@ goalx drop --run NAME
 ## Recovery
 
 ```bash
-goalx recover [--run RUN]
+goalx recover --run NAME
+goalx budget --run NAME --extend 2h
 ```
 
-## Recovery Semantics
+Rules:
 
-- `goalx recover --run NAME` relaunches the same stopped or stranded run in place.
-- `goalx recover --run NAME` does not mutate budget. If budget is exhausted, use `goalx budget --run NAME --extend ...` or `--clear` first, then recover.
-- `goalx save NAME` plus `goalx run --from NAME --intent ...` starts a new phase from saved artifacts.
-- Do not use `goalx run --from ...` as a substitute for same-run recovery.
+- `recover` relaunches the same run in place
+- `save + run --from` starts a new phase from saved artifacts
+- phase continuation now requires canonical saved surfaces
 
 ## Durable Surface Schemas
 
 ```bash
+goalx schema objective-contract
 goalx schema obligation-model
 goalx schema assurance-plan
 goalx schema cognition-state
@@ -94,10 +92,13 @@ goalx schema freshness-state
 goalx schema coordination
 goalx schema status
 goalx schema obligation-log
+goalx schema evidence-log
 goalx schema experiments
+goalx schema compiler-input
+goalx schema compiler-report
 ```
 
-Use `goalx schema <surface>` as the canonical machine-consumed durable authoring-contract authority.
+Use `goalx schema <surface>` as the canonical authoring-contract authority.
 
 ## Durable Surface Writes
 
@@ -108,7 +109,16 @@ goalx durable write coordination --run NAME --body-file /abs/path.json
 goalx durable write status --run NAME --body-file /abs/path.json
 
 goalx durable write obligation-log --run NAME --kind decision --actor master --body-file /abs/path.json
+goalx durable write evidence-log --run NAME --kind scenario.executed --actor master --body-file /abs/path.json
 goalx durable write experiments --run NAME --kind experiment.created --actor master --body-file /abs/path.json
 ```
 
-Inspect the surface first with `goalx schema <surface>`, then use `goalx durable write` with an authoring payload. The framework serializes the canonical storage envelope and timestamps. Do not hand-edit those files in place.
+## Optional Repo Cognition
+
+GoalX always exposes builtin `repo-native` cognition.
+
+GitNexus is optional:
+
+- binary install is preferred
+- pinned `npx gitnexus@1.5.0` is only exposed when a real probe succeeds
+- GoalX does not auto-install it

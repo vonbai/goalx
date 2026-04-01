@@ -9,7 +9,11 @@ import (
 
 func TestDiscoverCognitionScopeIncludesRepoNativeAndPinnedNPXGitNexus(t *testing.T) {
 	prev := lookPathFunc
-	t.Cleanup(func() { lookPathFunc = prev })
+	prevProbe := gitNexusProbeFunc
+	t.Cleanup(func() {
+		lookPathFunc = prev
+		gitNexusProbeFunc = prevProbe
+	})
 	lookPathFunc = func(name string) (string, error) {
 		switch name {
 		case "git":
@@ -22,6 +26,7 @@ func TestDiscoverCognitionScopeIncludesRepoNativeAndPinnedNPXGitNexus(t *testing
 			return "", fmt.Errorf("missing")
 		}
 	}
+	gitNexusProbeFunc = func(invocationKind, scopePath string) error { return nil }
 
 	repo := makeTrackedRepo(t)
 	scope, err := DiscoverCognitionScope("run-root", repo)
@@ -41,7 +46,11 @@ func TestDiscoverCognitionScopeIncludesRepoNativeAndPinnedNPXGitNexus(t *testing
 
 func TestBuildContextIndexIncludesCognitionProviderFacts(t *testing.T) {
 	prev := lookPathFunc
-	t.Cleanup(func() { lookPathFunc = prev })
+	prevProbe := gitNexusProbeFunc
+	t.Cleanup(func() {
+		lookPathFunc = prev
+		gitNexusProbeFunc = prevProbe
+	})
 	lookPathFunc = func(name string) (string, error) {
 		switch name {
 		case "git", "npx":
@@ -54,6 +63,7 @@ func TestBuildContextIndexIncludesCognitionProviderFacts(t *testing.T) {
 			return "", fmt.Errorf("missing")
 		}
 	}
+	gitNexusProbeFunc = func(invocationKind, scopePath string) error { return nil }
 
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	index, err := BuildContextIndex(repo, cfg.Name, runDir)
@@ -77,7 +87,11 @@ func TestBuildContextIndexIncludesCognitionProviderFacts(t *testing.T) {
 
 func TestBuildAffordancesIncludesCognitionFacts(t *testing.T) {
 	prev := lookPathFunc
-	t.Cleanup(func() { lookPathFunc = prev })
+	prevProbe := gitNexusProbeFunc
+	t.Cleanup(func() {
+		lookPathFunc = prev
+		gitNexusProbeFunc = prevProbe
+	})
 	lookPathFunc = func(name string) (string, error) {
 		switch name {
 		case "git", "npx":
@@ -90,6 +104,7 @@ func TestBuildAffordancesIncludesCognitionFacts(t *testing.T) {
 			return "", fmt.Errorf("missing")
 		}
 	}
+	gitNexusProbeFunc = func(invocationKind, scopePath string) error { return nil }
 
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	doc, err := BuildAffordances(repo, cfg.Name, runDir, "master")
@@ -108,6 +123,53 @@ func TestBuildAffordancesIncludesCognitionFacts(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("affordances missing cognition item: %#v", doc.Items)
+	}
+}
+
+func TestDiscoverCognitionScopeMarksNPXGitNexusUnavailableWhenProbeFails(t *testing.T) {
+	prevLookPath := lookPathFunc
+	prevProbe := gitNexusProbeFunc
+	t.Cleanup(func() {
+		lookPathFunc = prevLookPath
+		gitNexusProbeFunc = prevProbe
+	})
+	lookPathFunc = func(name string) (string, error) {
+		switch name {
+		case "git", "npx":
+			return "/usr/bin/" + name, nil
+		case "gitnexus":
+			return "", fmt.Errorf("missing")
+		default:
+			return "", fmt.Errorf("missing")
+		}
+	}
+	gitNexusProbeFunc = func(invocationKind, scopePath string) error {
+		if invocationKind != "npx" {
+			t.Fatalf("probe invocation_kind = %q, want npx", invocationKind)
+		}
+		if strings.TrimSpace(scopePath) == "" {
+			t.Fatal("probe scopePath unexpectedly empty")
+		}
+		return fmt.Errorf("npx probe failed")
+	}
+
+	repo := makeTrackedRepo(t)
+	scope, err := DiscoverCognitionScope("run-root", repo)
+	if err != nil {
+		t.Fatalf("DiscoverCognitionScope: %v", err)
+	}
+	if len(scope.Providers) != 2 {
+		t.Fatalf("providers = %#v, want repo-native + gitnexus", scope.Providers)
+	}
+	got := scope.Providers[1]
+	if got.Name != "gitnexus" {
+		t.Fatalf("provider = %+v, want gitnexus", got)
+	}
+	if got.InvocationKind != "npx" {
+		t.Fatalf("invocation_kind = %q, want npx", got.InvocationKind)
+	}
+	if got.Available {
+		t.Fatalf("available = true, want false when npx probe fails: %+v", got)
 	}
 }
 
