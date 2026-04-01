@@ -169,13 +169,16 @@ func UpdateGlobalRunState(projectRoot, runName, state string) error {
 	return mutateGlobalRunRegistry(func(reg *GlobalRunRegistry) error {
 		ref, ok := reg.Runs[key]
 		if !ok {
-			// For new entries, use legacy path (will be updated when run is properly registered)
+			runDir := goalx.RunDir(projectRoot, runName)
+			if layers, err := goalx.LoadConfigLayers(projectRoot); err == nil {
+				runDir = goalx.ResolveRunDir(projectRoot, runName, &layers.Config)
+			}
 			ref = GlobalRunRef{
 				Key:         key,
 				Name:        runName,
 				ProjectID:   goalx.ProjectID(projectRoot),
 				ProjectRoot: projectRoot,
-				RunDir:      goalx.RunDir(projectRoot, runName),
+				RunDir:      runDir,
 				TmuxSession: goalx.TmuxSessionName(projectRoot, runName),
 			}
 		}
@@ -230,6 +233,20 @@ func LookupGlobalRuns(selector string) ([]GlobalRunRef, error) {
 		return matches[i].ProjectID < matches[j].ProjectID
 	})
 	return matches, nil
+}
+
+func LookupProjectGlobalRun(projectRoot, runName string) (GlobalRunRef, bool, error) {
+	reg, err := LoadGlobalRunRegistry()
+	if err != nil {
+		return GlobalRunRef{}, false, err
+	}
+	ref, ok := reg.Runs[globalRunKey(projectRoot, runName)]
+	if !ok {
+		return GlobalRunRef{}, false, nil
+	}
+	ref.Key = globalRunKey(ref.ProjectRoot, ref.Name)
+	ref = hydrateGlobalRunIdentity(ref)
+	return ref, true, nil
 }
 
 func hydrateGlobalRunIdentity(ref GlobalRunRef) GlobalRunRef {

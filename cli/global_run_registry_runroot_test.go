@@ -234,3 +234,108 @@ func TestCanonicalProjectRootResolvesFromConfiguredRunWorktree(t *testing.T) {
 		t.Errorf("CanonicalProjectRoot(%q) = %q, want %q", worktreeDir, resolved, projectRoot)
 	}
 }
+
+func TestResolveLocalRunFallsBackToRegistryAfterRunRootConfigChange(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("run_root: ./.goalx/runs-a\n"), 0o644); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+
+	runName := "drift-run"
+	layers.Config.Name = runName
+	runDir := goalx.ResolveRunDir(projectRoot, runName, &layers.Config)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	runSpec := []byte(`
+name: drift-run
+mode: worker
+objective: drift test
+run_root: ./.goalx/runs-a
+`)
+	if err := os.WriteFile(RunSpecPath(runDir), runSpec, 0o644); err != nil {
+		t.Fatalf("write run spec: %v", err)
+	}
+	if err := UpsertGlobalRun(projectRoot, &layers.Config, "active"); err != nil {
+		t.Fatalf("UpsertGlobalRun: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("run_root: ./.goalx/runs-b\n"), 0o644); err != nil {
+		t.Fatalf("write updated config: %v", err)
+	}
+
+	rc, err := resolveLocalRun(projectRoot, runName)
+	if err != nil {
+		t.Fatalf("resolveLocalRun: %v", err)
+	}
+	if rc.RunDir != runDir {
+		t.Errorf("RunDir = %q, want %q", rc.RunDir, runDir)
+	}
+}
+
+func TestListDerivedRunStatesIncludesRegistryRunAfterRunRootConfigChange(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("run_root: ./.goalx/runs-a\n"), 0o644); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+
+	runName := "registry-list-run"
+	layers.Config.Name = runName
+	runDir := goalx.ResolveRunDir(projectRoot, runName, &layers.Config)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	runSpec := []byte(`
+name: registry-list-run
+mode: worker
+objective: list drift test
+run_root: ./.goalx/runs-a
+`)
+	if err := os.WriteFile(RunSpecPath(runDir), runSpec, 0o644); err != nil {
+		t.Fatalf("write run spec: %v", err)
+	}
+	controlState := &ControlRunState{LifecycleState: "active"}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), controlState); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	if err := UpsertGlobalRun(projectRoot, &layers.Config, "active"); err != nil {
+		t.Fatalf("UpsertGlobalRun: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("run_root: ./.goalx/runs-b\n"), 0o644); err != nil {
+		t.Fatalf("write updated config: %v", err)
+	}
+
+	states, err := listDerivedRunStates(projectRoot)
+	if err != nil {
+		t.Fatalf("listDerivedRunStates: %v", err)
+	}
+	if len(states) != 1 {
+		t.Fatalf("expected 1 state, got %d", len(states))
+	}
+	if states[0].RunDir != runDir {
+		t.Errorf("RunDir = %q, want %q", states[0].RunDir, runDir)
+	}
+}

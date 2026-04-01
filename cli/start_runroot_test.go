@@ -223,3 +223,48 @@ func TestNewStartRunStateUsesLegacyPathWithoutConfig(t *testing.T) {
 		t.Errorf("state.runDir = %q, want legacy %q", state.runDir, legacyRunDir)
 	}
 }
+
+func TestResolveIntegrationStateUsesConfiguredRunRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("run_root: ./.goalx/runs\n"), 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+
+	runName := "integration-run"
+	runDir := goalx.ResolveRunDir(projectRoot, runName, &layers.Config)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	state := &IntegrationState{
+		Version:             1,
+		CurrentExperimentID: "exp_1",
+		CurrentBranch:       "goalx/integration-run/root",
+		CurrentCommit:       "abc123",
+		UpdatedAt:           "2026-04-01T00:00:00Z",
+	}
+	if err := SaveIntegrationState(IntegrationStatePath(runDir), state); err != nil {
+		t.Fatalf("SaveIntegrationState: %v", err)
+	}
+
+	got, err := ResolveIntegrationState(projectRoot, runName)
+	if err != nil {
+		t.Fatalf("ResolveIntegrationState: %v", err)
+	}
+	if got == nil {
+		t.Fatal("ResolveIntegrationState returned nil")
+	}
+	if got.CurrentExperimentID != state.CurrentExperimentID {
+		t.Errorf("CurrentExperimentID = %q, want %q", got.CurrentExperimentID, state.CurrentExperimentID)
+	}
+}

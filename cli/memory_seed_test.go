@@ -136,6 +136,82 @@ func TestCollectRunMemorySeedsIncludesSavedArtifacts(t *testing.T) {
 	}
 }
 
+func TestCollectRunMemorySeedsIncludesConfiguredSavedArtifacts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("run_root: ./custom-runs\nsaved_run_root: ./custom-saved\n"), 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	runName := "demo"
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		t.Fatalf("LoadConfigLayers: %v", err)
+	}
+	runDir := goalx.ResolveRunDir(projectRoot, runName, &layers.Config)
+	wtPath := WorktreePath(runDir, runName, 1)
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+	if err := os.MkdirAll(ReportsDir(runDir), 0o755); err != nil {
+		t.Fatalf("mkdir reports dir: %v", err)
+	}
+
+	cfg := goalx.Config{
+		Name:         runName,
+		Mode:         goalx.ModeWorker,
+		Objective:    "inspect",
+		SavedRunRoot: "./custom-saved",
+		Target:       goalx.TargetConfig{Files: []string{"notes.md"}},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
+		t.Fatalf("write run spec: %v", err)
+	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
+	seedSaveSessionIdentity(t, runDir, "session-1", goalx.ModeWorker, "codex", "", cfg.Target, goalx.LocalValidationConfig{})
+	if err := os.WriteFile(SummaryPath(runDir), []byte("# summary\n"), 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ReportsDir(runDir), "repo-summary.md"), []byte("repo report\n"), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	if err := os.WriteFile(AcceptanceEvidencePath(runDir), []byte("gate ok\n"), 0o644); err != nil {
+		t.Fatalf("write acceptance evidence: %v", err)
+	}
+	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	seeds, err := CollectRunMemorySeeds(runDir)
+	if err != nil {
+		t.Fatalf("CollectRunMemorySeeds: %v", err)
+	}
+	savedPrefix := filepath.Join(projectRoot, "custom-saved", runName)
+	foundSavedArtifact := false
+	for _, seed := range seeds {
+		for _, evidence := range seed.Evidence {
+			if strings.HasPrefix(evidence.Path, savedPrefix) {
+				foundSavedArtifact = true
+			}
+		}
+	}
+	if !foundSavedArtifact {
+		t.Fatalf("expected saved artifact seed evidence under %s, got %+v", savedPrefix, seeds)
+	}
+}
+
 func TestSidecarRefreshesMemorySeedsWithoutCanonicalMutation(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 type MemorySeed struct {
@@ -206,7 +208,17 @@ func collectSavedArtifactSeeds(runDir string) []MemorySeed {
 	if err != nil || meta == nil || strings.TrimSpace(meta.ProjectRoot) == "" {
 		return nil
 	}
-	saveDir := SavedRunDir(meta.ProjectRoot, filepath.Base(runDir))
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		cfg = nil
+	}
+	saveDir := goalx.ResolveSavedRunDir(meta.ProjectRoot, filepath.Base(runDir), cfg)
+	if info, err := os.Stat(saveDir); err != nil || !info.IsDir() {
+		saveDir = SavedRunDir(meta.ProjectRoot, filepath.Base(runDir))
+	}
+	if info, err := os.Stat(saveDir); err != nil || !info.IsDir() {
+		saveDir = LegacySavedRunDir(meta.ProjectRoot, filepath.Base(runDir))
+	}
 	if info, err := os.Stat(saveDir); err != nil || !info.IsDir() {
 		return nil
 	}

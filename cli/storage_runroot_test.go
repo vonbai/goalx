@@ -37,6 +37,32 @@ func TestResolveSavedRunLocationUsesConfiguredSavedRoot(t *testing.T) {
 	}
 }
 
+func TestResolveSavedRunLocationUsesProjectConfigByDefault(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("saved_run_root: ./saved-runs\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	savedDir := filepath.Join(projectRoot, "saved-runs", "my-run")
+	if err := os.MkdirAll(savedDir, 0o755); err != nil {
+		t.Fatalf("mkdir configured saved dir: %v", err)
+	}
+
+	got, err := ResolveSavedRunLocation(projectRoot, "my-run")
+	if err != nil {
+		t.Fatalf("ResolveSavedRunLocation: %v", err)
+	}
+	if got.Dir != savedDir {
+		t.Errorf("Dir = %q, want %q", got.Dir, savedDir)
+	}
+}
+
 func TestResolveSavedRunLocationFallsBackToUserScopedWhenConfiguredEmpty(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -328,5 +354,54 @@ func TestResultFallsBackFromConfiguredToUserScoped(t *testing.T) {
 	}
 	if location.Dir != userScopedDir {
 		t.Errorf("location.Dir = %q, want %q", location.Dir, userScopedDir)
+	}
+}
+
+func TestLoadSavedPhaseSourceUsesConfiguredSavedRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("saved_run_root: ./custom-saved\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	savedDir := filepath.Join(projectRoot, "custom-saved", "demo")
+	if err := os.MkdirAll(savedDir, 0o755); err != nil {
+		t.Fatalf("mkdir saved dir: %v", err)
+	}
+
+	cfg := goalx.Config{
+		Name:      "demo",
+		Mode:      goalx.ModeWorker,
+		Objective: "inspect",
+		Context: goalx.ContextConfig{
+			Files: []string{"report.md"},
+		},
+		Target: goalx.TargetConfig{Files: []string{"report.md"}},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(savedDir), data, 0o644); err != nil {
+		t.Fatalf("write saved run spec: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(savedDir, "summary.md"), []byte("# summary\n"), 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+
+	source, err := loadSavedPhaseSource(projectRoot, "demo")
+	if err != nil {
+		t.Fatalf("loadSavedPhaseSource: %v", err)
+	}
+	if source.Dir != savedDir {
+		t.Errorf("Dir = %q, want %q", source.Dir, savedDir)
+	}
+	if len(source.Context.Files) == 0 {
+		t.Fatalf("expected saved phase context files, got none")
 	}
 }
