@@ -77,6 +77,29 @@ func ResolveIntegrationState(projectRoot, runName string) (*IntegrationState, er
 	return nil, nil
 }
 
+// ResolveIntegrationStateWithConfig resolves integration state with fallback support.
+// Fallback order: 1) configured saved_run_root, 2) user-scoped saved root, 3) active run.
+func ResolveIntegrationStateWithConfig(projectRoot, runName string, cfg *goalx.Config) (*IntegrationState, error) {
+	candidates := []string{
+		filepath.Join(goalx.ResolveSavedRunDir(projectRoot, runName, cfg), "integration.json"),
+		filepath.Join(goalx.RunDir(projectRoot, runName), "integration.json"),
+	}
+	// If config has SavedRunRoot set, also check user-scoped as fallback
+	if cfg != nil && cfg.SavedRunRoot != "" {
+		candidates = append(candidates, filepath.Join(SavedRunDir(projectRoot, runName), "integration.json"))
+	}
+	for _, path := range candidates {
+		state, err := LoadIntegrationState(path)
+		if err != nil {
+			return nil, err
+		}
+		if state != nil {
+			return state, nil
+		}
+	}
+	return nil, nil
+}
+
 func normalizeIntegrationState(state *IntegrationState) {
 	if state == nil {
 		return

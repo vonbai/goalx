@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 type resultRun struct {
@@ -55,7 +57,14 @@ func Result(projectRoot string, args []string) error {
 }
 
 func resolveResultRun(projectRoot, runName string) (*resultRun, error) {
-	location, err := ResolveSavedRunLocation(projectRoot, runName)
+	// Load config to get saved_run_root setting
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+	cfg := &layers.Config
+
+	location, err := ResolveSavedRunLocationWithConfig(projectRoot, runName, cfg)
 	if err == nil {
 		_, loadErr := LoadSavedRunSpec(location.Dir)
 		if loadErr != nil {
