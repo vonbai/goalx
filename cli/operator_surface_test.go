@@ -16,6 +16,7 @@ func TestOperatorSurfaceConsistency(t *testing.T) {
 	files := []string{
 		filepath.Join(repoRoot, "README.md"),
 		filepath.Join(repoRoot, "skill", "SKILL.md"),
+		filepath.Join(repoRoot, "skill", "agents", "openai.yaml"),
 		filepath.Join(repoRoot, "skill", "references", "advanced-control.md"),
 		filepath.Join(repoRoot, "deploy", "README.md"),
 	}
@@ -51,8 +52,21 @@ func TestOperatorSurfaceConsistency(t *testing.T) {
 			if !strings.Contains(text, "goalx budget") {
 				t.Fatalf("%s missing budget guidance", path)
 			}
+			if !strings.Contains(text, "goalx context") || !strings.Contains(text, "goalx afford") {
+				t.Fatalf("%s missing context/afford guidance", path)
+			}
 			if strings.Contains(text, "repeat --context") {
 				t.Fatalf("%s should not teach repeated --context flags", path)
+			}
+		case "openai.yaml":
+			if !strings.Contains(text, "goalx budget") {
+				t.Fatalf("%s missing budget guidance", path)
+			}
+			if !strings.Contains(text, "goalx context") || !strings.Contains(text, "goalx afford") {
+				t.Fatalf("%s missing context/afford guidance", path)
+			}
+			if strings.Contains(text, "--guided") {
+				t.Fatalf("%s should omit removed guided guidance", path)
 			}
 		case "advanced-control.md":
 			if strings.Contains(text, "--guided") {
@@ -66,6 +80,11 @@ func TestOperatorSurfaceConsistency(t *testing.T) {
 			}
 			if strings.Contains(text, "sidecar") {
 				t.Fatalf("%s should not mention removed sidecar control plane", path)
+			}
+			for _, want := range []string{"goalx list", "goalx afford", "goalx attach", "goalx review", "goalx diff", "goalx archive", "goalx wait"} {
+				if !strings.Contains(text, want) {
+					t.Fatalf("%s missing public command %q", path, want)
+				}
 			}
 		}
 	}

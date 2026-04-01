@@ -61,7 +61,7 @@ local_validation:
 
 ## Budget
 
-Budget is a user-level time constraint set at `goalx run`. The master sees it as a time fact and manages accordingly. The framework does not enforce it.
+Budget is a run-level time boundary. The master sees it as a fact and manages against it. The framework does not hard-kill running panes when time runs out, but it does block new work creation and recovery-style continuation once the budget is exhausted.
 
 ```bash
 goalx run "goal" --budget 4h                      # 4-hour budget for any intent
@@ -78,6 +78,21 @@ budget:
 ```
 
 Resolution order: `--budget` CLI flag > config.yaml `budget.max_duration` > intent default (0 for non-evolve intents, 8h for evolve).
+
+Runtime budget control:
+
+```bash
+goalx budget --run NAME
+goalx budget --run NAME --extend 2h
+goalx budget --run NAME --set-total 10h
+goalx budget --run NAME --clear
+```
+
+Use `goalx budget` for the same run when:
+
+- the run needs more total time
+- the budget should be reset to a specific total envelope
+- exhausted-budget recovery should be reopened with `--clear` or `--extend`
 
 ## Base-Branch Forking
 
@@ -150,6 +165,59 @@ Recovery boundary:
 - `goalx budget --run NAME --extend ...` or `--clear`, then `goalx recover --run NAME` = same run after exhausted-budget stop
 - `goalx save --run NAME` plus `goalx run --from NAME --intent ...` = new phase from saved artifacts
 - do not substitute `run --from` for same-run recovery
+
+## Public Command Matrix
+
+Use this as the public operator-facing command matrix. Internal plumbing commands such as `runtime-host`, `lease-loop`, `target-runner`, `claude-hook`, and usually `ack-session` are not part of the normal human operator surface.
+
+### Inspect And Orient
+
+- `goalx list` when the user wants the active/completed/saved run roster
+- `goalx status [--run NAME]` for durable control summary
+- `goalx observe [--run NAME]` for live transport plus current run facts
+- `goalx context [--run NAME]` for canonical identity, paths, and budget facts
+- `goalx afford [--run NAME] [target]` for the current run-scoped command surface
+- `goalx attach [--run NAME] [master|session-N]` only for manual pane inspection or intervention
+- `goalx wait [--run NAME] [target] --timeout ...` when a durable wait surface is explicitly needed instead of `sleep`
+
+### Launch And Continue
+
+- `goalx run "goal"` for the default fresh autonomous path
+- `goalx init "goal"` then `goalx start --config .goalx/goalx.yaml` only for config-first launch
+- `goalx run --from RUN --intent debate|implement|explore` for saved-run phase continuation
+
+### Control And Dispatch
+
+- `goalx tell` for durable redirect
+- `goalx add` for manual session launch
+- `goalx replace` when the same slice needs a new owner
+- `goalx dimension` when runtime viewpoints should change
+- `goalx budget` when the same run needs a different time boundary
+- `goalx focus` when the project default run should change
+
+### Review, Merge, And Results
+
+- `goalx review` to compare sessions
+- `goalx diff` before choosing a winner
+- `goalx keep --run NAME session-N` to merge a reviewed session branch into the run root
+- `goalx integrate --run NAME --method ... --from ...` to record manual run-root integration
+- `goalx result` to read the current result surfaces
+- `goalx report` to synthesize markdown from journals
+- `goalx verify` to record acceptance facts
+
+### Lifecycle And Persistence
+
+- `goalx park` / `goalx resume` for reusable session lifecycle
+- `goalx stop` for graceful shutdown that preserves the run
+- `goalx recover` for same-run relaunch
+- `goalx save` before phase continuation or durable artifact preservation
+- `goalx archive` for git-tag preservation
+- `goalx drop` only when the run can be destructively cleaned up
+
+### Durable Authoring Surfaces
+
+- `goalx schema <surface>` before writing machine-consumed surfaces
+- `goalx durable write <surface> ...` when the operator or master needs to author canonical durable state explicitly
 
 ## Effort, Selection, and Runtime Dimensions
 

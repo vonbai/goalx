@@ -60,9 +60,12 @@ The normal loop is:
 goalx run "goal"
 goalx status
 goalx observe
+goalx context
+goalx afford
 goalx schema status
 goalx tell "redirect"
 goalx recover --run NAME
+goalx budget --run NAME --extend 2h
 goalx verify
 goalx result
 goalx save
@@ -72,9 +75,12 @@ Use this by default unless the user explicitly asks for config-first control.
 
 - `goalx status` = durable control/state view
 - `goalx observe` = live transport view plus control summary
+- `goalx context` = canonical run identity plus durable paths
+- `goalx afford` = current run-scoped command surface
 - `goalx schema <surface>` = authoring contract view for machine-consumed durable surfaces
 - `goalx tell` = durable redirect to master or session
 - `goalx recover --run NAME` = relaunch the same stopped or stranded run in place
+- `goalx budget` = same-run budget inspection and mutation
 - `goalx verify` = record acceptance facts, not completion verdict
 - `goalx result` = read the current result surfaces
 - `goalx save` = export a durable saved run for later continuation
@@ -219,6 +225,17 @@ goalx budget --run RUN --extend 2h
 goalx budget --run RUN --set-total 10h
 goalx budget --run RUN --clear
 ```
+
+## Public Command Surface
+
+Use `references/advanced-control.md` when the user needs the full operator-facing command matrix. It covers:
+
+- launch: `run`, `init`, `start`
+- inspect: `list`, `status`, `observe`, `context`, `afford`, `attach`, `wait`
+- control: `tell`, `add`, `replace`, `dimension`, `budget`, `focus`
+- review/integration: `review`, `diff`, `keep`, `integrate`
+- lifecycle/persistence: `park`, `resume`, `stop`, `recover`, `archive`, `save`, `drop`
+- results/surfaces: `verify`, `result`, `report`, `schema`, `durable`
 
 ## Worktree And Merge Boundaries
 
