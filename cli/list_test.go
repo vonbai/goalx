@@ -107,3 +107,49 @@ func TestListShowsLaunchingStatusForBootstrapInProgress(t *testing.T) {
 		t.Fatalf("list output missing launching row:\n%s", out)
 	}
 }
+
+func TestListShowsLaunchingStatusForStartupSettlingGrace(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	installFakePresenceTmux(t, true, "master", "%0\tmaster\n")
+
+	settlingRun := writeRunSpecFixture(t, repo, &goalx.Config{
+		Name:      "delta",
+		Mode:      goalx.ModeWorker,
+		Objective: "ship delta",
+	})
+	if err := SaveControlRunState(ControlRunStatePath(settlingRun), &ControlRunState{Version: 1, GoalState: "open", ContinuityState: "running"}); err != nil {
+		t.Fatalf("SaveControlRunState settling: %v", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(settlingRun), &RunRuntimeState{
+		Version:   1,
+		Run:       "delta",
+		Mode:      string(goalx.ModeWorker),
+		Active:    true,
+		StartedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState settling: %v", err)
+	}
+	if err := submitControlOperationTarget(settlingRun, RunBootstrapOperationKey(), ControlOperationTarget{
+		Kind:    ControlOperationKindRunBootstrap,
+		State:   ControlOperationStateCommitted,
+		Summary: "run bootstrap committed",
+	}); err != nil {
+		t.Fatalf("submitControlOperationTarget settling: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := List(repo, nil); err != nil {
+			t.Fatalf("List: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "delta") || !strings.Contains(out, "launching") {
+		t.Fatalf("list output missing settling-as-launching row:\n%s", out)
+	}
+}

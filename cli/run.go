@@ -76,10 +76,13 @@ func Run(projectRoot string, args []string) error {
 
 func runUsage() string {
 	return `usage: goalx run "objective" [--intent deliver|evolve|explore] [--readonly] [flags]
+       goalx run --objective TEXT [--intent deliver|evolve|explore] [--readonly] [flags]
+       goalx run --objective-file PATH [--intent deliver|evolve|explore] [--readonly] [flags]
        goalx run --from RUN --intent debate|implement|explore [--readonly] [flags]
 
 notes:
   run is the primary entrypoint.
+  use --objective-file for long multi-line objectives to avoid shell quoting mistakes.
   omit --intent for the default deliver path.`
 }
 
@@ -148,4 +151,5 @@ func requirePhaseSource(intent string, args []string) error {
 func printAutoStarted() {
 	fmt.Println("Run started.")
 	fmt.Println("Use `goalx status`, `goalx observe`, or `goalx attach` to monitor progress.")
+	fmt.Println("Fresh runs can show `launching` briefly while startup settles; prefer `goalx wait` over `goalx recover` during that window.")
 }

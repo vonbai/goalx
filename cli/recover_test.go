@@ -139,6 +139,54 @@ func TestRecoverRejectsAlreadyActiveRun(t *testing.T) {
 	}
 }
 
+func TestRecoverRejectsSettlingRunWithWaitGuidance(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	_, stateDir := installRecoverFakeTmux(t, true)
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	tmuxSession := goalx.TmuxSessionName(repo, runName)
+	if err := os.WriteFile(filepath.Join(stateDir, "session_"+tmuxSession), nil, 0o644); err != nil {
+		t.Fatalf("seed tmux session marker: %v", err)
+	}
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(goalx.ModeWorker),
+		Active:    true,
+		StartedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+	if err := submitControlOperationTarget(runDir, RunBootstrapOperationKey(), ControlOperationTarget{
+		Kind:    ControlOperationKindRunBootstrap,
+		State:   ControlOperationStateCommitted,
+		Summary: "run bootstrap committed",
+	}); err != nil {
+		t.Fatalf("submitControlOperationTarget: %v", err)
+	}
+
+	err := Recover(repo, []string{"--run", runName})
+	if err == nil {
+		t.Fatal("Recover unexpectedly succeeded")
+	}
+	if !strings.Contains(err.Error(), "still settling") || !strings.Contains(err.Error(), "goalx wait") {
+		t.Fatalf("Recover error = %v, want settling guidance", err)
+	}
+}
+
 func TestRecoverRewritesLegacyLongTmuxLocator(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

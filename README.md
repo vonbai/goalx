@@ -60,9 +60,11 @@ If you are operating GoalX yourself:
 ```bash
 goalx run "the dashboard feels production-ready, fast, and clear on desktop and mobile"
 goalx run "the onboarding feels polished and credible for first-time users"
+goalx run --objective-file /abs/path/to/objective.txt
 ```
 
 `goalx run` is the canonical public entrypoint. Fresh runs always materialize intake and compile the success plane before the master starts working.
+Use `--objective-file` for long or multi-line objectives so shell quoting does not silently corrupt the launch command.
 
 ## Canonical Model
 
@@ -107,6 +109,16 @@ Meaning:
 - `goalx result`: read the current result surfaces
 - `goalx save`: export a saved run for later continuation
 
+Fresh runs can briefly show `launching` while bootstrap settles. In that window, prefer:
+
+```bash
+goalx status
+goalx observe
+goalx wait --run RUN master --timeout 30s
+```
+
+Do not jump to `goalx recover` just because `master` or `runtime-host` has not published stable lease facts yet.
+
 ## Write Better Goals
 
 Write the end state, not the route.
@@ -137,6 +149,8 @@ Intent biases master behavior without creating separate runtime engines.
 
 ```bash
 goalx run "goal"
+goalx run --objective "goal"
+goalx run --objective-file /abs/path/to/objective.txt
 goalx run "goal" --intent explore
 goalx run "goal" --intent explore --readonly
 goalx run "goal" --intent evolve --budget 8h
@@ -199,6 +213,7 @@ goalx budget --run RUN --clear
 Rules:
 
 - `recover` relaunches the same stopped or stranded run in place
+- a fresh run that still shows `launching` is not a recover case; wait for bootstrap to settle first
 - `save + run --from` creates a new phase from saved artifacts
 - exhausted-budget recovery requires a budget change first
 - saved-run continuation now requires canonical saved surfaces and fails fast when they are missing

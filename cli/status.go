@@ -217,6 +217,7 @@ func printStatusControlSummary(rc *RunContext) {
 	if rc == nil {
 		return
 	}
+	startup, _ := LoadRunStartupState(rc.RunDir, rc.TmuxSession)
 	unread := unreadControlInboxCount(MasterInboxPath(rc.RunDir), MasterCursorPath(rc.RunDir))
 	masterLease := controlLeaseSummary(rc.RunDir, "master")
 	runtimeHost := controlLeaseSummary(rc.RunDir, "runtime-host")
@@ -227,12 +228,14 @@ func printStatusControlSummary(rc *RunContext) {
 				masterLease = actor.Lease
 			}
 		}
-			if runtimeHost == "missing" {
-				if actor, ok := activity.Actors["runtime-host"]; ok && actor.Lease != "" {
-					runtimeHost = actor.Lease
-				}
+		if runtimeHost == "missing" {
+			if actor, ok := activity.Actors["runtime-host"]; ok && actor.Lease != "" {
+				runtimeHost = actor.Lease
 			}
+		}
 	}
+	masterLease = startupLeaseSummary(masterLease, startup)
+	runtimeHost = startupLeaseSummary(runtimeHost, startup)
 	runID := "-"
 	epoch := "-"
 	charter := "missing"
@@ -252,7 +255,9 @@ func printStatusControlSummary(rc *RunContext) {
 		}
 	}
 	fmt.Printf("Control: run_id=%s epoch=%s charter=%s run_status=%s unread_inbox=%d master_lease=%s runtime_host=%s reminders_due=%d deliveries_failed=%d\n", runID, epoch, charter, runStatus, unread, masterLease, runtimeHost, remindersDue, deliveriesFailed)
-	if missing := targetLossSummary(rc); missing != "" {
+	if summary := formatStartupSummary(startup); summary != "" {
+		fmt.Println(summary)
+	} else if missing := targetLossSummary(rc); missing != "" {
 		fmt.Printf("Targets: %s\n", missing)
 	}
 	if activity, err := LoadActivitySnapshot(ActivityPath(rc.RunDir)); err == nil && activity != nil {
@@ -332,10 +337,10 @@ func targetLossSummary(rc *RunContext) string {
 			}
 		}
 	}
-		if runtimeHostFacts, err := LoadTargetPresenceFact(rc.RunDir, rc.TmuxSession, "runtime-host"); err == nil && targetPresenceMissing(runtimeHostFacts) {
-			parts = append(parts, "runtime host missing ("+runtimeHostFacts.State+")")
-		}
-		return strings.Join(parts, " | ")
+	if runtimeHostFacts, err := LoadTargetPresenceFact(rc.RunDir, rc.TmuxSession, "runtime-host"); err == nil && targetPresenceMissing(runtimeHostFacts) {
+		parts = append(parts, "runtime host missing ("+runtimeHostFacts.State+")")
+	}
+	return strings.Join(parts, " | ")
 }
 
 func formatObjectiveIntegritySummary(runDir string) string {

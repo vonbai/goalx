@@ -50,6 +50,8 @@ Use this by default:
 
 ```bash
 goalx run "goal"
+goalx run --objective "goal"
+goalx run --objective-file /abs/path/to/objective.txt
 goalx status
 goalx observe
 goalx context
@@ -71,6 +73,13 @@ Quick meanings:
 - `save`: export a saved run for continuation
 
 Use `goalx schema <surface>` before `goalx durable write <surface> ...` when authoring machine-consumed state.
+
+Operator guidance:
+
+- use `--objective-file` for long or multi-line objectives
+- fresh runs can briefly show `launching` while bootstrap settles
+- in that startup window, prefer `status`, `observe`, or `goalx wait --run RUN master --timeout 30s`
+- do not default to `recover` unless the run is actually stopped or stranded
 
 ## Canonical Surfaces
 
@@ -129,6 +138,7 @@ goalx run --from RUN --intent explore
 Rules:
 
 - `recover` relaunches the same run in place
+- `recover` is for stopped or stranded runs, not a fresh run still showing `launching`
 - `save + run --from` creates a new phase
 - exhausted-budget recovery requires changing budget first
 

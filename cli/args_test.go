@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -152,6 +155,54 @@ func TestParseLaunchOptionsSplitsCommaDelimitedContextItems(t *testing.T) {
 				t.Fatalf("context[%d] = %q, want %q (all=%#v)", i, got[i], want[i], got)
 			}
 		}
+	}
+}
+
+func TestParseLaunchOptionsSupportsObjectiveFlag(t *testing.T) {
+	opts, err := parseLaunchOptions([]string{"--objective", "audit auth"}, goalx.ModeWorker, true)
+	if err != nil {
+		t.Fatalf("parseLaunchOptions: %v", err)
+	}
+	if opts.Objective != "audit auth" {
+		t.Fatalf("objective = %q, want audit auth", opts.Objective)
+	}
+}
+
+func TestParseLaunchOptionsSupportsObjectiveFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "objective.txt")
+	if err := os.WriteFile(path, []byte("audit auth from file\n"), 0o644); err != nil {
+		t.Fatalf("write objective file: %v", err)
+	}
+	opts, err := parseLaunchOptions([]string{"--objective-file", path}, goalx.ModeWorker, true)
+	if err != nil {
+		t.Fatalf("parseLaunchOptions: %v", err)
+	}
+	if opts.Objective != "audit auth from file" {
+		t.Fatalf("objective = %q, want objective file contents", opts.Objective)
+	}
+}
+
+func TestParseLaunchOptionsRejectsPositionalObjectiveWithObjectiveFlag(t *testing.T) {
+	_, err := parseLaunchOptions([]string{"audit auth", "--objective", "override"}, goalx.ModeWorker, true)
+	if err == nil {
+		t.Fatal("expected objective conflict error")
+	}
+	if !strings.Contains(err.Error(), "objective") {
+		t.Fatalf("parseLaunchOptions error = %v, want objective conflict", err)
+	}
+}
+
+func TestParseLaunchOptionsRejectsObjectiveFileWithObjectiveFlag(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "objective.txt")
+	if err := os.WriteFile(path, []byte("audit auth from file\n"), 0o644); err != nil {
+		t.Fatalf("write objective file: %v", err)
+	}
+	_, err := parseLaunchOptions([]string{"--objective", "inline", "--objective-file", path}, goalx.ModeWorker, true)
+	if err == nil {
+		t.Fatal("expected objective source conflict error")
+	}
+	if !strings.Contains(err.Error(), "objective") {
+		t.Fatalf("parseLaunchOptions error = %v, want objective conflict", err)
 	}
 }
 

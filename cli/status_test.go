@@ -1330,6 +1330,61 @@ func TestStatusShowsLaunchingWhenBootstrapInProgress(t *testing.T) {
 	}
 }
 
+func TestStatusShowsSettlingStateDuringStartupGrace(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	installFakePresenceTmux(t, true, "master", "%0\tmaster\n")
+
+	runName := "settling-run"
+	runDir := writeRunSpecFixture(t, repo, &goalx.Config{
+		Name:      runName,
+		Mode:      goalx.ModeWorker,
+		Objective: "ship settling",
+	})
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
+		UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(goalx.ModeWorker),
+		Active:    true,
+		StartedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+	if err := submitControlOperationTarget(runDir, RunBootstrapOperationKey(), ControlOperationTarget{
+		Kind:    ControlOperationKindRunBootstrap,
+		State:   ControlOperationStateCommitted,
+		Summary: "run bootstrap committed",
+	}); err != nil {
+		t.Fatalf("submitControlOperationTarget: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Status(repo, []string{"--run", runName}); err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "run_status=launching") {
+		t.Fatalf("status output missing launching state for settling grace:\n%s", out)
+	}
+	if !strings.Contains(out, "Startup: settling") {
+		t.Fatalf("status output missing startup settling hint:\n%s", out)
+	}
+	if strings.Contains(out, "runtime_host=missing") {
+		t.Fatalf("status output should not present runtime host as missing during settling grace:\n%s", out)
+	}
+}
+
 func TestStatusShowsOperationSummaryAndDispatchingSession(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	seedDraftObjectiveContractFixture(t, runDir)
@@ -1712,7 +1767,7 @@ func TestStatusWarnsAboutQualityDebt(t *testing.T) {
 	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
 		Version:               1,
 		ObjectiveContractHash: "sha256:objective",
-		ObligationModelHash:              "sha256:goal",
+		ObligationModelHash:   "sha256:goal",
 		Dimensions: []SuccessDimension{
 			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
 			{ID: "req-2", Kind: "outcome", Text: "ship research spine", Required: true},

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -51,6 +52,8 @@ func launchUsage(command string) string {
 	switch command {
 	case "start":
 		return `usage: goalx start "objective" [--parallel N] [--name NAME] [--master ENGINE/MODEL] [--worker ENGINE/MODEL] [--context ITEMS] [--dimension SPEC]... [--effort LEVEL] [--master-effort LEVEL] [--worker-effort LEVEL] [--budget DURATION] [--readonly] [--sub ENGINE/MODEL[:N]]
+       goalx start --objective TEXT [flags]
+       goalx start --objective-file PATH [flags]
        goalx start --config PATH
 
 advanced/manual path:
@@ -60,9 +63,11 @@ notes:
   use one comma-delimited --context value for multiple items; escape literal commas inside one item as \\,.
   selection uses detected candidate pools by default.
   --parallel is optional initial fan-out, not a permanent cap on later dispatch.
-  role defaults are separate: --master and --worker.`
+ role defaults are separate: --master and --worker.`
 	case "init":
 		return `usage: goalx init "objective" [--parallel N] [--name NAME] [--master ENGINE/MODEL] [--worker ENGINE/MODEL] [--context ITEMS] [--dimension SPEC]... [--effort LEVEL] [--master-effort LEVEL] [--worker-effort LEVEL] [--budget DURATION] [--readonly] [--sub ENGINE/MODEL[:N]]
+       goalx init --objective TEXT [flags]
+       goalx init --objective-file PATH [flags]
 
 notes:
   this is the advanced config-first path and writes the explicit manual draft .goalx/goalx.yaml.
@@ -79,13 +84,23 @@ func parseLaunchOptions(args []string, defaultMode goalx.Mode, allowModeSwitch b
 	opts := launchOptions{
 		Mode: defaultMode,
 	}
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		return opts, fmt.Errorf("usage: goalx <run|start|init> \"objective\" [flags]")
-	}
-
-	opts.Objective = args[0]
-	for i := 1; i < len(args); i++ {
+	positionalObjective := ""
+	explicitObjective := ""
+	objectiveFile := ""
+	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "--objective":
+			if i+1 >= len(args) {
+				return opts, fmt.Errorf("missing value for --objective")
+			}
+			i++
+			explicitObjective = args[i]
+		case "--objective-file":
+			if i+1 >= len(args) {
+				return opts, fmt.Errorf("missing value for --objective-file")
+			}
+			i++
+			objectiveFile = args[i]
 		case "--parallel":
 			if i+1 >= len(args) {
 				return opts, fmt.Errorf("missing value for --parallel")
@@ -184,8 +199,45 @@ func parseLaunchOptions(args []string, defaultMode goalx.Mode, allowModeSwitch b
 		case "--engine", "--model":
 			return opts, fmt.Errorf("%s is ambiguous; use --master, --worker, or --sub", args[i])
 		default:
-			return opts, fmt.Errorf("unknown flag %q", args[i])
+			if strings.HasPrefix(args[i], "-") {
+				return opts, fmt.Errorf("unknown flag %q", args[i])
+			}
+			if positionalObjective != "" {
+				return opts, fmt.Errorf("objective must be provided once")
+			}
+			positionalObjective = args[i]
 		}
+	}
+	objectiveSources := 0
+	if strings.TrimSpace(positionalObjective) != "" {
+		objectiveSources++
+	}
+	if strings.TrimSpace(explicitObjective) != "" {
+		objectiveSources++
+	}
+	if strings.TrimSpace(objectiveFile) != "" {
+		objectiveSources++
+	}
+	if objectiveSources == 0 {
+		return opts, fmt.Errorf("usage: goalx <run|start|init> \"objective\" [flags]")
+	}
+	if objectiveSources > 1 {
+		return opts, fmt.Errorf("objective must be provided by exactly one of positional objective, --objective, or --objective-file")
+	}
+	switch {
+	case strings.TrimSpace(objectiveFile) != "":
+		data, err := os.ReadFile(objectiveFile)
+		if err != nil {
+			return opts, fmt.Errorf("read --objective-file %q: %w", objectiveFile, err)
+		}
+		opts.Objective = strings.TrimSpace(string(data))
+	case strings.TrimSpace(explicitObjective) != "":
+		opts.Objective = strings.TrimSpace(explicitObjective)
+	default:
+		opts.Objective = strings.TrimSpace(positionalObjective)
+	}
+	if opts.Objective == "" {
+		return opts, fmt.Errorf("objective cannot be empty")
 	}
 	return opts, nil
 }

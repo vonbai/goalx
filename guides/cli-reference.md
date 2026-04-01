@@ -4,6 +4,8 @@
 
 ```bash
 goalx run "goal"
+goalx run --objective "goal"
+goalx run --objective-file /abs/path/to/objective.txt
 goalx run "goal" --intent explore
 goalx run "goal" --intent evolve --budget 8h
 goalx run --from RUN --intent debate
@@ -77,6 +79,7 @@ goalx budget --run NAME --extend 2h
 Rules:
 
 - `recover` relaunches the same run in place
+- fresh runs can briefly show `launching`; use `goalx status`, `goalx observe`, or `goalx wait --run NAME master --timeout 30s` before you decide to recover
 - `save + run --from` starts a new phase from saved artifacts
 - phase continuation now requires canonical saved surfaces
 

@@ -35,11 +35,18 @@ func Recover(projectRoot string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if runBootstrapStillLaunching(rc.RunDir, controlState, runtimeState) {
+	startup, err := deriveRunStartupState(rc.RunDir, rc.TmuxSession, controlState, runtimeState)
+	if err != nil {
+		return err
+	}
+	if startup.Phase == "bootstrapping" {
 		return fmt.Errorf("run %q bootstrap is still in progress; wait for start to finish before recovering it", rc.Name)
 	}
+	if startup.Phase == "settling" {
+		return fmt.Errorf("run %q is still settling; use `goalx wait --run %s master --timeout 30s` or recheck `goalx status/observe` before recovering it", rc.Name, rc.Name)
+	}
 	if SessionExistsInRun(rc.RunDir, rc.TmuxSession) {
-		return fmt.Errorf("run '%s' is already active (tmux session %s exists)", rc.Name, rc.TmuxSession)
+		return fmt.Errorf("run %q is already active (tmux session %s exists); use `goalx wait --run %s master --timeout 30s` or `goalx status/observe` instead of recovering it", rc.Name, rc.TmuxSession, rc.Name)
 	}
 	if err := requireRunBudgetAvailable(rc.RunDir, rc.Config); err != nil {
 		return err

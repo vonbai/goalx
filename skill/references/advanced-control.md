@@ -6,6 +6,8 @@ Use this only when the user explicitly wants operator-level GoalX control instea
 
 ```bash
 goalx run "goal"
+goalx run --objective "goal"
+goalx run --objective-file /abs/path/to/objective.txt
 goalx status
 goalx observe
 goalx context
@@ -26,6 +28,12 @@ goalx start --config .goalx/goalx.yaml
 ```
 
 Do not choose this path by default.
+
+Fresh-run startup guidance:
+
+- a new run can briefly show `launching` while bootstrap settles
+- during that window use `goalx status`, `goalx observe`, or `goalx wait --run RUN master --timeout 30s`
+- do not treat early missing lease facts as a recover trigger
 
 ## Intent And Continuation
 
@@ -98,6 +106,8 @@ GoalX always has builtin `repo-native` cognition. GitNexus is optional.
 ### Launch And Continue
 
 - `goalx run "goal"`
+- `goalx run --objective "goal"`
+- `goalx run --objective-file /abs/path/to/objective.txt`
 - `goalx init "goal"` then `goalx start --config .goalx/goalx.yaml`
 - `goalx run --from RUN --intent debate|implement|explore`
 

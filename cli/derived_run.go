@@ -23,6 +23,7 @@ type DerivedRunState struct {
 	GoalState       string
 	ContinuityState string
 	Status          string
+	StartupPhase    string
 	Completed       bool
 	HasLease        bool
 	HasTmuxSession  bool
@@ -58,7 +59,11 @@ func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
 
 	runtimeState, _ := LoadRunRuntimeState(RunRuntimeStatePath(runDir))
 	controlState, _ := LoadControlRunState(ControlRunStatePath(runDir))
-	bootstrapLaunching := runBootstrapStillLaunching(runDir, controlState, runtimeState)
+	startup, err := deriveRunStartupState(runDir, tmuxSession, controlState, runtimeState)
+	if err != nil {
+		return nil, err
+	}
+	state.StartupPhase = startup.Phase
 	if controlState != nil {
 		state.GoalState = strings.TrimSpace(controlState.GoalState)
 		state.ContinuityState = strings.TrimSpace(controlState.ContinuityState)
@@ -97,7 +102,7 @@ func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
 	case "dropped":
 		state.Status = "dropped"
 	default:
-		if bootstrapLaunching {
+		if startup.Launching() {
 			state.Status = "launching"
 			return state, nil
 		}
@@ -137,27 +142,6 @@ func loadDerivedRunState(projectRoot, runDir string) (*DerivedRunState, error) {
 		}
 	}
 	return state, nil
-}
-
-func runBootstrapStillLaunching(runDir string, controlState *ControlRunState, runtimeState *RunRuntimeState) bool {
-	continuityRunning := controlRunContinuityRunning(controlState, runtimeState)
-	if !continuityRunning {
-		return false
-	}
-	operations, err := LoadControlOperationsState(ControlOperationsPath(runDir))
-	if err != nil || operations == nil {
-		return false
-	}
-	op, ok := operations.Targets[RunBootstrapOperationKey()]
-	if !ok || strings.TrimSpace(op.Kind) != ControlOperationKindRunBootstrap {
-		return false
-	}
-	switch strings.TrimSpace(op.State) {
-	case ControlOperationStatePreparing, ControlOperationStateHandshaking, ControlOperationStateReconciling:
-		return true
-	default:
-		return false
-	}
 }
 
 func deriveRunIdentitySurface(runDir, fallbackObjective string) (string, int, string, string) {
@@ -247,7 +231,7 @@ func controlLeaseActive(runDir, holder string) bool {
 
 func derivedRunStatusOpen(status string) bool {
 	switch strings.TrimSpace(status) {
-	case "active", "degraded", "stranded":
+	case "active", "degraded", "stranded", "launching":
 		return true
 	default:
 		return false
