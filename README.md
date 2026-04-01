@@ -264,12 +264,23 @@ GoalX can also expose `GitNexus` as an optional graph cognition provider.
 Current behavior:
 
 - binary install is preferred
+- install: `npm install -g gitnexus@1.5.0`
+- verify: `gitnexus status`
 - pinned `npx gitnexus@1.5.0` is only marked available if a real probe succeeds
 - GoalX does not auto-install GitNexus
 - GoalX records provider facts per worktree scope, not just one global availability boolean
 - `available` does not mean `indexed` or `fresh`
 - GoalX can best-effort refresh a missing or stale GitNexus index during run lifecycle transitions
 - both master and worker scopes can receive runnable GitNexus cognition affordances when the provider is available
+
+Optional MCP setup for runtimes that support it:
+
+```bash
+codex mcp add gitnexus -- npx -y gitnexus@1.5.0 mcp
+claude mcp add gitnexus -- npx -y gitnexus@1.5.0 mcp
+```
+
+GoalX documents these commands, but does not run them for you or mutate your user-level MCP configuration.
 
 Typical outcomes in `goalx context --json`:
 

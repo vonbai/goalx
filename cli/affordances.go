@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -358,6 +359,9 @@ func buildCognitionAffordances(index *ContextIndex, target string) []AffordanceI
 			if provider.IndexState != "" {
 				fact += " index_state=" + provider.IndexState
 			}
+			if len(provider.ReadTransportsSupported) > 0 {
+				fact += " read_transports=" + strings.Join(provider.ReadTransportsSupported, ",")
+			}
 			item.Facts = append(item.Facts, fact)
 		}
 	}
@@ -373,6 +377,9 @@ func buildCognitionAffordances(index *ContextIndex, target string) []AffordanceI
 		}
 		if commands := buildGitNexusAffordanceItems(*scope, provider); len(commands) > 0 {
 			items = append(items, commands...)
+		}
+		if mcp := buildGitNexusMCPAffordanceItem(provider); mcp != nil {
+			items = append(items, *mcp)
 		}
 	}
 	return items
@@ -448,6 +455,31 @@ func buildGitNexusAffordanceItems(scope CognitionScopeState, provider CognitionP
 		},
 	)
 	return items
+}
+
+func buildGitNexusMCPAffordanceItem(provider CognitionProviderState) *AffordanceItem {
+	if len(provider.ReadTransportsSupported) == 0 || !slices.Contains(provider.ReadTransportsSupported, "mcp") {
+		return nil
+	}
+	item := &AffordanceItem{
+		ID:      "cognition-mcp",
+		Kind:    "fact",
+		Summary: "GitNexus MCP read capabilities available to runtimes that already support this provider.",
+		Facts:   []string{},
+	}
+	if provider.MCPServerCommand != "" {
+		item.Facts = append(item.Facts, "mcp_server_command="+provider.MCPServerCommand)
+	}
+	for _, tool := range provider.MCPToolsSupported {
+		item.Facts = append(item.Facts, "mcp_tool="+tool)
+	}
+	for _, resource := range provider.MCPResourcesSupported {
+		item.Facts = append(item.Facts, "mcp_resource="+resource)
+	}
+	if len(item.Facts) == 0 {
+		return nil
+	}
+	return item
 }
 
 func buildCompilerDoctrineFacts(index *ContextIndex) []string {

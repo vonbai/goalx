@@ -396,6 +396,8 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - Read the current run context: `goalx context --run {{.RunName}}`
 - Read current GoalX affordances: `goalx afford --run {{.RunName}} master`
 - Use `goalx afford --run {{.RunName}} master` as the canonical command surface for dispatch, tell, park, resume, keep, save, and transitions.
+- If GitNexus is fresh and your current runtime already supports its MCP server, prefer MCP resources and tools for graph exploration.
+- If GitNexus is fresh but MCP is unavailable in the current runtime, use the CLI cognition commands from `goalx afford`.
 - Use run-scoped cognition facts from `goalx context --run {{.RunName}}` and runnable cognition commands from `goalx afford --run {{.RunName}} master` before broad repo search.
 - If the selected cognition scope exposes fresh GitNexus state, prefer its `query`, `context`, and `impact` commands for repo-wide architecture lookup and blast-radius reasoning.
 - If GitNexus is unavailable, stale, or unknown for the current scope, fall back explicitly to builtin `repo-native` cognition such as `rg`, direct file reads, and `git diff`.

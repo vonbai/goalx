@@ -174,12 +174,16 @@ GitNexus is optional.
 Current GitNexus behavior:
 
 - binary install is preferred
+- install with `npm install -g gitnexus@1.5.0`
+- verify with `gitnexus status`
 - pinned `npx gitnexus@1.5.0` is only exposed when a real probe succeeds
 - GoalX does not auto-install it
 - GoalX records provider facts per worktree scope
 - `available` does not mean `indexed` or `fresh`
 - GoalX can best-effort refresh missing or stale GitNexus indexes during lifecycle transitions
 - both master and worker scopes can receive runnable GitNexus cognition commands through `goalx afford`
+
+If the current runtime already supports MCP, GitNexus MCP can be configured separately and then preferred for graph reads when freshness is trusted.
 
 ## Worktree And Merge Boundaries
 

@@ -38,6 +38,8 @@
 {{if .LocalValidationCommand}}- Local validation command: `{{.LocalValidationCommand}}`{{end}}
 - Read current run context: `goalx context --run {{.RunName}}`
 - Read current GoalX affordances: `goalx afford --run {{.RunName}} {{.SessionName}}`
+- If GitNexus is fresh and your current runtime already supports its MCP server, prefer MCP resources and tools for graph exploration.
+- If GitNexus is fresh but MCP is unavailable in your runtime, use the CLI cognition commands from `goalx afford`.
 - Use `goalx afford --run {{.RunName}} {{.SessionName}}` as your scope-aware cognition command surface before broad repo search.
 - If your selected cognition scope exposes fresh GitNexus state, prefer its `query`, `context`, and `impact` commands for architecture lookup and blast-radius checks in your current slice.
 - If GitNexus is unavailable, stale, or unknown for your scope, fall back explicitly to builtin `repo-native` cognition such as `rg`, direct file reads, and `git diff`.

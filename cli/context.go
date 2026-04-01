@@ -242,6 +242,12 @@ func renderContextIndex(index *ContextIndex) string {
 				if provider.IndexState != "" {
 					line += " index_state=" + provider.IndexState
 				}
+				if len(provider.ReadTransportsSupported) > 0 {
+					line += " read_transports=" + strings.Join(provider.ReadTransportsSupported, ",")
+				}
+				if provider.MCPServerCommand != "" {
+					line += " mcp_server_command=" + provider.MCPServerCommand
+				}
 				if len(provider.Capabilities) > 0 {
 					line += " capabilities=" + strings.Join(provider.Capabilities, ",")
 				}

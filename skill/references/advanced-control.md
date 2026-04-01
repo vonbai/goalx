@@ -88,11 +88,17 @@ Use explicit `--engine/--model` only when the user wants a one-off override.
 GoalX always has builtin `repo-native` cognition. GitNexus is optional.
 
 - binary install is preferred
+- install: `npm install -g gitnexus@1.5.0`
+- verify: `gitnexus status`
 - pinned `npx gitnexus@1.5.0` is exposed only when a real probe succeeds
 - GoalX does not auto-install GitNexus
 - GoalX records GitNexus per worktree scope with `index_state=missing|fresh|stale|unknown`
 - lifecycle refresh can best-effort run `gitnexus analyze` when the provider is available but the selected scope is missing or stale
 - `goalx afford [--run NAME] [master|session-N]` can expose runnable GitNexus `status`, `query`, `context`, and `impact` commands for the selected scope
+- MCP setup is optional and user-owned:
+  - `codex mcp add gitnexus -- npx -y gitnexus@1.5.0 mcp`
+  - `claude mcp add gitnexus -- npx -y gitnexus@1.5.0 mcp`
+- GoalX is MCP-aware for GitNexus, but it does not auto-install GitNexus or mutate user MCP configs
 
 ## Public Command Matrix
 

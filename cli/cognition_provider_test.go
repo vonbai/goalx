@@ -43,11 +43,20 @@ func TestDiscoverCognitionScopeIncludesRepoNativeAndPinnedNPXGitNexus(t *testing
 	if scope.Providers[0].Name != "repo-native" || scope.Providers[0].InvocationKind != "builtin" {
 		t.Fatalf("repo-native provider = %+v, want builtin", scope.Providers[0])
 	}
+	if len(scope.Providers[0].ReadTransportsSupported) != 0 || scope.Providers[0].MCPServerCommand != "" {
+		t.Fatalf("repo-native provider should not expose mcp capability facts: %+v", scope.Providers[0])
+	}
 	if scope.Providers[1].Name != "gitnexus" || scope.Providers[1].InvocationKind != "npx" || scope.Providers[1].Version != gitNexusPinnedVersion {
 		t.Fatalf("gitnexus provider = %+v, want pinned npx", scope.Providers[1])
 	}
 	if scope.Providers[1].IndexState != "missing" {
 		t.Fatalf("gitnexus index_state = %q, want missing", scope.Providers[1].IndexState)
+	}
+	if got := scope.Providers[1].ReadTransportsSupported; len(got) != 2 || got[0] != "cli" || got[1] != "mcp" {
+		t.Fatalf("gitnexus read_transports_supported = %#v, want cli+mcp", got)
+	}
+	if scope.Providers[1].MCPServerCommand == "" || len(scope.Providers[1].MCPToolsSupported) == 0 || len(scope.Providers[1].MCPResourcesSupported) == 0 {
+		t.Fatalf("gitnexus mcp capability facts missing: %+v", scope.Providers[1])
 	}
 }
 
@@ -87,6 +96,8 @@ func TestBuildContextIndexIncludesCognitionProviderFacts(t *testing.T) {
 		"## Cognition",
 		"Provider: `repo-native invocation=builtin available=true index_state=fresh",
 		"Provider: `gitnexus invocation=npx available=true version=" + gitNexusPinnedVersion + " index_state=missing",
+		"read_transports=cli,mcp",
+		"mcp_server_command=npx -y gitnexus@" + gitNexusPinnedVersion + " mcp",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered context missing %q:\n%s", want, rendered)

@@ -124,8 +124,13 @@ GoalX always exposes builtin `repo-native` cognition.
 GitNexus is optional:
 
 - binary install is preferred
+- install: `npm install -g gitnexus@1.5.0`
+- verify: `gitnexus status`
 - pinned `npx gitnexus@1.5.0` is only exposed when a real probe succeeds
 - GoalX does not auto-install it
 - `goalx context` records GitNexus per worktree scope with explicit `index_state`
 - `goalx afford [--run NAME] [master|session-N]` can expose runnable GitNexus `status`, `query`, `context`, and `impact` commands for the selected scope
 - GoalX may best-effort refresh a missing or stale GitNexus index during lifecycle transitions when the provider is available
+- optional MCP setup:
+  - `codex mcp add gitnexus -- npx -y gitnexus@1.5.0 mcp`
+  - `claude mcp add gitnexus -- npx -y gitnexus@1.5.0 mcp`

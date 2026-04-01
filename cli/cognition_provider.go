@@ -121,15 +121,19 @@ func (provider gitNexusCognitionProvider) Refresh(scopePath string) (CognitionPr
 
 func discoverGitNexusProviderState(invocationKind, scopePath, repoRoot, storagePath, headRevision string) CognitionProviderState {
 	state := CognitionProviderState{
-		Name:           "gitnexus",
-		InvocationKind: strings.TrimSpace(invocationKind),
-		Available:      false,
-		RepoRoot:       strings.TrimSpace(repoRoot),
-		StoragePath:    strings.TrimSpace(storagePath),
-		HeadRevision:   strings.TrimSpace(headRevision),
-		Capabilities:   []string{"query", "context", "impact", "detect_changes", "processes"},
-		IndexState:     "unknown",
-		CheckedAt:      time.Now().UTC().Format(time.RFC3339),
+		Name:                    "gitnexus",
+		InvocationKind:          strings.TrimSpace(invocationKind),
+		Available:               false,
+		ReadTransportsSupported: []string{"cli", "mcp"},
+		MCPServerCommand:        buildGitNexusMCPServerCommand(strings.TrimSpace(invocationKind)),
+		MCPToolsSupported:       []string{"list_repos", "query", "context", "impact", "detect_changes", "rename"},
+		MCPResourcesSupported:   []string{"gitnexus://repos", "gitnexus://repo/{name}/context", "gitnexus://repo/{name}/processes", "gitnexus://repo/{name}/process/{name}", "gitnexus://repo/{name}/clusters", "gitnexus://repo/{name}/schema"},
+		RepoRoot:                strings.TrimSpace(repoRoot),
+		StoragePath:             strings.TrimSpace(storagePath),
+		HeadRevision:            strings.TrimSpace(headRevision),
+		Capabilities:            []string{"query", "context", "impact", "detect_changes", "processes"},
+		IndexState:              "unknown",
+		CheckedAt:               time.Now().UTC().Format(time.RFC3339),
 	}
 	switch state.InvocationKind {
 	case "binary":
@@ -149,6 +153,17 @@ func discoverGitNexusProviderState(invocationKind, scopePath, repoRoot, storageP
 	state.Available = true
 	applyGitNexusStatus(&state, output)
 	return state
+}
+
+func buildGitNexusMCPServerCommand(invocationKind string) string {
+	switch strings.TrimSpace(invocationKind) {
+	case "binary":
+		return "gitnexus mcp"
+	case "npx":
+		return "npx -y gitnexus@" + gitNexusPinnedVersion + " mcp"
+	default:
+		return ""
+	}
 }
 
 func applyGitNexusStatus(state *CognitionProviderState, output string) {

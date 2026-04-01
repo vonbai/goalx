@@ -25,23 +25,27 @@ func TestSaveCognitionStateRoundTrip(t *testing.T) {
 						Capabilities:   []string{"file_search", "git_diff"},
 					},
 					{
-						Name:              "gitnexus",
-						InvocationKind:    "binary",
-						Available:         true,
-						Command:           "gitnexus",
-						Version:           "1.5.0",
-						RepoRoot:          "/abs/run-root",
-						StoragePath:       "/abs/run-root/.gitnexus",
-						RegistryName:      "demo-repo",
-						IndexState:        "stale",
-						IndexProvenance:   "seeded",
-						IndexedRevision:   "abc123",
-						HeadRevision:      "def456",
-						StaleCommits:      2,
-						LastRefreshError:  "status parse warning",
-						AnalyzedInScopeAt: "2026-04-01T00:00:00Z",
-						Capabilities:      []string{"query", "context", "impact"},
-						CheckedAt:         "2026-04-01T00:00:00Z",
+						Name:                    "gitnexus",
+						InvocationKind:          "binary",
+						Available:               true,
+						Command:                 "gitnexus",
+						Version:                 "1.5.0",
+						ReadTransportsSupported: []string{"cli", "mcp"},
+						MCPServerCommand:        "gitnexus mcp",
+						MCPToolsSupported:       []string{"list_repos", "query", "context", "impact", "detect_changes", "rename"},
+						MCPResourcesSupported:   []string{"gitnexus://repos", "gitnexus://repo/{name}/context"},
+						RepoRoot:                "/abs/run-root",
+						StoragePath:             "/abs/run-root/.gitnexus",
+						RegistryName:            "demo-repo",
+						IndexState:              "stale",
+						IndexProvenance:         "seeded",
+						IndexedRevision:         "abc123",
+						HeadRevision:            "def456",
+						StaleCommits:            2,
+						LastRefreshError:        "status parse warning",
+						AnalyzedInScopeAt:       "2026-04-01T00:00:00Z",
+						Capabilities:            []string{"query", "context", "impact"},
+						CheckedAt:               "2026-04-01T00:00:00Z",
 					},
 				},
 			},
@@ -64,6 +68,9 @@ func TestSaveCognitionStateRoundTrip(t *testing.T) {
 	got := loaded.Scopes[0].Providers[1]
 	if got.IndexState != "stale" || got.RegistryName != "demo-repo" || got.LastRefreshError == "" || got.IndexProvenance != "seeded" || got.AnalyzedInScopeAt == "" {
 		t.Fatalf("gitnexus provider = %+v, want enriched provider state facts", got)
+	}
+	if len(got.ReadTransportsSupported) != 2 || got.MCPServerCommand == "" || len(got.MCPToolsSupported) == 0 || len(got.MCPResourcesSupported) == 0 {
+		t.Fatalf("gitnexus mcp capability facts missing: %+v", got)
 	}
 }
 
@@ -156,5 +163,37 @@ func TestLoadCognitionStateRejectsInvalidIndexProvenance(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "index_provenance") {
 		t.Fatalf("LoadCognitionState error = %v, want index_provenance hint", err)
+	}
+}
+
+func TestLoadCognitionStateRejectsInvalidReadTransport(t *testing.T) {
+	path := CognitionStatePath(t.TempDir())
+	if err := os.WriteFile(path, []byte(`{
+  "version": 1,
+  "scopes": [
+    {
+      "scope": "run-root",
+      "providers": [
+        {
+          "name": "gitnexus",
+          "invocation_kind": "binary",
+          "available": true,
+          "index_state": "fresh",
+          "read_transports_supported": ["cli", "socket_magic"],
+          "capabilities": ["query"]
+        }
+      ]
+    }
+  ]
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := LoadCognitionState(path)
+	if err == nil {
+		t.Fatal("LoadCognitionState should reject invalid read transport")
+	}
+	if !strings.Contains(err.Error(), "read_transports_supported") {
+		t.Fatalf("LoadCognitionState error = %v, want read_transports_supported hint", err)
 	}
 }

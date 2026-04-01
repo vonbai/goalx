@@ -282,7 +282,7 @@ func TestBuildAffordancesIncludesRunnableGitNexusCommandsForMasterScope(t *testi
 				WorktreePath: RunWorktreePath(runDir),
 				Providers: []CognitionProviderState{
 					{Name: "repo-native", InvocationKind: "builtin", Available: true, IndexState: "fresh", Capabilities: []string{"git_diff"}},
-					{Name: "gitnexus", InvocationKind: "binary", Available: true, Command: "gitnexus", IndexState: "fresh", Capabilities: []string{"query", "context", "impact"}},
+					{Name: "gitnexus", InvocationKind: "binary", Available: true, Command: "gitnexus", IndexState: "fresh", ReadTransportsSupported: []string{"cli", "mcp"}, MCPServerCommand: "gitnexus mcp", MCPToolsSupported: []string{"list_repos", "query", "context", "impact", "detect_changes", "rename"}, MCPResourcesSupported: []string{"gitnexus://repos", "gitnexus://repo/{name}/context"}, Capabilities: []string{"query", "context", "impact"}},
 				},
 			},
 		},
@@ -311,6 +311,56 @@ func TestBuildAffordancesIncludesRunnableGitNexusCommandsForMasterScope(t *testi
 	}
 	if strings.Contains(joined, "gitnexus analyze") {
 		t.Fatalf("affordances should not expose raw gitnexus analyze because GoalX must guard provider side effects:\n%s", joined)
+	}
+}
+
+func TestBuildAffordancesIncludesGitNexusMCPFactsWithoutShellCommands(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := SaveCognitionState(CognitionStatePath(runDir), &CognitionState{
+		Version: 1,
+		Scopes: []CognitionScopeState{
+			{
+				Scope:        "run-root",
+				WorktreePath: RunWorktreePath(runDir),
+				Providers: []CognitionProviderState{
+					{Name: "repo-native", InvocationKind: "builtin", Available: true, IndexState: "fresh", Capabilities: []string{"git_diff"}},
+					{Name: "gitnexus", InvocationKind: "binary", Available: true, Command: "gitnexus", IndexState: "fresh", ReadTransportsSupported: []string{"cli", "mcp"}, MCPServerCommand: "gitnexus mcp", MCPToolsSupported: []string{"list_repos", "query", "context", "impact", "detect_changes", "rename"}, MCPResourcesSupported: []string{"gitnexus://repos", "gitnexus://repo/{name}/context", "gitnexus://repo/{name}/processes"}, Capabilities: []string{"query", "context", "impact"}},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCognitionState: %v", err)
+	}
+
+	doc, err := BuildAffordances(repo, cfg.Name, runDir, "master")
+	if err != nil {
+		t.Fatalf("BuildAffordances: %v", err)
+	}
+
+	found := false
+	for _, item := range doc.Items {
+		if item.ID != "cognition-mcp" {
+			continue
+		}
+		found = true
+		facts := strings.Join(item.Facts, "\n")
+		for _, want := range []string{
+			"mcp_server_command=gitnexus mcp",
+			"mcp_tool=query",
+			"mcp_tool=detect_changes",
+			"mcp_resource=gitnexus://repo/{name}/context",
+			"mcp_resource=gitnexus://repo/{name}/processes",
+		} {
+			if !strings.Contains(facts, want) {
+				t.Fatalf("cognition-mcp facts missing %q:\n%s", want, facts)
+			}
+		}
+		if item.Command != "" {
+			t.Fatalf("cognition-mcp should expose facts, not shell command: %+v", item)
+		}
+	}
+	if !found {
+		t.Fatalf("affordances missing cognition-mcp item: %+v", doc.Items)
 	}
 }
 
