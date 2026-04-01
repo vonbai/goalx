@@ -67,7 +67,7 @@ func Budget(projectRoot string, args []string) error {
 			return err
 		}
 		if _, err := RefreshRunGuidance(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "warning: refresh run guidance: %v\n", err)
 		}
 		if facts, err := LoadTargetPresenceFact(rc.RunDir, rc.TmuxSession, "master"); err == nil && targetPresenceAvailableForTransport(facts) {
 			dedupeKey := fmt.Sprintf("budget-change:%s", action)
