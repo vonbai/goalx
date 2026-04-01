@@ -106,7 +106,11 @@ type SavedRunLocation struct {
 }
 
 // ResolveSavedRunLocationWithConfig resolves a saved run location with fallback support.
-// Fallback order: 1) configured saved_run_root, 2) user-scoped saved root, 3) legacy project-local.
+// Fallback order:
+// 1) configured saved_run_root
+// 2) user-scoped saved root
+// 3) legacy project-local
+// 4) project registry saved-dir fallback for config drift
 func ResolveSavedRunLocationWithConfig(projectRoot, runName string, cfg *goalx.Config) (SavedRunLocation, error) {
 	runName = filepath.Clean(strings.TrimSpace(runName))
 	if runName == "" || runName == "." {
@@ -151,10 +155,21 @@ func ResolveSavedRunLocationWithConfig(projectRoot, runName string, cfg *goalx.C
 			return SavedRunLocation{}, err
 		}
 	}
+	if ref, ok, err := LookupProjectSavedRun(projectRoot, runName); err != nil {
+		return SavedRunLocation{}, err
+	} else if ok && strings.TrimSpace(ref.Dir) != "" {
+		dir := filepath.Clean(ref.Dir)
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return SavedRunLocation{Name: runName, Dir: dir, Legacy: false}, nil
+		} else if err != nil && !os.IsNotExist(err) {
+			return SavedRunLocation{}, err
+		}
+	}
 	return SavedRunLocation{}, os.ErrNotExist
 }
 
-// ListSavedRunLocationsWithConfig lists all saved run locations across configured, user-scoped, and legacy roots.
+// ListSavedRunLocationsWithConfig lists all saved run locations across configured,
+// user-scoped, legacy, and registry-discovered saved roots.
 func ListSavedRunLocationsWithConfig(projectRoot string, cfg *goalx.Config) ([]SavedRunLocation, error) {
 	seen := map[string]bool{}
 	locations := make([]SavedRunLocation, 0)
@@ -202,6 +217,28 @@ func ListSavedRunLocationsWithConfig(projectRoot string, cfg *goalx.Config) ([]S
 				Dir:    filepath.Join(root.dir, entry.Name()),
 				Legacy: root.legacy,
 			})
+		}
+	}
+	refs, err := ListProjectSavedRuns(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	for _, ref := range refs {
+		name := strings.TrimSpace(ref.Name)
+		dir := strings.TrimSpace(ref.Dir)
+		if name == "" || dir == "" || seen[name] {
+			continue
+		}
+		dir = filepath.Clean(dir)
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			seen[name] = true
+			locations = append(locations, SavedRunLocation{
+				Name:   name,
+				Dir:    dir,
+				Legacy: false,
+			})
+		} else if err != nil && !os.IsNotExist(err) {
+			return nil, err
 		}
 	}
 	sort.Slice(locations, func(i, j int) bool {
