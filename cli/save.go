@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	goalx "github.com/vonbai/goalx"
 )
 
 // Save copies run artifacts to user-scoped durable storage.
@@ -67,7 +69,7 @@ func Save(projectRoot string, args []string) error {
 		}
 	}
 
-	saveDir := SavedRunDir(rc.ProjectRoot, rc.Name)
+	saveDir := goalx.ResolveSavedRunDir(rc.ProjectRoot, rc.Name, rc.Config)
 	if err := os.MkdirAll(saveDir, 0755); err != nil {
 		return fmt.Errorf("create save dir: %w", err)
 	}
