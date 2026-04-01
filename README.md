@@ -134,6 +134,8 @@ Typical example:
 
 ```yaml
 worktree_root: .worktrees
+run_root: .goalx/runs
+saved_run_root: .goalx/saved
 
 master:
   check_interval: 2m
@@ -147,6 +149,18 @@ preferences:
 local_validation:
   command: "go build ./... && go test ./... && go vet ./..."
 ```
+
+### Project-Local Storage
+
+GoalX can store all run artifacts inside your project:
+
+| Config Key | Purpose | Default |
+|------------|---------|---------|
+| `worktree_root` | Git worktrees | `~/.goalx/runs/<project>/<run>/worktrees/` |
+| `run_root` | Active run state | `~/.goalx/runs/<project>/<run>/` |
+| `saved_run_root` | Saved runs | `~/.goalx/runs/<project>/saved/<run>/` |
+
+When configured, relative paths resolve from the project root. Configured values are snapshotted into the run spec at launch, so existing runs keep their original layout.
 
 What `worktree_root` does:
 
@@ -282,7 +296,7 @@ The merge boundaries are explicit:
 This matters because GoalX is built for parallel investigation and implementation without losing merge discipline.
 
 Default placement keeps worktrees under the run directory in `~/.goalx/runs/<project>/<run>/worktrees/`.
-If project config sets `worktree_root`, GoalX still manages the same run-root/session boundaries, but places the actual git worktrees at the configured path instead.
+If project config sets `worktree_root`, GoalX places git worktrees at the configured path instead.
 
 ## Run Architecture
 
@@ -302,7 +316,7 @@ goalx run "goal"
              └── saved run artifacts
 ```
 
-Runtime state lives under `~/.goalx/runs/<project>/<run>/` even when worktrees are relocated with `worktree_root`.
+Runtime state lives under `~/.goalx/runs/<project>/<run>/` by default, or under the configured `run_root` directory if set. Saved runs go to `~/.goalx/runs/<project>/saved/<run>/` by default, or under `saved_run_root` if configured.
 
 GoalX the framework is intentionally narrow:
 

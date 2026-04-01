@@ -37,6 +37,8 @@ Project-level shared config in `.goalx/config.yaml`:
 
 ```yaml
 worktree_root: .worktrees
+run_root: .goalx/runs
+saved_run_root: .goalx/saved
 
 master:
   check_interval: 2m
@@ -51,15 +53,52 @@ local_validation:
   command: "go build ./... && go test ./... && go vet ./..."
 ```
 
-`worktree_root` is the project-scoped switch for where GoalX creates run-root and dedicated session worktrees.
+## Project-Local Storage Roots
 
-- relative values are resolved from the project root, for example `.worktrees`
-- absolute values are allowed when you want a fixed external directory
-- the run-root worktree uses the run name directly, for example `.worktrees/demo`
-- older configured runs that used `.worktrees/demo-root` remain readable for compatibility
-- durable run state still lives under `~/.goalx/runs/...`
-- the chosen path is snapshotted into the run spec at launch, so existing runs keep their original layout
-- project-local roots are added to `.git/info/exclude` automatically so they do not dirty the source tree
+GoalX supports three project-scoped storage roots:
+
+| Config Key | Purpose | Default Location |
+|------------|---------|------------------|
+| `worktree_root` | Git worktrees for runs and sessions | `~/.goalx/runs/<project>/<run>/worktrees/` |
+| `run_root` | Active run state (status, reports, journals) | `~/.goalx/runs/<project>/<run>/` |
+| `saved_run_root` | Saved run artifacts for phase continuation | `~/.goalx/runs/<project>/saved/<run>/` |
+
+When configured, all three accept:
+
+- **Relative paths** are resolved from the project root (e.g., `.goalx/runs`)
+- **Absolute paths** are used directly (e.g., `/mnt/shared/goalx-runs`)
+- Configured values are snapshotted into the run spec at launch, so existing runs keep their original layout
+
+### Example Layout
+
+With the configuration above, a run named `demo` looks like:
+
+```text
+project-root/
+  .worktrees/
+    demo          # run-root worktree
+    demo-1        # session-1 worktree
+    demo-2        # session-2 worktree
+  .goalx/
+    runs/
+      demo/       # active run state
+        status.json
+        summary.md
+        reports/
+        sessions/
+    saved/
+      demo/       # saved run artifacts
+```
+
+### Legacy Compatibility
+
+- Runs created before `run_root` and `saved_run_root` were configured continue to use `~/.goalx/runs/...` paths
+- Resolution order for saved runs: configured root → user-scoped → legacy project-local
+- The global run registry (`~/.goalx/runs/index.json`) remains user-scoped and stores actual run directory paths
+
+### Automatic Git Exclude
+
+Project-local roots are added to `.git/info/exclude` automatically so they do not dirty the source tree.
 
 ## Principles
 
