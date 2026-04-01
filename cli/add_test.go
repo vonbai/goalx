@@ -9,6 +9,7 @@ import (
 	"time"
 
 	goalx "github.com/vonbai/goalx"
+	"github.com/vonbai/goalx/internal/slowtest"
 )
 
 func TestAddExtendsExplicitSessionsSnapshot(t *testing.T) {
@@ -82,6 +83,7 @@ local_validation:
 }
 
 func TestAddNoLongerRequiresModeFlag(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -133,6 +135,7 @@ local_validation:
 }
 
 func TestAddAttachesDimensionsWithoutReplacingDirection(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -196,6 +199,7 @@ local_validation:
 }
 
 func TestAddCreatesDimensionsStateEvenWithoutDimensionOverrides(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -251,6 +255,7 @@ local_validation:
 }
 
 func TestAddDoesNotPublishSessionRuntimeStateToCoordination(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -311,6 +316,7 @@ local_validation:
 }
 
 func TestAddWorktreeRefreshesSessionCognitionState(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -442,6 +448,7 @@ local_validation:
 }
 
 func TestAddPropagatesEngineToRenderedProtocol(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -553,6 +560,7 @@ local_validation:
 }
 
 func TestAddWorktreeUsesSessionBaseBranch(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -696,6 +704,7 @@ local_validation:
 }
 
 func TestAddWorktreeWithoutExplicitBaseRecordsRunRootParent(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -902,6 +911,7 @@ local_validation:
 }
 
 func TestAddLaunchesSessionInRunWorktreeByDefault(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -987,6 +997,7 @@ local_validation:
 }
 
 func TestAddWithWorktreeCopiesGitignoredFiles(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1039,6 +1050,7 @@ local_validation:
 }
 
 func TestAddNotifiesMasterViaInbox(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1639,6 +1651,7 @@ local_validation:
 }
 
 func TestAddRollsBackWhenLaunchHandshakeStaysBlank(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -2035,6 +2048,7 @@ func writeAddRunFixture(t *testing.T, repo, snapshot string) (string, string) {
 
 func writeReadyTmuxScript(t *testing.T, tmuxPath string) {
 	t.Helper()
+	slowtest.Require(t, "tmux/worktree add integration test")
 
 	script := `#!/bin/sh
 case "$1" in

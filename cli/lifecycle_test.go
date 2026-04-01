@@ -9,6 +9,7 @@ import (
 	"time"
 
 	goalx "github.com/vonbai/goalx"
+	"github.com/vonbai/goalx/internal/slowtest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -187,6 +188,7 @@ func TestResumeRelaunchesParkedSessionAndMarksActive(t *testing.T) {
 }
 
 func TestResumeUsesRunWorktreeWhenSessionHasNoDedicatedWorktree(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree lifecycle integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -250,6 +252,7 @@ func TestResumeUsesRunWorktreeWhenSessionHasNoDedicatedWorktree(t *testing.T) {
 }
 
 func TestResumeKeepsSessionParkedWhenLaunchHandshakeFails(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree lifecycle integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -506,6 +509,7 @@ esac
 }
 
 func TestReplaceCreatesReplacementSessionWithExplicitOverrideAndLineage(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree lifecycle integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -812,6 +816,7 @@ func TestReplaceFailsWhenRunBudgetIsExhausted(t *testing.T) {
 }
 
 func TestReplaceRestoresOldSessionAndCleansPartialStateWhenReplacementLaunchFails(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree lifecycle integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -965,6 +970,7 @@ esac
 }
 
 func TestReplaceRestoresOldSessionWhenReplacementLaunchHandshakeFails(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree lifecycle integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1261,6 +1267,7 @@ func installFakeTmux(t *testing.T, windows string) string {
 
 func installFakeTmuxWithKillAction(t *testing.T, windows, killAction string) string {
 	t.Helper()
+	slowtest.Require(t, "tmux lifecycle integration test")
 
 	fakeBin := t.TempDir()
 	logPath := filepath.Join(fakeBin, "tmux.log")

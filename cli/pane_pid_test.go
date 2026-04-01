@@ -10,10 +10,12 @@ import (
 	"time"
 
 	goalx "github.com/vonbai/goalx"
+	"github.com/vonbai/goalx/internal/slowtest"
 	"gopkg.in/yaml.v3"
 )
 
 func TestStartPersistsMasterPanePID(t *testing.T) {
+	slowtest.Require(t, "tmux pane pid integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -63,6 +65,7 @@ func TestStartPersistsMasterPanePID(t *testing.T) {
 }
 
 func TestAddPersistsPanePIDForNewSession(t *testing.T) {
+	slowtest.Require(t, "tmux pane pid integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -383,6 +386,7 @@ func TestRunLeaseLoopWritesExitAuditLog(t *testing.T) {
 
 func installFakePaneTmux(t *testing.T, hasSession bool, panePIDs string, expectDeadPID int) {
 	t.Helper()
+	slowtest.Require(t, "tmux pane pid integration test")
 
 	fakeBin := t.TempDir()
 	tmuxPath := filepath.Join(fakeBin, "tmux")
@@ -437,6 +441,7 @@ esac
 
 func installFakePresenceTmux(t *testing.T, hasSession bool, windows string, panes string) string {
 	t.Helper()
+	slowtest.Require(t, "tmux presence integration test")
 
 	fakeBin := t.TempDir()
 	logPath := filepath.Join(fakeBin, "tmux.log")

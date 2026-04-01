@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	goalx "github.com/vonbai/goalx"
+	"github.com/vonbai/goalx/internal/slowtest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -201,6 +202,7 @@ func TestStartPreservesExistingRunOnPreflightFailure(t *testing.T) {
 }
 
 func TestStartBootstrapsSuccessCompilationBeforeMasterLaunch(t *testing.T) {
+	slowtest.Require(t, "start/tmux/worktree integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -497,6 +499,7 @@ esac
 }
 
 func TestStartRefreshesRunRootCognitionState(t *testing.T) {
+	slowtest.Require(t, "start/cognition integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -657,6 +660,7 @@ func TestBootstrapStartScaffoldPublishesCanonicalLaunchingStateBeforeWorktree(t 
 }
 
 func TestStartBootstrapsIntakeArtifactByDefault(t *testing.T) {
+	slowtest.Require(t, "start/tmux/worktree integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -763,6 +767,7 @@ esac
 }
 
 func TestStartWithManualDraftPreservesImplicitSelectionPolicySnapshot(t *testing.T) {
+	slowtest.Require(t, "start/manual-draft integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1058,6 +1063,7 @@ esac
 }
 
 func TestStartFocusesNewestRun(t *testing.T) {
+	slowtest.Require(t, "start/tmux/worktree integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 

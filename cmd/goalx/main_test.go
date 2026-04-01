@@ -11,11 +11,13 @@ import (
 
 	goalx "github.com/vonbai/goalx"
 	"github.com/vonbai/goalx/cli"
+	"github.com/vonbai/goalx/internal/slowtest"
 	"gopkg.in/yaml.v3"
 )
 
 func buildGoalxBinary(t *testing.T, home string) string {
 	t.Helper()
+	slowtest.Require(t, "main command integration test")
 
 	pkgDir, err := os.Getwd()
 	if err != nil {
@@ -88,6 +90,7 @@ func writeSavedRunFixture(t *testing.T, projectRoot, runName string, cfg goalx.C
 }
 
 func TestMainSupportsResultCommand(t *testing.T) {
+	slowtest.Require(t, "main command integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	binPath := buildGoalxBinary(t, home)
@@ -134,6 +137,7 @@ func TestRootUsageOmitsRemovedGuidedFlag(t *testing.T) {
 }
 
 func TestMainInitWritesPreviewManualDraftOnEmptyProject(t *testing.T) {
+	slowtest.Require(t, "main command integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	binPath := buildGoalxBinary(t, home)
@@ -160,6 +164,7 @@ func TestMainInitWritesPreviewManualDraftOnEmptyProject(t *testing.T) {
 }
 
 func TestMainDebateWriteConfigReResolvesFromSharedConfig(t *testing.T) {
+	slowtest.Require(t, "main command integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	binPath := buildGoalxBinary(t, home)

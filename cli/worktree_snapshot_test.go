@@ -8,6 +8,7 @@ import (
 	"time"
 
 	goalx "github.com/vonbai/goalx"
+	"github.com/vonbai/goalx/internal/slowtest"
 )
 
 func seedForkedWorktreeLineageFixture(t *testing.T, repo, runDir string, cfg *goalx.Config) (string, string, string) {
@@ -195,6 +196,7 @@ func TestSnapshotWorktreesIncludesForkedLineageFacts(t *testing.T) {
 }
 
 func TestRefreshRunGuidanceWritesSessionLineageSnapshot(t *testing.T) {
+	slowtest.Require(t, "guidance/worktree lineage integration test")
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
 	seedForkedWorktreeLineageFixture(t, repo, runDir, cfg)
 
