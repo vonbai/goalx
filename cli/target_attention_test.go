@@ -313,7 +313,7 @@ func TestBuildTargetAttentionFactsIgnoresStoppedSessions(t *testing.T) {
 		Version:   1,
 		CheckedAt: time.Now().UTC().Format(time.RFC3339),
 		Targets: map[string]TargetPresenceFacts{
-			"session-1": {Target: "session-1", State: TargetPresenceWindowMissing},
+			"session-1": {Target: "session-1", State: TargetPresenceInactive},
 		},
 	}
 

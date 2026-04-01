@@ -165,14 +165,49 @@ func TestBuildTargetPresenceFactsTreatsStoppedSessionAsNotMissing(t *testing.T) 
 	}
 
 	sessionFacts := facts["session-1"]
-	if sessionFacts.State != TargetPresenceParked {
-		t.Fatalf("session state = %q, want %q for stopped session", sessionFacts.State, TargetPresenceParked)
+	if sessionFacts.State != TargetPresenceInactive {
+		t.Fatalf("session state = %q, want %q for stopped session", sessionFacts.State, TargetPresenceInactive)
 	}
 	if sessionFacts.WindowExpected {
 		t.Fatalf("stopped session should not expect a window: %+v", sessionFacts)
 	}
 	if !sessionFacts.SessionExists || sessionFacts.WindowExists || sessionFacts.PaneExists {
 		t.Fatalf("stopped session presence wrong: %+v", sessionFacts)
+	}
+}
+
+func TestRefreshActivityFactsPersistsStoppedSessionInactiveExplicitly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, _ := writeTargetPresenceFixture(t)
+	installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-1", State: "stopped", Mode: string(goalx.ModeWorker)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+
+	if err := refreshActivityFacts(runDir, repo, cfg.Name); err != nil {
+		t.Fatalf("refreshActivityFacts: %v", err)
+	}
+
+	raw, err := os.ReadFile(ActivityPath(runDir))
+	if err != nil {
+		t.Fatalf("Read activity: %v", err)
+	}
+	var snapshot map[string]any
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		t.Fatalf("Unmarshal activity: %v", err)
+	}
+	targets, ok := snapshot["targets"].(map[string]any)
+	if !ok {
+		t.Fatalf("activity snapshot missing targets: %+v", snapshot)
+	}
+	sessionFacts, ok := targets["session-1"].(map[string]any)
+	if !ok {
+		t.Fatalf("activity snapshot missing session-1 target: %+v", targets)
+	}
+	if sessionFacts["state"] != TargetPresenceInactive {
+		t.Fatalf("session-1 facts = %+v, want explicit inactive state", sessionFacts)
 	}
 }
 
