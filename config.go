@@ -29,6 +29,8 @@ type Config struct {
 	Objective       string                `yaml:"objective"`
 	Description     string                `yaml:"description,omitempty"`
 	WorktreeRoot    string                `yaml:"worktree_root,omitempty"`
+	RunRoot         string                `yaml:"run_root,omitempty"`
+	SavedRunRoot    string                `yaml:"saved_run_root,omitempty"`
 	Selection       SelectionConfig       `yaml:"selection,omitempty"`
 	Preferences     PreferencesConfig     `yaml:"preferences,omitempty"`
 	Roles           RoleDefaultsConfig    `yaml:"roles,omitempty"`
@@ -724,6 +726,46 @@ func RunDir(projectRoot, name string) string {
 	return filepath.Join(home, ".goalx", "runs", ProjectID(projectRoot), name)
 }
 
+// ResolveRunRoot resolves the run root directory from config.
+// If cfg.RunRoot is empty, returns the legacy ~/.goalx/runs/{projectID}.
+// Relative paths are resolved against projectRoot; absolute paths pass through.
+func ResolveRunRoot(projectRoot string, cfg *Config) string {
+	if cfg == nil || cfg.RunRoot == "" {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, ".goalx", "runs", ProjectID(projectRoot))
+	}
+	if filepath.IsAbs(cfg.RunRoot) {
+		return cfg.RunRoot
+	}
+	return filepath.Join(projectRoot, cfg.RunRoot)
+}
+
+// ResolveSavedRunRoot resolves the saved run root directory from config.
+// If cfg.SavedRunRoot is empty, returns the legacy ~/.goalx/runs/{projectID}/saved.
+// Relative paths are resolved against projectRoot; absolute paths pass through.
+func ResolveSavedRunRoot(projectRoot string, cfg *Config) string {
+	if cfg == nil || cfg.SavedRunRoot == "" {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, ".goalx", "runs", ProjectID(projectRoot), "saved")
+	}
+	if filepath.IsAbs(cfg.SavedRunRoot) {
+		return cfg.SavedRunRoot
+	}
+	return filepath.Join(projectRoot, cfg.SavedRunRoot)
+}
+
+// ResolveRunDir resolves the run directory for a specific run name.
+// Uses ResolveRunRoot to determine the base directory.
+func ResolveRunDir(projectRoot, runName string, cfg *Config) string {
+	return filepath.Join(ResolveRunRoot(projectRoot, cfg), runName)
+}
+
+// ResolveSavedRunDir resolves the saved run directory for a specific run name.
+// Uses ResolveSavedRunRoot to determine the base directory.
+func ResolveSavedRunDir(projectRoot, runName string, cfg *Config) string {
+	return filepath.Join(ResolveSavedRunRoot(projectRoot, cfg), runName)
+}
+
 // TmuxSessionName returns the tmux session name for a run.
 func TmuxSessionName(projectRoot, name string) string {
 	return "gx-" + ProjectID(projectRoot) + "-" + slugify(name)
@@ -762,6 +804,12 @@ func mergeConfig(base, overlay *Config) {
 	}
 	if overlay.WorktreeRoot != "" {
 		base.WorktreeRoot = overlay.WorktreeRoot
+	}
+	if overlay.RunRoot != "" {
+		base.RunRoot = overlay.RunRoot
+	}
+	if overlay.SavedRunRoot != "" {
+		base.SavedRunRoot = overlay.SavedRunRoot
 	}
 	if hasSelectionConfig(overlay.Selection) {
 		base.Selection = copySelectionConfig(overlay.Selection)
