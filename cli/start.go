@@ -294,10 +294,11 @@ func bootstrapStartWorktree(state *startRunState, metaPatch *RunMetadata) error 
 
 	copySource := state.absProjectRoot
 	if sourceBaseBranch != "" && metaPatch != nil && metaPatch.SourceRun != "" {
-		srcRunDir := goalx.RunDir(state.projectRoot, goalx.Slugify(metaPatch.SourceRun))
-		srcWT := RunWorktreePath(srcRunDir)
-		if info, statErr := os.Stat(srcWT); statErr == nil && info.IsDir() {
-			copySource = srcWT
+		if sourceRC, resolveErr := resolveLocalRun(state.projectRoot, goalx.Slugify(metaPatch.SourceRun)); resolveErr == nil {
+			srcWT := RunWorktreePath(sourceRC.RunDir)
+			if info, statErr := os.Stat(srcWT); statErr == nil && info.IsDir() {
+				copySource = srcWT
+			}
 		}
 	}
 	if err := CopyGitignoredFiles(copySource, state.runWorktree); err != nil {

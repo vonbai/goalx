@@ -209,6 +209,25 @@ func listDerivedRunStates(projectRoot string) ([]DerivedRunState, error) {
 		states = append(states, legacyStates...)
 	}
 
+	// Scan registry-discovered runs for the current project to survive config drift.
+	if reg, err := LoadGlobalRunRegistry(); err == nil && reg != nil {
+		for _, ref := range reg.Runs {
+			if ref.ProjectRoot != projectRoot || strings.TrimSpace(ref.RunDir) == "" {
+				continue
+			}
+			runDir := filepath.Clean(ref.RunDir)
+			if seenDirs[runDir] {
+				continue
+			}
+			seenDirs[runDir] = true
+			state, err := loadDerivedRunState(projectRoot, runDir)
+			if err != nil {
+				continue
+			}
+			states = append(states, *state)
+		}
+	}
+
 	sort.Slice(states, func(i, j int) bool {
 		return states[i].Name < states[j].Name
 	})

@@ -61,32 +61,33 @@ func SaveIntegrationState(path string, state *IntegrationState) error {
 }
 
 func ResolveIntegrationState(projectRoot, runName string) (*IntegrationState, error) {
-	candidates := []string{
-		filepath.Join(SavedRunDir(projectRoot, runName), "integration.json"),
-		filepath.Join(goalx.RunDir(projectRoot, runName), "integration.json"),
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("load config layers: %w", err)
 	}
-	for _, path := range candidates {
-		state, err := LoadIntegrationState(path)
-		if err != nil {
-			return nil, err
-		}
-		if state != nil {
-			return state, nil
-		}
-	}
-	return nil, nil
+	return ResolveIntegrationStateWithConfig(projectRoot, runName, &layers.Config)
 }
 
 // ResolveIntegrationStateWithConfig resolves integration state with fallback support.
-// Fallback order: 1) configured saved_run_root, 2) user-scoped saved root, 3) active run.
+// Fallback order:
+// 1) configured saved_run_root
+// 2) user-scoped saved root (when configured saved root is set)
+// 3) legacy project-local saved root
+// 4) active run directories (configured run_root first, then legacy)
 func ResolveIntegrationStateWithConfig(projectRoot, runName string, cfg *goalx.Config) (*IntegrationState, error) {
 	candidates := []string{
 		filepath.Join(goalx.ResolveSavedRunDir(projectRoot, runName, cfg), "integration.json"),
-		filepath.Join(goalx.RunDir(projectRoot, runName), "integration.json"),
 	}
-	// If config has SavedRunRoot set, also check user-scoped as fallback
 	if cfg != nil && cfg.SavedRunRoot != "" {
 		candidates = append(candidates, filepath.Join(SavedRunDir(projectRoot, runName), "integration.json"))
+	}
+	candidates = append(candidates, filepath.Join(LegacySavedRunDir(projectRoot, runName), "integration.json"))
+	if rc, err := resolveLocalRun(projectRoot, runName); err == nil && rc != nil {
+		candidates = append(candidates, filepath.Join(rc.RunDir, "integration.json"))
+	} else {
+		for _, runDir := range resolveRunDirCandidates(projectRoot, runName) {
+			candidates = append(candidates, filepath.Join(runDir, "integration.json"))
+		}
 	}
 	for _, path := range candidates {
 		state, err := LoadIntegrationState(path)

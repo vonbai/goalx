@@ -106,6 +106,16 @@ func resolveLocalRun(projectRoot, selector string) (*RunContext, error) {
 			return nil, fmt.Errorf("stat run spec: %w", err)
 		}
 	}
+
+	if ref, ok, err := LookupProjectGlobalRun(projectRoot, runName); err != nil {
+		return nil, err
+	} else if ok {
+		if _, err := os.Stat(RunSpecPath(ref.RunDir)); err == nil {
+			return buildRunContext(projectRoot, ref.RunDir, runName)
+		} else if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("stat run spec via registry: %w", err)
+		}
+	}
 	return nil, errRunNotFound
 }
 

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -216,38 +217,11 @@ func ListSavedRunLocationsWithConfig(projectRoot string, cfg *goalx.Config) ([]S
 }
 
 func ResolveSavedRunLocation(projectRoot, runName string) (SavedRunLocation, error) {
-	runName = filepath.Clean(strings.TrimSpace(runName))
-	if runName == "" || runName == "." {
-		locations, err := ListSavedRunLocations(projectRoot)
-		if err != nil {
-			return SavedRunLocation{}, err
-		}
-		switch len(locations) {
-		case 0:
-			return SavedRunLocation{}, os.ErrNotExist
-		case 1:
-			return locations[0], nil
-		default:
-			names := make([]string, 0, len(locations))
-			for _, loc := range locations {
-				names = append(names, loc.Name)
-			}
-			sort.Strings(names)
-			return SavedRunLocation{}, MultipleSavedRunsError{Names: names}
-		}
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		return SavedRunLocation{}, fmt.Errorf("load config layers: %w", err)
 	}
-
-	for _, candidate := range []SavedRunLocation{
-		{Name: runName, Dir: SavedRunDir(projectRoot, runName), Legacy: false},
-		{Name: runName, Dir: LegacySavedRunDir(projectRoot, runName), Legacy: true},
-	} {
-		if info, err := os.Stat(candidate.Dir); err == nil && info.IsDir() {
-			return candidate, nil
-		} else if err != nil && !os.IsNotExist(err) {
-			return SavedRunLocation{}, err
-		}
-	}
-	return SavedRunLocation{}, os.ErrNotExist
+	return ResolveSavedRunLocationWithConfig(projectRoot, runName, &layers.Config)
 }
 
 func ListSavedRunLocations(projectRoot string) ([]SavedRunLocation, error) {
