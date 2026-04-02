@@ -190,6 +190,100 @@ func TestHasDirtyWorktreeIgnoresCodexDir(t *testing.T) {
 	}
 }
 
+func TestHasDirtyWorktreeDoesNotIgnoreClaudeHistoryArtifacts(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	if err := os.MkdirAll(filepath.Join(repo, ".claude", "history"), 0o755); err != nil {
+		t.Fatalf("mkdir .claude/history: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".claude", "history", "session.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write .claude/history/session.json: %v", err)
+	}
+
+	dirty, err := hasDirtyWorktree(repo)
+	if err != nil {
+		t.Fatalf("hasDirtyWorktree: %v", err)
+	}
+	if !dirty {
+		t.Fatal("expected .claude/history artifact to count as dirty worktree state")
+	}
+}
+
+func TestHasDirtyWorktreeDoesNotIgnoreCodexLogArtifacts(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	if err := os.MkdirAll(filepath.Join(repo, ".codex", "logs"), 0o755); err != nil {
+		t.Fatalf("mkdir .codex/logs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".codex", "logs", "run.log"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write .codex/logs/run.log: %v", err)
+	}
+
+	dirty, err := hasDirtyWorktree(repo)
+	if err != nil {
+		t.Fatalf("hasDirtyWorktree: %v", err)
+	}
+	if !dirty {
+		t.Fatal("expected .codex/log artifact to count as dirty worktree state")
+	}
+}
+
+func TestCopyGitignoredFilesMirrorsOnlyAllowedLocalConfigFiles(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	gitDirOut, err := exec.Command("git", "-C", repo, "rev-parse", "--git-dir").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse --git-dir: %v\n%s", err, string(gitDirOut))
+	}
+	excludePath := filepath.Join(strings.TrimSpace(string(gitDirOut)), "info", "exclude")
+	if !filepath.IsAbs(excludePath) {
+		excludePath = filepath.Join(repo, excludePath)
+	}
+	if err := os.WriteFile(excludePath, []byte(".claude/\n.codex/\n"), 0o644); err != nil {
+		t.Fatalf("write exclude: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(repo, ".claude", "history"), 0o755); err != nil {
+		t.Fatalf("mkdir .claude/history: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".claude", "settings.local.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write settings.local.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".claude", "history", "session.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write session.json: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".codex", "logs"), 0o755); err != nil {
+		t.Fatalf("mkdir .codex/logs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".codex", "config.toml"), []byte("model = \"gpt-5.4\"\n"), 0o644); err != nil {
+		t.Fatalf("write config.toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".codex", "logs", "run.log"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write run.log: %v", err)
+	}
+
+	target := t.TempDir()
+	if err := CopyGitignoredFiles(repo, target); err != nil {
+		t.Fatalf("CopyGitignoredFiles: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(target, ".claude", "settings.local.json")); err != nil {
+		t.Fatalf("expected allowed claude settings to be mirrored: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".codex", "config.toml")); err != nil {
+		t.Fatalf("expected allowed codex config to be mirrored: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".claude", "history", "session.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected claude history artifact to be skipped, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".codex", "logs", "run.log")); !os.IsNotExist(err) {
+		t.Fatalf("expected codex log artifact to be skipped, stat err = %v", err)
+	}
+}
+
 func TestSnapshotWorktreeStateIgnoresGitNexusDir(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "base.txt", "base", "base commit")

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -77,7 +78,11 @@ func MergeWorktree(targetDir, branch string) error {
 			continue
 		}
 		path := parsePorcelainPath(line)
-		if isAllowedLocalConfigPath(path) {
+		allowed, allowErr := isAllowedLocalConfigStatusPath(targetDir, path)
+		if allowErr != nil {
+			return allowErr
+		}
+		if allowed {
 			continue
 		}
 		dirtyPaths = append(dirtyPaths, path)
@@ -227,11 +232,40 @@ func parsePorcelainPath(line string) string {
 }
 
 func isAllowedLocalConfigPath(path string) bool {
-	return path == ".goalx" || strings.HasPrefix(path, ".goalx/") ||
-		path == ".goalx" || strings.HasPrefix(path, ".goalx/") ||
-		path == ".gitnexus" || strings.HasPrefix(path, ".gitnexus/") ||
-		path == ".claude" || strings.HasPrefix(path, ".claude/") ||
-		path == ".codex" || strings.HasPrefix(path, ".codex/")
+	path = normalizeLocalConfigPath(path)
+	switch {
+	case path == ".goalx" || strings.HasPrefix(path, ".goalx/"):
+		return true
+	case path == ".gitnexus" || strings.HasPrefix(path, ".gitnexus/"):
+		return true
+	case path == ".claude/settings.json":
+		return true
+	case path == ".claude/settings.local.json":
+		return true
+	case path == ".codex/config.toml":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldMirrorIgnoredPath(path string) bool {
+	path = normalizeLocalConfigPath(path)
+	if path == "" {
+		return false
+	}
+	if strings.HasPrefix(path, ".claude/") || strings.HasPrefix(path, ".codex/") {
+		return isAllowedLocalConfigPath(path)
+	}
+	return true
+}
+
+func normalizeLocalConfigPath(path string) string {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "." {
+		return ""
+	}
+	return filepath.ToSlash(path)
 }
 
 // hasDirtyWorktree returns true if the project has uncommitted changes
@@ -247,12 +281,57 @@ func hasDirtyWorktree(projectRoot string) (bool, error) {
 			continue
 		}
 		path := parsePorcelainPath(line)
-		if isAllowedLocalConfigPath(path) {
+		allowed, allowErr := isAllowedLocalConfigStatusPath(projectRoot, path)
+		if allowErr != nil {
+			return false, allowErr
+		}
+		if allowed {
 			continue
 		}
 		return true, nil
 	}
 	return false, nil
+}
+
+func isAllowedLocalConfigStatusPath(projectRoot, path string) (bool, error) {
+	path = normalizeLocalConfigPath(path)
+	if path == "" {
+		return false, nil
+	}
+	if isAllowedLocalConfigPath(path) {
+		return true, nil
+	}
+	switch path {
+	case ".claude", ".codex":
+		root := filepath.Join(projectRoot, filepath.FromSlash(path))
+		allowed := true
+		err := filepath.WalkDir(root, func(current string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			rel, relErr := filepath.Rel(projectRoot, current)
+			if relErr != nil {
+				return relErr
+			}
+			if !isAllowedLocalConfigPath(rel) {
+				allowed = false
+				return io.EOF
+			}
+			return nil
+		})
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		return allowed, nil
+	default:
+		return false, nil
+	}
 }
 
 // CopyGitignoredFiles copies ignored-but-existing regular files from sourceDir
@@ -281,6 +360,9 @@ func CopyGitignoredFiles(sourceDir, targetDir string) error {
 			fmt.Fprintf(os.Stderr, "warning: skip invalid ignored path %q\n", rel)
 			continue
 		}
+		if !shouldMirrorIgnoredPath(rel) {
+			continue
+		}
 
 		sourcePath := filepath.Join(sourceDir, rel)
 		info, statErr := os.Lstat(sourcePath)
@@ -295,9 +377,6 @@ func CopyGitignoredFiles(sourceDir, targetDir string) error {
 			continue
 		}
 		if info.IsDir() {
-			if err := os.MkdirAll(filepath.Join(targetDir, rel), info.Mode().Perm()); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: mkdir mirrored ignored dir %s: %v\n", rel, err)
-			}
 			continue
 		}
 		if !info.Mode().IsRegular() {
