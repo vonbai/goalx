@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 const schemaUsage = "usage: goalx schema <surface> [--json]"
@@ -13,6 +14,9 @@ func Schema(projectRoot string, args []string) error {
 	}
 	surface, jsonOutput, err := parseSchemaArgs(args)
 	if err != nil {
+		return err
+	}
+	if err := rejectLegacyPublicSurface(surface); err != nil {
 		return err
 	}
 	contract, err := LookupDurableContract(surface)
@@ -33,6 +37,19 @@ func Schema(projectRoot string, args []string) error {
 	}
 	fmt.Print(text)
 	return nil
+}
+
+func rejectLegacyPublicSurface(surface string) error {
+	switch strings.TrimSpace(surface) {
+	case "goal":
+		return fmt.Errorf("durable surface %q is deprecated; use `obligation-model`", surface)
+	case "acceptance":
+		return fmt.Errorf("durable surface %q is deprecated; use `assurance-plan`", surface)
+	case "goal-log":
+		return fmt.Errorf("durable surface %q is deprecated; use `obligation-log`", surface)
+	default:
+		return nil
+	}
 }
 
 func parseSchemaArgs(args []string) (surface string, jsonOutput bool, err error) {

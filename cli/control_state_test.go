@@ -107,6 +107,43 @@ func TestEnsureControlStateMapsRunMetadataIntoRunIdentity(t *testing.T) {
 	}
 }
 
+func TestEnsureControlStateDoesNotInventRunIDWithoutRunMetadata(t *testing.T) {
+	runDir := t.TempDir()
+	cfg := &goalx.Config{
+		Name:      "control-state",
+		Mode:      goalx.ModeWorker,
+		Objective: "ship feature",
+		Master:    goalx.MasterConfig{Engine: "codex", Model: "codex"},
+	}
+	if err := SaveRunSpec(runDir, cfg); err != nil {
+		t.Fatalf("SaveRunSpec: %v", err)
+	}
+
+	if err := EnsureControlState(runDir); err != nil {
+		t.Fatalf("EnsureControlState: %v", err)
+	}
+
+	identity, err := LoadControlRunIdentity(ControlRunIdentityPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadControlRunIdentity: %v", err)
+	}
+	if identity == nil {
+		t.Fatal("run identity missing")
+	}
+	if identity.RunID != "" {
+		t.Fatalf("run identity run_id = %q, want empty without canonical metadata", identity.RunID)
+	}
+	if identity.Epoch != 0 {
+		t.Fatalf("run identity epoch = %d, want 0 without canonical metadata", identity.Epoch)
+	}
+	if identity.RunName != cfg.Name {
+		t.Fatalf("run identity run_name = %q, want %q", identity.RunName, cfg.Name)
+	}
+	if identity.Mode != string(cfg.Mode) {
+		t.Fatalf("run identity mode = %q, want %q", identity.Mode, cfg.Mode)
+	}
+}
+
 func TestLoadControlStateLeavesFilesUntouched(t *testing.T) {
 	runDir := t.TempDir()
 	if err := os.MkdirAll(ControlLeasesDir(runDir), 0o755); err != nil {

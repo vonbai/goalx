@@ -172,7 +172,6 @@ func seedReviewResearchRun(t *testing.T, targetFiles []string) (string, string) 
 		Name:      runName,
 		Mode:      goalx.ModeWorker,
 		Objective: "inspect",
-		Parallel:  1,
 		Target: goalx.TargetConfig{
 			Files: targetFiles,
 		},

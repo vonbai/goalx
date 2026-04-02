@@ -64,7 +64,7 @@ func buildLeaseWrappedLaunchCommandWithEnv(launchEnv map[string]string, goalxBin
 }
 
 func buildEngineExecCommand(engineCmd, prompt string) string {
-	return engineCmd + " " + shellQuote(prompt)
+	return "exec " + engineCmd + " " + shellQuote(prompt)
 }
 
 func buildLaunchEnvPrefix(env map[string]string) string {

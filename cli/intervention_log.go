@@ -10,7 +10,7 @@ import (
 )
 
 type InterventionBeforeState struct {
-	GoalHash         string `json:"goal_hash,omitempty"`
+	ObligationModelHash string `json:"obligation_model_hash,omitempty"`
 	StatusHash       string `json:"status_hash,omitempty"`
 	CoordinationHash string `json:"coordination_hash,omitempty"`
 	SuccessModelHash string `json:"success_model_hash,omitempty"`
@@ -122,10 +122,10 @@ func RecordUserTellIntervention(runDir, runName, target, message string, urgent 
 
 func captureInterventionBeforeState(runDir string) (InterventionBeforeState, error) {
 	return InterventionBeforeState{
-		GoalHash:         hashOptionalFileSHA256(GoalPath(runDir)),
-		StatusHash:       hashOptionalFileSHA256(RunStatusPath(runDir)),
-		CoordinationHash: hashOptionalFileSHA256(CoordinationPath(runDir)),
-		SuccessModelHash: hashOptionalFileSHA256(SuccessModelPath(runDir)),
+		ObligationModelHash: hashOptionalFileSHA256(CanonicalBoundaryPath(runDir)),
+		StatusHash:          hashOptionalFileSHA256(RunStatusPath(runDir)),
+		CoordinationHash:    hashOptionalFileSHA256(CoordinationPath(runDir)),
+		SuccessModelHash:    hashOptionalFileSHA256(SuccessModelPath(runDir)),
 	}, nil
 }
 
@@ -141,9 +141,39 @@ func hashOptionalFileSHA256(path string) string {
 }
 
 func parseInterventionEventBody(data []byte) (*InterventionEventBody, error) {
-	var body InterventionEventBody
-	if err := decodeStrictJSON(data, &body); err != nil {
+	type interventionEventBodyCompat struct {
+		Run                 string   `json:"run,omitempty"`
+		Message             string   `json:"message,omitempty"`
+		Urgent              bool     `json:"urgent,omitempty"`
+		AffectedTargets     []string `json:"affected_targets,omitempty"`
+		BudgetAction        string   `json:"budget_action,omitempty"`
+		BudgetBeforeSeconds int64    `json:"budget_before_seconds,omitempty"`
+		BudgetAfterSeconds  int64    `json:"budget_after_seconds,omitempty"`
+		Before struct {
+			ObligationModelHash string `json:"obligation_model_hash,omitempty"`
+			StatusHash          string `json:"status_hash,omitempty"`
+			CoordinationHash    string `json:"coordination_hash,omitempty"`
+			SuccessModelHash    string `json:"success_model_hash,omitempty"`
+		} `json:"before,omitempty"`
+	}
+	var payload interventionEventBodyCompat
+	if err := decodeStrictJSON(data, &payload); err != nil {
 		return nil, err
+	}
+	body := InterventionEventBody{
+		Run:                 payload.Run,
+		Message:             payload.Message,
+		Urgent:              payload.Urgent,
+		AffectedTargets:     payload.AffectedTargets,
+		BudgetAction:        payload.BudgetAction,
+		BudgetBeforeSeconds: payload.BudgetBeforeSeconds,
+		BudgetAfterSeconds:  payload.BudgetAfterSeconds,
+		Before: InterventionBeforeState{
+			ObligationModelHash: payload.Before.ObligationModelHash,
+			StatusHash:          payload.Before.StatusHash,
+			CoordinationHash:    payload.Before.CoordinationHash,
+			SuccessModelHash:    payload.Before.SuccessModelHash,
+		},
 	}
 	if err := validateInterventionEventBody(&body); err != nil {
 		return nil, err
@@ -176,7 +206,7 @@ func normalizeInterventionEventBody(body *InterventionEventBody) {
 	body.Message = strings.TrimSpace(body.Message)
 	body.AffectedTargets = compactStrings(body.AffectedTargets)
 	body.BudgetAction = strings.TrimSpace(body.BudgetAction)
-	body.Before.GoalHash = strings.TrimSpace(body.Before.GoalHash)
+	body.Before.ObligationModelHash = strings.TrimSpace(body.Before.ObligationModelHash)
 	body.Before.StatusHash = strings.TrimSpace(body.Before.StatusHash)
 	body.Before.CoordinationHash = strings.TrimSpace(body.Before.CoordinationHash)
 	body.Before.SuccessModelHash = strings.TrimSpace(body.Before.SuccessModelHash)

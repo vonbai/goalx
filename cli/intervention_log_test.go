@@ -14,7 +14,7 @@ func TestInterventionLogRoundTripsSuccessDeltaEvent(t *testing.T) {
 		Message:         "Do not stop at route cutover only.",
 		AffectedTargets: []string{"master"},
 		Before: InterventionBeforeState{
-			GoalHash:         "sha256:goal",
+			ObligationModelHash:         "sha256:goal",
 			StatusHash:       "sha256:status",
 			CoordinationHash: "sha256:coordination",
 			SuccessModelHash: "sha256:success",
@@ -40,7 +40,7 @@ func TestInterventionLogRoundTripsSuccessDeltaEvent(t *testing.T) {
 	if len(event.Body.AffectedTargets) != 1 || event.Body.AffectedTargets[0] != "master" {
 		t.Fatalf("affected_targets = %+v, want [master]", event.Body.AffectedTargets)
 	}
-	if event.Body.Before.GoalHash == "" || event.Body.Before.SuccessModelHash == "" {
+	if event.Body.Before.ObligationModelHash == "" || event.Body.Before.SuccessModelHash == "" {
 		t.Fatalf("before hashes = %+v, want preserved hashes", event.Body.Before)
 	}
 }
@@ -104,7 +104,7 @@ func TestTellAppendsSuccessDeltaInterventionEvent(t *testing.T) {
 	if len(event.Body.AffectedTargets) != 1 || event.Body.AffectedTargets[0] != "session-1" {
 		t.Fatalf("affected_targets = %+v, want [session-1]", event.Body.AffectedTargets)
 	}
-	if event.Body.Before.GoalHash == "" {
+	if event.Body.Before.ObligationModelHash == "" {
 		t.Fatalf("goal hash missing: %+v", event.Body.Before)
 	}
 	if event.Body.Before.StatusHash == "" {

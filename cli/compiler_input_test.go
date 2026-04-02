@@ -13,7 +13,7 @@ func TestSaveCompilerInputRoundTrip(t *testing.T) {
 		CompiledAt:           "2026-03-31T08:00:00Z",
 		CompilerVersion:      "compiler-v2",
 		ObjectiveContractRef: "objective-contract.json",
-		GoalRef:              "goal.json",
+		ObligationModelRef:              "obligation-model.json",
 		MemoryQueryRef:       "control/memory-query.json",
 		MemoryContextRef:     "control/memory-context.json",
 		PolicySourceRefs:     []string{"AGENTS.md"},
@@ -48,7 +48,7 @@ func TestLoadCompilerInputRejectsUnknownFields(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{
   "version": 1,
   "objective_contract_ref": "objective-contract.json",
-  "goal_ref": "goal.json",
+  "obligation_model_ref": "obligation-model.json",
   "source_slots": [{"slot": "repo_policy", "refs": ["AGENTS.md"]}],
   "unexpected": true
 }`), 0o644); err != nil {
@@ -69,7 +69,7 @@ func TestLoadCompilerInputRejectsInvalidSlot(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{
   "version": 1,
   "objective_contract_ref": "objective-contract.json",
-  "goal_ref": "goal.json",
+  "obligation_model_ref": "obligation-model.json",
   "source_slots": [{"slot": "mystery", "refs": ["x"]}]
 }`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)

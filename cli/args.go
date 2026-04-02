@@ -66,11 +66,8 @@ func parseStatusArgs(args []string) (runName, sessionName string, err error) {
 }
 
 func sessionCount(cfg *goalx.Config) int {
-	if len(cfg.Sessions) > 0 {
+	if cfg != nil && len(cfg.Sessions) > 0 {
 		return len(cfg.Sessions)
-	}
-	if cfg.Parallel > 0 {
-		return cfg.Parallel
 	}
 	return 1
 }

@@ -186,6 +186,9 @@ func Resume(projectRoot string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("resolve engine: %w", err)
 	}
+	if err := requireResourceAdmission(rc.RunDir, sessionIdentity.Engine, sessionIdentity.Model, "session resume"); err != nil {
+		return err
+	}
 	engineCmd := spec.Command
 	if _, err := EnsureDimensionsState(rc.RunDir); err != nil {
 		return fmt.Errorf("init dimensions state: %w", err)
@@ -215,11 +218,11 @@ func Resume(projectRoot string, args []string) error {
 		SessionCursorPath:         SessionCursorPath(rc.RunDir, sessionName),
 		WorktreePath:              wtPath,
 		ObjectiveContractPath:     ObjectiveContractPath(rc.RunDir),
-		GoalPath:                  GoalPath(rc.RunDir),
-		GoalLogPath:               GoalLogPath(rc.RunDir),
+		ObligationModelPath:       ObligationModelPath(rc.RunDir),
+		ObligationLogPath:         ObligationLogPath(rc.RunDir),
+		AssurancePlanPath:         AssurancePlanPath(rc.RunDir),
+		EvidenceLogPath:           EvidenceLogPath(rc.RunDir),
 		IdentityFencePath:         IdentityFencePath(rc.RunDir),
-		AcceptanceNotesPath:       existingProtocolPath(AcceptanceNotesPath(rc.RunDir)),
-		AcceptanceStatePath:       AcceptanceStatePath(rc.RunDir),
 		CompletionProofPath:       CompletionStatePath(rc.RunDir),
 		RunStatePath:              RunRuntimeStatePath(rc.RunDir),
 		SessionsStatePath:         SessionsRuntimeStatePath(rc.RunDir),
@@ -373,18 +376,6 @@ func Replace(projectRoot string, args []string) (err error) {
 		return fmt.Errorf("replacement requires existing workdir: %w", err)
 	}
 	dedicatedWorktree := strings.TrimSpace(oldWorktreePath) != ""
-	if dedicatedWorktree {
-		if strings.TrimSpace(oldBranch) == "" {
-			return fmt.Errorf("session %s has no recorded dedicated branch; replace requires a sealed worktree boundary", oldSessionName)
-		}
-		dirtyPaths, err := dirtyWorktreePaths(oldWorktreePath)
-		if err != nil {
-			return fmt.Errorf("inspect %s worktree: %w", oldSessionName, err)
-		}
-		if len(dirtyPaths) > 0 {
-			return fmt.Errorf("session %s dedicated worktree has uncommitted changes (%s); replace cannot hand off an unsealed worktree boundary", oldSessionName, summarizeDirtyPaths(dirtyPaths))
-		}
-	}
 
 	cleanup := &cleanupStack{}
 	replacementCommitted := false
@@ -403,11 +394,6 @@ func Replace(projectRoot string, args []string) (err error) {
 			err = errors.Join(err, fmt.Errorf("rollback replace %s: %w", oldSessionName, rollbackErr))
 		}
 	}()
-	if err := Park(projectRoot, []string{"--run", rc.Name, oldSessionName}); err != nil {
-		return err
-	}
-	oldParked = true
-
 	newNum, err := nextAvailableSessionIndex(rc.ProjectRoot, rc.RunDir, rc.Config.Name)
 	if err != nil {
 		return err
@@ -468,9 +454,6 @@ func Replace(projectRoot string, args []string) (err error) {
 		renderCfg.Sessions = append(renderCfg.Sessions, goalx.SessionConfig{})
 	}
 	renderCfg.Sessions[newNum-1] = newSession
-	if renderCfg.Parallel < len(renderCfg.Sessions) {
-		renderCfg.Parallel = len(renderCfg.Sessions)
-	}
 	effectiveSession := goalx.EffectiveSessionConfig(&renderCfg, newNum-1)
 	var target goalx.TargetConfig
 	if effectiveSession.Target != nil {
@@ -519,8 +502,27 @@ func Replace(projectRoot string, args []string) (err error) {
 	if err != nil {
 		return fmt.Errorf("resolve engine: %w", err)
 	}
+	if err := requireResourceAdmission(rc.RunDir, sessionIdentity.Engine, sessionIdentity.Model, "session replacement"); err != nil {
+		return err
+	}
 	sessionIdentity.EffectiveEffort = launchSpec.EffectiveEffort
 	sessionIdentity.LocalValidationCommand = resolveSessionLocalValidationCommand(effectiveSession)
+	if dedicatedWorktree {
+		if strings.TrimSpace(oldBranch) == "" {
+			return fmt.Errorf("session %s has no recorded dedicated branch; replace requires a sealed worktree boundary", oldSessionName)
+		}
+		dirtyPaths, err := dirtyWorktreePaths(oldWorktreePath)
+		if err != nil {
+			return fmt.Errorf("inspect %s worktree: %w", oldSessionName, err)
+		}
+		if len(dirtyPaths) > 0 {
+			return fmt.Errorf("session %s dedicated worktree has uncommitted changes (%s); replace cannot hand off an unsealed worktree boundary", oldSessionName, summarizeDirtyPaths(dirtyPaths))
+		}
+	}
+	if err := Park(projectRoot, []string{"--run", rc.Name, oldSessionName}); err != nil {
+		return err
+	}
+	oldParked = true
 	if err := SaveSessionIdentity(sessionIdentityPath, sessionIdentity); err != nil {
 		return fmt.Errorf("write session identity: %w", err)
 	}
@@ -581,11 +583,11 @@ func Replace(projectRoot string, args []string) (err error) {
 		SessionInboxPath:       ControlInboxPath(rc.RunDir, newSessionName),
 		SessionCursorPath:      SessionCursorPath(rc.RunDir, newSessionName),
 		WorktreePath:           replacementWorktreePath,
-		GoalPath:               GoalPath(rc.RunDir),
-		GoalLogPath:            GoalLogPath(rc.RunDir),
+		ObligationModelPath:    ObligationModelPath(rc.RunDir),
+		ObligationLogPath:      ObligationLogPath(rc.RunDir),
+		AssurancePlanPath:      AssurancePlanPath(rc.RunDir),
+		EvidenceLogPath:        EvidenceLogPath(rc.RunDir),
 		IdentityFencePath:      IdentityFencePath(rc.RunDir),
-		AcceptanceNotesPath:    existingProtocolPath(AcceptanceNotesPath(rc.RunDir)),
-		AcceptanceStatePath:    AcceptanceStatePath(rc.RunDir),
 		CompletionProofPath:    CompletionStatePath(rc.RunDir),
 		RunStatePath:           RunRuntimeStatePath(rc.RunDir),
 		SessionsStatePath:      SessionsRuntimeStatePath(rc.RunDir),

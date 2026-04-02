@@ -37,7 +37,7 @@ Usage:
   goalx focus   [--run NAME]           Set the default run for this project
   goalx archive [--run RUN] <session> Git tag + preserve
   goalx save    [--run RUN]           Save run artifacts to user-scoped durable storage
-  goalx verify  [--run RUN]           Run the effective acceptance command and record exit code + output
+  goalx verify  [--run RUN] [--lane quick|required|full] Run assurance scenarios or fallback acceptance checks and record evidence
   goalx durable write <surface> ...   Apply structured durable authoring payloads
   goalx schema  <surface> [--json]    Show the authoring contract for a durable surface
   goalx drop    [--run RUN]           Cleanup branch + worktree
@@ -46,13 +46,12 @@ Usage:
   goalx add     "direction" [--run RUN] [flags] Add a session to a running run
   goalx dimension [--run RUN] <session-N|all> Adjust runtime dimension assignments
   goalx tell    [--run RUN] [target] "message" Send a durable instruction to master or a session
-  goalx ack-session [--run RUN] <session>      Acknowledge latest processed session inbox entry
+  goalx ack-inbox [--run RUN] [master|session-N] Acknowledge latest processed inbox entry
   goalx wait    [--run RUN] [target] [--timeout DURATION] Block on unread inbox entries or timeout
   goalx observe [RUN]                  Capture live output from all tmux windows
 
 Notes:
   RUN selectors are local-first. Bare NAME stays in the current project; use project-id/run or run_id for cross-project targeting.
-  --parallel is optional initial fan-out, not a permanent cap on later dispatch.
   Use --master and --worker for role-specific engine/model defaults.
   goalx run --intent debate|implement requires --from RUN.
   .goalx/config.yaml is the shared project config and can set worktree_root; .goalx/goalx.yaml is an explicit manual draft only.
@@ -182,8 +181,8 @@ func runCommand(cwd, cmd string, args []string) error {
 		return cli.Dimension(cwd, args)
 	case "tell":
 		return cli.Tell(cwd, args)
-	case "ack-session":
-		return cli.AckSession(cwd, args)
+	case "ack-inbox":
+		return cli.AckInbox(cwd, args)
 	case "wait":
 		return mainWait(cwd, args)
 	case "observe":

@@ -57,6 +57,7 @@ func TestContextCommandPrintsRunIndex(t *testing.T) {
 		"## Run Identity",
 		"Objective:",
 		"Run dir:",
+		"Resource state:",
 		"Experiment ledger:",
 		"Integration state:",
 		"Closeout/evidence surface:",
@@ -70,6 +71,79 @@ func TestContextCommandPrintsRunIndex(t *testing.T) {
 		"base selector",
 		"run-root",
 	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("context output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestContextCommandShowsOnlyResourcePathWhenHealthy(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	prev := resourceReadFile
+	t.Cleanup(func() { resourceReadFile = prev })
+	resourceReadFile = func(path string) ([]byte, error) {
+		switch path {
+		case "/proc/meminfo":
+			return []byte("MemTotal: 32768 kB\nMemAvailable: 20971520 kB\nSwapTotal: 16384 kB\nSwapFree: 16384 kB\n"), nil
+		case "/proc/pressure/memory":
+			return []byte("some avg10=0 avg60=0 avg300=0 total=0\nfull avg10=0 avg60=0 avg300=0 total=0\n"), nil
+		case "/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.high", "/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.swap.current", "/sys/fs/cgroup/memory.swap.max":
+			return []byte("0\n"), nil
+		case "/sys/fs/cgroup/memory.events":
+			return []byte("low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\n"), nil
+		}
+		if strings.HasSuffix(path, "/status") {
+			return []byte("Name:\tgoalx\nVmRSS:\t1024 kB\n"), nil
+		}
+		return nil, os.ErrNotExist
+	}
+	if err := RefreshResourceState(runDir); err != nil {
+		t.Fatalf("RefreshResourceState: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Context(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Context: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Resource state:") {
+		t.Fatalf("context output missing resource state path:\n%s", out)
+	}
+	if strings.Contains(out, "## Resources") || strings.Contains(out, "Headroom bytes") {
+		t.Fatalf("context output should keep healthy resource facts compact:\n%s", out)
+	}
+}
+
+func TestContextCommandShowsAbnormalResourceSummary(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	prev := resourceReadFile
+	t.Cleanup(func() { resourceReadFile = prev })
+	resourceReadFile = func(path string) ([]byte, error) {
+		switch path {
+		case "/proc/meminfo":
+			return []byte("MemTotal: 32768 kB\nMemAvailable: 1048576 kB\nSwapTotal: 16384 kB\nSwapFree: 16384 kB\n"), nil
+		case "/proc/pressure/memory":
+			return []byte("some avg10=6 avg60=0 avg300=0 total=0\nfull avg10=0 avg60=0 avg300=0 total=0\n"), nil
+		case "/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.high", "/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.swap.current", "/sys/fs/cgroup/memory.swap.max":
+			return []byte("0\n"), nil
+		case "/sys/fs/cgroup/memory.events":
+			return []byte("low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\n"), nil
+		}
+		if strings.HasSuffix(path, "/status") {
+			return []byte("Name:\tgoalx\nVmRSS:\t1024 kB\n"), nil
+		}
+		return nil, os.ErrNotExist
+	}
+	if err := RefreshResourceState(runDir); err != nil {
+		t.Fatalf("RefreshResourceState: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Context(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Context: %v", err)
+		}
+	})
+	for _, want := range []string{"## Resources", "State: `critical`", "Reasons:"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("context output missing %q:\n%s", want, out)
 		}
@@ -90,12 +164,21 @@ func TestAffordCommandPrintsMarkdownAffordances(t *testing.T) {
 		"# GoalX Affordances",
 		"goalx context --run " + cfg.Name,
 		"goalx afford --run " + cfg.Name + " master",
+		"## resource-state",
 		"## provider-runtime",
 		"## tell",
 		"only merges committed session branch history",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("afford output missing %q:\n%s", want, out)
+		}
+	}
+	for _, unwanted := range []string{
+		"mem_available_bytes",
+		"memory_some_avg10",
+	} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("afford output should not dump raw resource telemetry %q:\n%s", unwanted, out)
 		}
 	}
 }
@@ -223,6 +306,7 @@ func TestContextCommandJsonPrintsMachineReadableIndex(t *testing.T) {
 		`"context_index_path"`,
 		`"experiments_log_path"`,
 		`"integration_state_path"`,
+		`"resource_state_path"`,
 		`"memory_query_path"`,
 		`"memory_context_path"`,
 		`"run_name": "guidance-run"`,

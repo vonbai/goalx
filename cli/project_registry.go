@@ -263,8 +263,11 @@ func ResolveDefaultRunName(projectRoot string) (string, error) {
 		return "", err
 	}
 	if reg.FocusedRun != "" {
-		// Check configured run root first, then legacy location
-		for _, runDir := range resolveRunDirCandidates(projectRoot, reg.FocusedRun) {
+		runDirs, err := resolveRunDirCandidates(projectRoot, reg.FocusedRun)
+		if err != nil {
+			return "", err
+		}
+		for _, runDir := range runDirs {
 			if state, err := loadDerivedRunState(projectRoot, runDir); err == nil && state != nil && derivedRunStatusOpen(state.Status) {
 				return reg.FocusedRun, nil
 			}
@@ -273,21 +276,23 @@ func ResolveDefaultRunName(projectRoot string) (string, error) {
 			return reg.FocusedRun, nil
 		}
 	}
-	if states, err := listDerivedRunStates(projectRoot); err == nil {
-		openNames := make([]string, 0)
-		for _, state := range states {
-			if derivedRunStatusOpen(state.Status) {
-				openNames = append(openNames, state.Name)
-			}
+	states, err := listDerivedRunStates(projectRoot)
+	if err != nil {
+		return "", err
+	}
+	openNames := make([]string, 0)
+	for _, state := range states {
+		if derivedRunStatusOpen(state.Status) {
+			openNames = append(openNames, state.Name)
 		}
-		switch len(openNames) {
-		case 1:
-			return openNames[0], nil
-		case 0:
-		default:
-			sort.Strings(openNames)
-			return "", fmt.Errorf("multiple active runs: %s (specify --run)", strings.Join(openNames, ", "))
-		}
+	}
+	switch len(openNames) {
+	case 1:
+		return openNames[0], nil
+	case 0:
+	default:
+		sort.Strings(openNames)
+		return "", fmt.Errorf("multiple active runs: %s (specify --run)", strings.Join(openNames, ", "))
 	}
 	runsDir := ProjectDataDir(projectRoot)
 	entries, err := os.ReadDir(runsDir)

@@ -15,7 +15,6 @@ type savedPhaseSource struct {
 	Run          string
 	Dir          string
 	Mode         goalx.Mode
-	Parallel     int
 	Metadata     *RunMetadata
 	Selection    *SelectionSnapshot
 	Context      goalx.ContextConfig
@@ -47,12 +46,14 @@ func loadSavedPhaseSource(projectRoot, runName string) (*savedPhaseSource, error
 	if err != nil {
 		return nil, fmt.Errorf("load saved run %q: %w", runName, err)
 	}
+	if !fileExists(ObligationModelPath(runDir)) {
+		return nil, fmt.Errorf("saved run %q is missing canonical %s", runName, ObligationModelPath(runDir))
+	}
+	if !fileExists(AssurancePlanPath(runDir)) {
+		return nil, fmt.Errorf("saved run %q is missing canonical %s", runName, AssurancePlanPath(runDir))
+	}
 	if _, err := RequireSavedRunIntake(runDir); err != nil {
 		return nil, fmt.Errorf("load saved run %q intake: %w", runName, err)
-	}
-	parallel := cfg.Parallel
-	if parallel < len(cfg.Sessions) {
-		parallel = len(cfg.Sessions)
 	}
 	context, sessionNames, err := CollectSavedPhaseContext(runDir, cfg.Context)
 	if err != nil {
@@ -67,7 +68,6 @@ func loadSavedPhaseSource(projectRoot, runName string) (*savedPhaseSource, error
 		Run:          runName,
 		Dir:          runDir,
 		Mode:         cfg.Mode,
-		Parallel:     parallel,
 		Metadata:     meta,
 		Selection:    selection,
 		Context:      context,
@@ -219,15 +219,10 @@ func buildPhaseResolveRequest(projectRoot string, phaseKind string, mode goalx.M
 	if err != nil {
 		return goalx.ResolveRequest{}, err
 	}
-	parallel := opts.Parallel
-	if parallel < 1 {
-		parallel = source.Parallel
-	}
 	req := goalx.ResolveRequest{
 		Name:                      phaseRunName(projectRoot, source.Run, phaseKind, opts.Name),
 		Mode:                      mode,
 		Objective:                 resolvePhaseObjective(phaseKind, source.Run, opts.Objective),
-		Parallel:                  parallel,
 		ClearSessions:             true,
 		MasterOverride:            masterOverride,
 		WorkerOverride:            workerOverride,
@@ -302,10 +297,7 @@ func applySessionHints(cfg *goalx.Config, hints []string) {
 	if cfg == nil {
 		return
 	}
-	size := cfg.Parallel
-	if size < len(hints) {
-		size = len(hints)
-	}
+	size := len(hints)
 	if size == 0 {
 		cfg.Sessions = nil
 		return
@@ -323,14 +315,13 @@ func applySessionDimensions(cfg *goalx.Config, dimensions []string, opts phaseOp
 	if len(dimensions) == 0 && opts.Effort == "" {
 		return
 	}
-	size := cfg.Parallel
-	if size < len(cfg.Sessions) {
-		size = len(cfg.Sessions)
+	if len(cfg.Sessions) == 0 {
+		if len(dimensions) > 0 {
+			cfg.Roles.Worker.Dimensions = append([]string(nil), dimensions...)
+		}
+		return
 	}
-	if size == 0 {
-		size = 1
-	}
-	sessions := make([]goalx.SessionConfig, size)
+	sessions := make([]goalx.SessionConfig, len(cfg.Sessions))
 	copy(sessions, cfg.Sessions)
 	for i := range sessions {
 		if len(dimensions) > 0 {

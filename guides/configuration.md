@@ -13,6 +13,9 @@ User-level selection policy in `~/.goalx/config.yaml`:
 
 ```yaml
 selection:
+  disabled_engines:
+    - aider
+
   disabled_targets:
     - claude-code/sonnet
 
@@ -20,17 +23,13 @@ selection:
     - codex/gpt-5.4
     - claude-code/opus
 
-  research_candidates:
+  worker_candidates:
+    - codex/gpt-5.4
     - claude-code/opus
-    - codex/gpt-5.4
-
-  develop_candidates:
-    - codex/gpt-5.4
     - codex/gpt-5.4-mini
 
   master_effort: high
-  research_effort: high
-  develop_effort: medium
+  worker_effort: medium
 ```
 
 Project-level shared config in `.goalx/config.yaml`:
@@ -47,7 +46,7 @@ preferences:
   worker:
     guidance: "Prefer broad evidence before proposing a fix plan."
   simple:
-    guidance: "Bias toward small, mergeable implementation slices."
+    guidance: "Use the fast path for lightweight work."
 
 local_validation:
   command: "go build ./... && go test ./... && go vet ./..."
@@ -98,7 +97,7 @@ project-root/
 
 ### Automatic Git Exclude
 
-Project-local roots are added to `.git/info/exclude` automatically so they do not dirty the source tree.
+Project-local `worktree_root`, `run_root`, and `saved_run_root` directories are added to `.git/info/exclude` automatically so they do not dirty the source tree.
 
 ## Principles
 
@@ -130,3 +129,4 @@ The recommended default path is:
 
 - user-level `selection.*` for engine/model candidate pools
 - project-level `.goalx/config.yaml` for shared repo facts such as validation, context, and check interval
+- use `master_candidates` / `worker_candidates` and `master_effort` / `worker_effort`, not the removed `research_*` / `develop_*` keys

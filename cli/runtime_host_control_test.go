@@ -1774,7 +1774,7 @@ func TestRunRuntimeHostTickAlertsRequiredFrontierGapsOnce(t *testing.T) {
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	installGuidanceFakeTmux(t, nil)
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "finish integration", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "verify remote system", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -1946,7 +1946,7 @@ func TestRunRuntimeHostTickRealertsRequiredFrontierWhenStateChanges(t *testing.T
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	installGuidanceFakeTmux(t, nil)
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "finish integration", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 		},
@@ -2035,7 +2035,7 @@ func TestRunRuntimeHostTickAlertsControlGapFacts(t *testing.T) {
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	installGuidanceFakeTmux(t, nil)
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -2140,7 +2140,7 @@ func TestRunRuntimeHostTickRealertsControlGapWhenFingerprintChanges(t *testing.T
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	installGuidanceFakeTmux(t, nil)
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -2371,7 +2371,7 @@ func TestRunRuntimeHostTickAlertsQualityDebtAndEvolveManagementGap(t *testing.T)
 	t.Setenv("TMUX_MASTER_CAPTURE", masterCapture)
 	installGuidanceFakeTmux(t, nil)
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "ship polish", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -2379,7 +2379,7 @@ func TestRunRuntimeHostTickAlertsQualityDebtAndEvolveManagementGap(t *testing.T)
 	}); err != nil {
 		t.Fatalf("SaveGoalState: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version: 1,
 		LastResult: AcceptanceResult{
 			CheckedAt: "2026-03-31T10:05:00Z",
@@ -2390,7 +2390,7 @@ func TestRunRuntimeHostTickAlertsQualityDebtAndEvolveManagementGap(t *testing.T)
 	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
 		Version:               1,
 		ObjectiveContractHash: "sha256:objective",
-		GoalHash:              "sha256:goal",
+		ObligationModelHash:              "sha256:goal",
 		Dimensions: []SuccessDimension{
 			{ID: "req-1", Kind: "goal_item", Text: "ship cockpit", Required: true},
 			{ID: "req-2", Kind: "goal_item", Text: "ship polish", Required: true},
@@ -3129,15 +3129,14 @@ func TestRunRuntimeHostTickImmediatelyNudgesMasterOnceForProviderDialog(t *testi
 func bootstrapRuntimeHostIdentityFixture(t *testing.T, runDir, repo string, cfg *goalx.Config, meta *RunMetadata) {
 	t.Helper()
 
-	goalState, err := EnsureGoalState(runDir)
-	if err != nil {
-		t.Fatalf("EnsureGoalState: %v", err)
+	if _, err := EnsureObligationModel(runDir, nil, nil, "bootstrap-objective", cfg.Objective); err != nil {
+		t.Fatalf("EnsureObligationModel: %v", err)
 	}
-	if err := EnsureGoalLog(runDir); err != nil {
-		t.Fatalf("EnsureGoalLog: %v", err)
+	if err := EnsureObligationLog(runDir); err != nil {
+		t.Fatalf("EnsureObligationLog: %v", err)
 	}
-	if _, err := EnsureAcceptanceState(runDir, cfg, goalState.Version); err != nil {
-		t.Fatalf("EnsureAcceptanceState: %v", err)
+	if _, err := EnsureAssurancePlan(runDir, NewAcceptanceState(cfg, 0)); err != nil {
+		t.Fatalf("EnsureAssurancePlan: %v", err)
 	}
 	charter, err := NewRunCharter(runDir, cfg.Name, cfg.Objective, meta)
 	if err != nil {

@@ -159,9 +159,6 @@ func Add(projectRoot string, args []string) (err error) {
 		sessionCfg.Dimensions = append([]string(nil), flagDimensions...)
 	}
 	renderCfg.Sessions[newNum-1] = sessionCfg
-	if renderCfg.Parallel < len(renderCfg.Sessions) {
-		renderCfg.Parallel = len(renderCfg.Sessions)
-	}
 	effectiveSession := goalx.EffectiveSessionConfig(&renderCfg, newNum-1)
 	var target goalx.TargetConfig
 	if effectiveSession.Target != nil {
@@ -228,6 +225,9 @@ func Add(projectRoot string, args []string) (err error) {
 	})
 	if err != nil {
 		return fmt.Errorf("resolve engine: %w", err)
+	}
+	if err := requireResourceAdmission(rc.RunDir, engine, model, "session launch"); err != nil {
+		return err
 	}
 	engineCmd := launchSpec.Command
 	sessionIdentity.EffectiveEffort = launchSpec.EffectiveEffort
@@ -335,11 +335,11 @@ func Add(projectRoot string, args []string) (err error) {
 		SessionInboxPath:          ControlInboxPath(rc.RunDir, sName),
 		SessionCursorPath:         SessionCursorPath(rc.RunDir, sName),
 		WorktreePath:              wtPath,
-		GoalPath:                  GoalPath(rc.RunDir),
-		GoalLogPath:               GoalLogPath(rc.RunDir),
+		ObligationModelPath:       ObligationModelPath(rc.RunDir),
+		ObligationLogPath:         ObligationLogPath(rc.RunDir),
+		AssurancePlanPath:         AssurancePlanPath(rc.RunDir),
+		EvidenceLogPath:           EvidenceLogPath(rc.RunDir),
 		IdentityFencePath:         IdentityFencePath(rc.RunDir),
-		AcceptanceNotesPath:       existingProtocolPath(AcceptanceNotesPath(rc.RunDir)),
-		AcceptanceStatePath:       AcceptanceStatePath(rc.RunDir),
 		CompletionProofPath:       CompletionStatePath(rc.RunDir),
 		RunStatePath:              RunRuntimeStatePath(rc.RunDir),
 		SessionsStatePath:         SessionsRuntimeStatePath(rc.RunDir),

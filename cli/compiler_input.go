@@ -21,7 +21,7 @@ type CompilerInput struct {
 	CompiledAt           string              `json:"compiled_at,omitempty"`
 	CompilerVersion      string              `json:"compiler_version,omitempty"`
 	ObjectiveContractRef string              `json:"objective_contract_ref"`
-	GoalRef              string              `json:"goal_ref"`
+	ObligationModelRef   string              `json:"obligation_model_ref"`
 	MemoryQueryRef       string              `json:"memory_query_ref,omitempty"`
 	MemoryContextRef     string              `json:"memory_context_ref,omitempty"`
 	PolicySourceRefs     []string            `json:"policy_source_refs,omitempty"`
@@ -72,17 +72,41 @@ func SaveCompilerInput(path string, input *CompilerInput) error {
 }
 
 func parseCompilerInput(data []byte) (*CompilerInput, error) {
-	var input CompilerInput
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return nil, durableSchemaHintError(DurableSurfaceCompilerInput, fmt.Errorf("compiler input is empty"))
 	}
+	type compilerInputCompat struct {
+		Version              int                 `json:"version"`
+		CompiledAt           string              `json:"compiled_at,omitempty"`
+		CompilerVersion      string              `json:"compiler_version,omitempty"`
+		ObjectiveContractRef string              `json:"objective_contract_ref"`
+		ObligationModelRef   string              `json:"obligation_model_ref"`
+		MemoryQueryRef       string              `json:"memory_query_ref,omitempty"`
+		MemoryContextRef     string              `json:"memory_context_ref,omitempty"`
+		PolicySourceRefs     []string            `json:"policy_source_refs,omitempty"`
+		SelectedPriorRefs    []string            `json:"selected_prior_refs,omitempty"`
+		SourceSlots          []CompilerInputSlot `json:"source_slots,omitempty"`
+	}
+	var payload compilerInputCompat
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
+	if err := decoder.Decode(&payload); err != nil {
 		return nil, durableSchemaHintError(DurableSurfaceCompilerInput, err)
 	}
 	if err := ensureJSONEOF(decoder); err != nil {
 		return nil, durableSchemaHintError(DurableSurfaceCompilerInput, err)
+	}
+	input := CompilerInput{
+		Version:              payload.Version,
+		CompiledAt:           payload.CompiledAt,
+		CompilerVersion:      payload.CompilerVersion,
+		ObjectiveContractRef: payload.ObjectiveContractRef,
+		ObligationModelRef:   strings.TrimSpace(payload.ObligationModelRef),
+		MemoryQueryRef:       payload.MemoryQueryRef,
+		MemoryContextRef:     payload.MemoryContextRef,
+		PolicySourceRefs:     payload.PolicySourceRefs,
+		SelectedPriorRefs:    payload.SelectedPriorRefs,
+		SourceSlots:          payload.SourceSlots,
 	}
 	if err := validateCompilerInput(&input); err != nil {
 		return nil, durableSchemaHintError(DurableSurfaceCompilerInput, err)
@@ -101,8 +125,8 @@ func validateCompilerInput(input *CompilerInput) error {
 	if strings.TrimSpace(input.ObjectiveContractRef) == "" {
 		return fmt.Errorf("compiler input objective_contract_ref is required")
 	}
-	if strings.TrimSpace(input.GoalRef) == "" {
-		return fmt.Errorf("compiler input goal_ref is required")
+	if strings.TrimSpace(input.ObligationModelRef) == "" {
+		return fmt.Errorf("compiler input obligation_model_ref is required")
 	}
 	seenSlots := make(map[string]struct{}, len(input.SourceSlots))
 	for _, slot := range input.SourceSlots {
@@ -128,7 +152,7 @@ func normalizeCompilerInput(input *CompilerInput) {
 	input.CompiledAt = strings.TrimSpace(input.CompiledAt)
 	input.CompilerVersion = strings.TrimSpace(input.CompilerVersion)
 	input.ObjectiveContractRef = strings.TrimSpace(input.ObjectiveContractRef)
-	input.GoalRef = strings.TrimSpace(input.GoalRef)
+	input.ObligationModelRef = strings.TrimSpace(input.ObligationModelRef)
 	input.MemoryQueryRef = strings.TrimSpace(input.MemoryQueryRef)
 	input.MemoryContextRef = strings.TrimSpace(input.MemoryContextRef)
 	input.PolicySourceRefs = compactStrings(input.PolicySourceRefs)

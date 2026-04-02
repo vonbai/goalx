@@ -273,7 +273,7 @@ func TestBuildActivitySnapshotIncludesCoverageFacts(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1", "session-2"})
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "first open item", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "second open item", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -526,7 +526,7 @@ func TestBuildActivitySnapshotSerializesCoverageUnknownExplicitly(t *testing.T) 
 	t.Setenv("TMUX_SESSION1_CAPTURE", masterCapture)
 	installGuidanceFakeTmux(t, nil)
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship feature", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 		},

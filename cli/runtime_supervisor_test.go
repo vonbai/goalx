@@ -3,6 +3,8 @@ package cli
 import (
 	"testing"
 	"time"
+
+	"github.com/vonbai/goalx/internal/slowtest"
 )
 
 type runtimeSupervisorStub struct {
@@ -98,6 +100,7 @@ func (s *runtimeHostLauncherStub) Inspect(runDir string, host *RunHostState) (*R
 
 func stubRuntimeSupervisor(t *testing.T) *runtimeSupervisorStub {
 	t.Helper()
+	slowtest.Require(t, "runtime supervisor integration test")
 	origRuntimeSupervisor := runtimeSupervisor
 	stub := &runtimeSupervisorStub{}
 	runtimeSupervisor = stub
@@ -107,6 +110,7 @@ func stubRuntimeSupervisor(t *testing.T) *runtimeSupervisorStub {
 
 func stubRuntimeSupervisorWithError(t *testing.T, err error) *runtimeSupervisorStub {
 	t.Helper()
+	slowtest.Require(t, "runtime supervisor integration test")
 	origRuntimeSupervisor := runtimeSupervisor
 	stub := &runtimeSupervisorStub{startErr: err, stopErr: err}
 	runtimeSupervisor = stub

@@ -15,7 +15,7 @@ type SuccessModel struct {
 	CompiledAt            string             `json:"compiled_at,omitempty"`
 	CompilerVersion       string             `json:"compiler_version,omitempty"`
 	ObjectiveContractHash string             `json:"objective_contract_hash"`
-	GoalHash              string             `json:"goal_hash"`
+	ObligationModelHash   string             `json:"obligation_model_hash"`
 	Dimensions            []SuccessDimension `json:"dimensions"`
 	AntiGoals             []SuccessAntiGoal  `json:"anti_goals,omitempty"`
 	CloseoutRequirements  []string           `json:"closeout_requirements,omitempty"`
@@ -72,17 +72,37 @@ func SaveSuccessModel(path string, model *SuccessModel) error {
 }
 
 func parseSuccessModel(data []byte) (*SuccessModel, error) {
-	var model SuccessModel
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return nil, durableSchemaHintError(DurableSurfaceSuccessModel, fmt.Errorf("success model is empty"))
 	}
+	type successModelCompat struct {
+		Version               int                `json:"version"`
+		CompiledAt            string             `json:"compiled_at,omitempty"`
+		CompilerVersion       string             `json:"compiler_version,omitempty"`
+		ObjectiveContractHash string             `json:"objective_contract_hash"`
+		ObligationModelHash   string             `json:"obligation_model_hash"`
+		Dimensions            []SuccessDimension `json:"dimensions"`
+		AntiGoals             []SuccessAntiGoal  `json:"anti_goals,omitempty"`
+		CloseoutRequirements  []string           `json:"closeout_requirements,omitempty"`
+	}
+	var payload successModelCompat
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&model); err != nil {
+	if err := decoder.Decode(&payload); err != nil {
 		return nil, durableSchemaHintError(DurableSurfaceSuccessModel, err)
 	}
 	if err := ensureJSONEOF(decoder); err != nil {
 		return nil, durableSchemaHintError(DurableSurfaceSuccessModel, err)
+	}
+	model := SuccessModel{
+		Version:               payload.Version,
+		CompiledAt:            payload.CompiledAt,
+		CompilerVersion:       payload.CompilerVersion,
+		ObjectiveContractHash: payload.ObjectiveContractHash,
+		ObligationModelHash:   strings.TrimSpace(payload.ObligationModelHash),
+		Dimensions:            payload.Dimensions,
+		AntiGoals:             payload.AntiGoals,
+		CloseoutRequirements:  payload.CloseoutRequirements,
 	}
 	if err := validateSuccessModelInput(&model); err != nil {
 		return nil, durableSchemaHintError(DurableSurfaceSuccessModel, err)
@@ -101,8 +121,8 @@ func validateSuccessModelInput(model *SuccessModel) error {
 	if strings.TrimSpace(model.ObjectiveContractHash) == "" {
 		return fmt.Errorf("success model objective_contract_hash is required")
 	}
-	if strings.TrimSpace(model.GoalHash) == "" {
-		return fmt.Errorf("success model goal_hash is required")
+	if strings.TrimSpace(model.ObligationModelHash) == "" {
+		return fmt.Errorf("success model obligation_model_hash is required")
 	}
 	if len(model.Dimensions) == 0 {
 		return fmt.Errorf("success model dimensions are required")
@@ -146,7 +166,7 @@ func normalizeSuccessModel(model *SuccessModel) {
 	model.CompiledAt = strings.TrimSpace(model.CompiledAt)
 	model.CompilerVersion = strings.TrimSpace(model.CompilerVersion)
 	model.ObjectiveContractHash = strings.TrimSpace(model.ObjectiveContractHash)
-	model.GoalHash = strings.TrimSpace(model.GoalHash)
+	model.ObligationModelHash = strings.TrimSpace(model.ObligationModelHash)
 	if model.Dimensions == nil {
 		model.Dimensions = []SuccessDimension{}
 	}

@@ -31,6 +31,9 @@ func TestBuildContextIndexIncludesRunAnchors(t *testing.T) {
 	if index.CharterPath != RunCharterPath(runDir) {
 		t.Fatalf("charter_path = %q, want %q", index.CharterPath, RunCharterPath(runDir))
 	}
+	if index.ObligationModelPath != ObligationModelPath(runDir) {
+		t.Fatalf("obligation_model_path = %q, want %q", index.ObligationModelPath, ObligationModelPath(runDir))
+	}
 	if index.TransportFactsPath != TransportFactsPath(runDir) {
 		t.Fatalf("transport_facts_path = %q, want %q", index.TransportFactsPath, TransportFactsPath(runDir))
 	}
@@ -42,6 +45,34 @@ func TestBuildContextIndexIncludesRunAnchors(t *testing.T) {
 	}
 	if index.Master.Engine != "codex" || index.Master.Model != "gpt-5.4" {
 		t.Fatalf("master = %+v, want codex/gpt-5.4", index.Master)
+	}
+}
+
+func TestBuildContextIndexRendersObligationModelAsCanonicalBoundary(t *testing.T) {
+	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
+	if err := SaveObligationModel(ObligationModelPath(runDir), &ObligationModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:objective",
+		Required: []ObligationItem{
+			{ID: "obl-1", Text: "ship it", Kind: "outcome", CoversClauses: []string{"ucl-1"}, AssuranceRequired: true},
+		},
+	}); err != nil {
+		t.Fatalf("SaveObligationModel: %v", err)
+	}
+
+	index, err := BuildContextIndex(repo, cfg.Name, runDir)
+	if err != nil {
+		t.Fatalf("BuildContextIndex: %v", err)
+	}
+	rendered := renderContextIndex(index)
+	for _, want := range []string{
+		"Obligation model: `" + ObligationModelPath(runDir) + "`",
+		"## Obligation Boundary",
+		"Required by kind: `outcome=1`",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered context missing %q:\n%s", want, rendered)
+		}
 	}
 }
 
@@ -295,7 +326,7 @@ func TestBuildContextIndexIncludesGoalBoundarySummary(t *testing.T) {
 			{ID: "opt-1", Text: "nice to have polish", Source: goalItemSourceMaster, Role: goalItemRoleGuardrail, State: goalItemStateOpen},
 		},
 	}
-	if err := SaveGoalState(GoalPath(runDir), state); err != nil {
+	if err := writeBoundaryFixture(t, runDir, state); err != nil {
 		t.Fatalf("SaveGoalState: %v", err)
 	}
 
@@ -339,11 +370,11 @@ func TestBuildContextIndexIncludesGoalBoundarySummary(t *testing.T) {
 
 	rendered := renderContextIndex(index)
 	for _, want := range []string{
-		"## Goal Boundary",
+		"## Obligation Boundary",
 		"Required items: `3`",
 		"Optional items: `1`",
 		"Required by source: `master=1, user=2`",
-		"Required by role: `enabler=1, outcome=1, proof=1`",
+		"Required by kind: `enabler=1, outcome=1, proof=1`",
 		"Required by state: `claimed=1, open=1, waived=1`",
 	} {
 		if !strings.Contains(rendered, want) {
@@ -377,7 +408,7 @@ func TestBuildContextIndexIncludesObjectiveIntegritySummary(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveObjectiveContract: %v", err)
 	}
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{
@@ -393,7 +424,7 @@ func TestBuildContextIndexIncludesObjectiveIntegritySummary(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveGoalState: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version:     2,
 		GoalVersion: 1,
 		Checks: []AcceptanceCheck{
@@ -425,8 +456,8 @@ func TestBuildContextIndexIncludesObjectiveIntegritySummary(t *testing.T) {
 		"Objective contract",
 		"## Objective Contract",
 		"State: `locked`",
-		"Goal clause coverage: `1/1`",
-		"Acceptance clause coverage: `1/1`",
+		"Obligation clause coverage: `1/1`",
+		"Assurance clause coverage: `1/1`",
 		"Integrity OK: `true`",
 	} {
 		if !strings.Contains(rendered, want) {
@@ -437,7 +468,7 @@ func TestBuildContextIndexIncludesObjectiveIntegritySummary(t *testing.T) {
 
 func TestContextIndexIncludesQualityDebtSummary(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -464,7 +495,7 @@ func TestContextIndexIncludesQualityDebtSummary(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version:     2,
 		GoalVersion: 1,
 		Checks: []AcceptanceCheck{
@@ -477,7 +508,7 @@ func TestContextIndexIncludesQualityDebtSummary(t *testing.T) {
 	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
 		Version:               1,
 		ObjectiveContractHash: "sha256:objective",
-		GoalHash:              "sha256:goal",
+		ObligationModelHash:              "sha256:goal",
 		Dimensions: []SuccessDimension{
 			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
 			{ID: "req-2", Kind: "outcome", Text: "ship research spine", Required: true},
@@ -546,7 +577,7 @@ func TestBuildContextIndexIncludesRunStatusAcceptanceAndCloseoutSummary(t *testi
 	if err := os.WriteFile(evidencePath, []byte("evidence\n"), 0o644); err != nil {
 		t.Fatalf("write evidence: %v", err)
 	}
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{
@@ -561,7 +592,7 @@ func TestBuildContextIndexIncludesRunStatusAcceptanceAndCloseoutSummary(t *testi
 	}); err != nil {
 		t.Fatalf("SaveGoalState: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version:     2,
 		GoalVersion: 1,
 		Checks: []AcceptanceCheck{
@@ -570,7 +601,7 @@ func TestBuildContextIndexIncludesRunStatusAcceptanceAndCloseoutSummary(t *testi
 		LastResult: AcceptanceResult{
 			CheckedAt:    "2026-03-28T10:00:00Z",
 			ExitCode:     intPtr(0),
-			EvidencePath: AcceptanceEvidencePath(runDir),
+			EvidencePath: filepath.Join(runDir, "evidence-last.txt"),
 		},
 	}); err != nil {
 		t.Fatalf("SaveAcceptanceState: %v", err)
@@ -609,10 +640,10 @@ func TestBuildContextIndexIncludesRunStatusAcceptanceAndCloseoutSummary(t *testi
 		t.Fatalf("StatusOpenRequiredIDsRecorded = true, want false when status omitted IDs: %+v", index.RunStatus)
 	}
 	if index.Acceptance == nil {
-		t.Fatal("acceptance summary missing")
+		t.Fatal("assurance summary missing")
 	}
 	if index.Acceptance.ActiveCheckCount != 1 || index.Acceptance.LastExitCode == nil || *index.Acceptance.LastExitCode != 0 {
-		t.Fatalf("acceptance summary = %+v, want one passing active check", index.Acceptance)
+		t.Fatalf("assurance summary = %+v, want one passing scenario/check", index.Acceptance)
 	}
 	if index.Closeout == nil {
 		t.Fatal("closeout summary missing")
@@ -625,11 +656,11 @@ func TestBuildContextIndexIncludesRunStatusAcceptanceAndCloseoutSummary(t *testi
 	for _, want := range []string{
 		"## Run Status",
 		"Required remaining (status): `0`",
-		"Required remaining (goal): `0`",
+		"Required remaining (boundary): `0`",
 		"Required remaining match: `true`",
 		"Status open required IDs recorded: `false`",
-		"## Acceptance",
-		"Active checks: `1`",
+		"## Assurance",
+		"Scenarios: `1`",
 		"Last exit code: `0`",
 		"## Closeout",
 		"Summary exists: `true`",
@@ -739,10 +770,7 @@ func TestBuildContextIndexIncludesExecutionSurfaceFacts(t *testing.T) {
 		"Mergeable output surface: `false`",
 		"Requested effort: `high`",
 		"Effective effort: `high`",
-		"role: `develop`",
-		"surface: `durable_session`",
-		"worktree kind: `dedicated`",
-		"mergeable output: `true`",
+		"- session-1 (worker role=develop codex/gpt-5.4-mini worktree=dedicated)",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered context missing %q:\n%s", want, rendered)

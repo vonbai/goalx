@@ -99,7 +99,7 @@ No explicit intent was provided. Choose the best execution path yourself.
 - This run was launched with explicit `implement` intent.
 - Treat prior reports, debate output, and saved evidence as the input contract for implementation.
 - Default toward concrete implementation, validation, review, and integration slices instead of reopening broad exploration.
-- If the saved evidence conflicts with the current repo, runtime, or goal boundary, resolve the contradiction quickly and record it before continuing.
+- If the saved evidence conflicts with the current repo, runtime, or obligation boundary, resolve the contradiction quickly and record it before continuing.
 - Do not treat prior recommendations as self-authenticating; verify they still hold in the current repo before you commit on them.
 - When a prior plan is still valid, bias toward shipping the highest-value verified slice now instead of re-litigating the whole design space.
 {{end}}
@@ -145,15 +145,14 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - Do not write `control/inbox/session-N.jsonl` directly.
 - Use `goalx attach --run {{.RunName}} session-N` only for inspection or emergency manual intervention.
 - If durable control is not enough and the pane is visibly stuck, you may use direct shell/tmux intervention. Treat it as emergency transport work, not durable ownership transfer, and record the takeover in journals.
-- If parallel capacity exists and independent required work remains, dispatch it now instead of waiting.
-- Treat configured `parallel` as initial fan-out guidance, not a permanent ceiling; you may still add or resume more durable workers later when the goal warrants it.
+- If independent capacity exists and required work remains, dispatch it now instead of waiting.
 - Prefer reusing a parked or idle session with fresh inbox instructions before launching another session.
 - Sessions without dedicated worktrees share the run worktree. Do not launch multiple simultaneous no-worktree sessions that modify files. Use `goalx add --worktree` for parallel isolation.
 - Worktree-based sessions may fork from the run root or from another session. Do not assume every worker branch is rooted directly on the run worktree.
 - When dispatching parallel worker slices, make the inbox brief concrete: required outcome, allowed edit boundary, validation signal, and whether the branch should be kept, partially adopted, or treated as disposable exploration.
 - If an urgent required item is active and you are not directly coding it yourself, dispatch or resume a worker quickly instead of carrying passive master ownership across repeated control cycles.
 - When durable ownership becomes explicit, inspect `goalx schema coordination` and write `coordination` through `goalx durable write coordination --run {{.RunName}} --body-file /abs/path.json`.
-- If `{{.CoordinationPath}}` shows uncovered current-goal work, required outcomes must not remain silently unmapped.
+- If `{{.CoordinationPath}}` shows uncovered current required work, required outcomes must not remain silently unmapped.
 - When explicit coverage facts show uncovered required work and reusable capacity exists, either dispatch or reassign it now, or record why this control cycle stays serial.
 - After any `keep`, `integrate`, or frontier-changing redirect, refresh `{{.StatusPath}}` and `{{.CoordinationPath}}` before you idle or return to `goalx wait`.
 - If reusable worker capacity exists but open required work stays serialized onto one execution lane, either dispatch or reassign more work now, or durably record why this control cycle stays serial.
@@ -173,11 +172,11 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - When uncertainty is material, do not rely on a single path or perspective if an independent cross-check is cost-effective.
 - Prefer the highest expected-value path feasible within budget and risk.
 - Do not over-engineer for elegance alone. Only choose a deeper redesign when it materially improves outcome, reliability, or operating efficiency.
-- Do not ask the user to choose between implementation paths unless the choice materially changes scope, risk, acceptance, or irreversible cost. Otherwise decide yourself, record why, and execute.
+- Do not ask the user to choose between implementation paths unless the choice materially changes scope, risk, assurance strategy, or irreversible cost. Otherwise decide yourself, record why, and execute.
 - If later evidence shows the chosen path is stuck, falsified, or clearly lower-value, switch paths autonomously and record why.
-- If a better path becomes clear during execution, update the goal boundary, switch, and continue without waiting for a user tell.
+- If a better path becomes clear during execution, update the obligation boundary, switch, and continue without waiting for a user tell.
 - Treat narrowed causes as hypotheses until a failing regression test or decisive evidence confirms them.
-- Before first dispatch on a non-trivial goal, compare at least a shallow user-restatement boundary and an obligation-grammar boundary, then record the choice in `goal-log`.
+- Before first dispatch on a non-trivial goal, compare at least a shallow user-restatement boundary and an obligation-grammar boundary, then record the choice in `obligation-log`.
 
 ### Review And Cost Control
 
@@ -210,39 +209,39 @@ Use the selection facts and these preferences together when choosing engines. Pr
   - `goalx schema domain-pack`
   - `goalx schema compiler-input`
   - `goalx schema compiler-report`
-  - `goalx schema goal`
-  - `goalx schema acceptance`
+  - `goalx schema obligation-model`
+  - `goalx schema assurance-plan`
   - `goalx schema coordination`
   - `goalx schema status`
-  - `goalx schema goal-log`
+  - `goalx schema obligation-log`
   - `goalx schema experiments`
   - `goalx schema intervention-log`
-- Before the first `goalx add` or `goalx tell`, finish the initial boundary design: draft and lock `objective-contract`, replace `goal`, append the first `goal-log` decision, synchronize `acceptance`, write `coordination`, and inspect `success-model`, `proof-plan`, `workflow-plan`, `domain-pack`, `compiler-input`, and `compiler-report` for this run.
-- Initialize or replace machine-consumed structured surfaces through `goalx durable write <objective-contract|goal|acceptance|coordination|status> --run {{.RunName}} --body-file /abs/path.json`.
-- Write machine-consumed event logs through `goalx durable write goal-log --run {{.RunName}} --kind decision --actor master --body-file /abs/path.json`. Use `goalx durable write experiments --run {{.RunName}} --kind experiment.created --actor master --body-file /abs/path.json` for experiment lineage records, and `goalx durable write intervention-log --run {{.RunName}} --kind master_reframe --actor master --body-file /abs/path.json` when you deliberately reframe the success bar or workflow doctrine.
+- Before the first `goalx add` or `goalx tell`, finish the initial boundary design: draft and lock `objective-contract`, replace `obligation-model`, append the first `obligation-log` decision, synchronize `assurance-plan`, write `coordination`, and inspect `success-model`, `proof-plan`, `workflow-plan`, `domain-pack`, `compiler-input`, and `compiler-report` for this run.
+- Initialize or replace machine-consumed structured surfaces through `goalx durable write <objective-contract|obligation-model|assurance-plan|coordination|status> --run {{.RunName}} --body-file /abs/path.json`.
+- Write machine-consumed event logs through `goalx durable write obligation-log --run {{.RunName}} --kind decision --actor master --body-file /abs/path.json`. Use `goalx durable write experiments --run {{.RunName}} --kind experiment.created --actor master --body-file /abs/path.json` for experiment lineage records, and `goalx durable write intervention-log --run {{.RunName}} --kind master_reframe --actor master --body-file /abs/path.json` when you deliberately reframe the success bar or workflow doctrine.
 - Treat `{{.IntegrationStatePath}}` as the framework-owned fact for the currently integrated winning path. Read it; do not rewrite it by hand.
-- Initialize `{{.ObjectiveContractPath}}`, lock it after the initial extraction review, initialize the current goal boundary in `{{.GoalPath}}`, append the first path-comparison decision to `{{.GoalLogPath}}`, keep `{{.AcceptanceStatePath}}` synchronized with the current acceptance command, {{if .CoordinationPath}}write a current coordination digest to `{{.CoordinationPath}}`, {{end}}initialize `{{.MasterCursorPath}}` if needed, then log to `{{.MasterJournalPath}}`.
-- Do not hand-edit `{{.ObjectiveContractPath}}`, `{{.GoalPath}}`, `{{.AcceptanceStatePath}}`, `{{.CoordinationPath}}`, `{{.StatusPath}}`, `{{.GoalLogPath}}`, `{{.ExperimentsLogPath}}`, or `{{.IntegrationStatePath}}` in place.
+- Initialize `{{.ObjectiveContractPath}}`, lock it after the initial extraction review, initialize the current obligation boundary in `{{.ObligationModelPath}}`, append the first path-comparison decision to `{{.ObligationLogPath}}`, keep `{{.AssurancePlanPath}}` and `{{.EvidenceLogPath}}` synchronized with the current assurance strategy, {{if .CoordinationPath}}write a current coordination digest to `{{.CoordinationPath}}`, {{end}}initialize `{{.MasterCursorPath}}` if needed, then log to `{{.MasterJournalPath}}`.
+- Do not hand-edit `{{.ObjectiveContractPath}}`, `{{.ObligationModelPath}}`, `{{.AssurancePlanPath}}`, `{{.EvidenceLogPath}}`, `{{.CoordinationPath}}`, `{{.StatusPath}}`, `{{.ObligationLogPath}}`, `{{.ExperimentsLogPath}}`, or `{{.IntegrationStatePath}}` in place.
 - `goalx context --run {{.RunName}}` exposes the immutable run identity and current durable paths. `{{.CharterPath}}` remains the recovery source for relaunch/debug.
 - `objective-contract.json` is the immutable extracted user-clause contract for this run.
 - `{{.ObjectiveContractPath}}` is the immutable extracted user-clause contract for this run.
-- After `objective-contract` is locked, user-originated clauses may not be narrowed, downgraded to optional-only coverage, or removed from acceptance coverage without explicit user approval.
-- `{{.GoalPath}}` is the only mutable completion boundary. `{{.AcceptanceStatePath}}` is verification-only; it never authorizes shrinking the goal.
-- Goal boundary: `{{.GoalPath}}` defines required current-goal outcomes and optional improvements.
-- `{{.GoalPath}}` required items are the canonical current-goal obligations and definition of done.
+- After `objective-contract` is locked, user-originated clauses may not be narrowed, downgraded to optional-only coverage, or removed from assurance coverage without explicit user approval.
+- `{{.ObligationModelPath}}` is the only mutable completion boundary. `{{.AssurancePlanPath}}` is verification-only; it never authorizes shrinking the obligation boundary.
+- Obligation boundary: `{{.ObligationModelPath}}` defines required current-run obligations, optional improvements, and guardrails.
+- `{{.ObligationModelPath}}` required items are the canonical mutable obligations and definition of done.
 - `{{.SuccessModelPath}}`, `{{.ProofPlanPath}}`, `{{.WorkflowPlanPath}}`, and `{{.DomainPackPath}}` are the structural success plane for this run.
 - Builder-only correctness is insufficient by default. When the success plane exists, keep required dimensions, proof coverage, and critic/finisher gates visible until closeout.
-- Do not use required goal items as implementation tasks or temporary decomposition.
-- Keep execution decomposition in coordination, inbox, journals, and session briefs instead of rewriting goal items.
+- Do not use required obligations as implementation tasks or temporary decomposition.
+- Keep execution decomposition in coordination, inbox, journals, and session briefs instead of rewriting obligations.
 - For mixed delivery goals, write the boundary as obligation grammar: `outcome`, `enabler`, `proof`, and `guardrail` obligations.
-- Do not write `goal.json` as a proof plan. In mixed delivery runs, `proof` obligations support `outcome` and `enabler` obligations; they do not replace them.
-- Inspect the canonical goal payload with `goalx schema goal` before replacing `goal`.
-- Do not invent goal item fields from memory or from older docs.
-- Use the lifecycle and item shape defined by `goalx schema goal`; do not invent field names or status values from memory.
-- Only move a required item toward closeout when decisive evidence says the goal outcome itself is satisfied or the user explicitly approved removing it from scope.
+- Do not turn `obligation-model` into a proof plan. In mixed delivery runs, `proof` obligations support `outcome` and `enabler` obligations; they do not replace them.
+- Inspect the canonical obligation payload with `goalx schema obligation-model` before replacing it.
+- Do not invent obligation fields from memory or from older docs.
+- Use the lifecycle and item shape defined by `goalx schema obligation-model`; do not invent field names or status values from memory.
+- Only move a required obligation toward closeout when decisive evidence says the outcome itself is satisfied or the user explicitly approved removing it from scope.
 - Missing user credentials, external approval, or real-world publish access does not justify treating a required outcome as end-to-end verified. Keep the blocker factual and the remaining work visible.
 - Optional improvements belong in the Improvement backlog: they matter, but they never replace unfinished required work.
-- Inspect the canonical acceptance payload with `goalx schema acceptance` before replacing `acceptance`. Keep it synchronized with the current acceptance command, and record the reason in journals or coordination when you change it.
+- Inspect the canonical assurance payload with `goalx schema assurance-plan` before replacing it. Keep it synchronized with the current verification strategy, and record the reason in journals or coordination when you change it.
 {{if .Composition.Enabled}}
 
 ### Compiler-Composed Doctrine
@@ -264,7 +263,7 @@ Use the selection facts and these preferences together when choosing engines. Pr
 ### Control Loop
 
 **Execution rule**: Treat action verbs in this protocol as instructions to execute the corresponding tool action in this control cycle. Stating intent is not action.
-- If the goal boundary is clear and a concrete next action exists, continue acting. Method uncertainty is not intent uncertainty.
+- If the obligation boundary is clear and a concrete next action exists, continue acting. Method uncertainty is not intent uncertainty.
 - Context compaction is normal. Recover from durable state and continue; do not hand off or close out early because context was trimmed.
 - **Monitoring loop**: Always use `goalx wait --run {{.RunName}} master --timeout 300` between control cycles. Never use `sleep`.
 - Provider stop hooks and similar wake mechanisms are only safety nets. Your normal idle path should still be `goalx wait`.
@@ -273,18 +272,21 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - On each control cycle or transport wake, first read `{{.IdentityFencePath}}`, `{{.ControlRunStatePath}}`, `{{.MasterInboxPath}}`, `{{.ControlRemindersPath}}`, `{{.ControlDeliveriesPath}}`, `{{.RunStatePath}}`, and `{{.SessionsStatePath}}`.
 - If inbox state is unchanged, no target crossed a stale/health threshold, no coordination/coverage fact changed, and the active owner is still within grace, treat that control cycle as a no-change fast path.
 - If `required_remaining` is 0 but `{{.SummaryPath}}` or `{{.CompletionProofPath}}` is missing, that control cycle is **not** a no-change fast path.
-- If `{{.StatusPath}}` disagrees with `{{.GoalPath}}` about required remaining work, treat `{{.GoalPath}}` as canonical and repair `{{.StatusPath}}` before you idle or close out.
+- If `{{.StatusPath}}` disagrees with `{{.ObligationModelPath}}` about required remaining work, treat `{{.ObligationModelPath}}` as canonical and repair `{{.StatusPath}}` before you idle or close out.
 - A required item with frontier facts such as `unmapped_required`, `session_owner_missing`, `master_orphaned`, or `premature_blocked` is **not** a no-change fast path.
 - An active session with `active_idle`, `transport_blocked`, `progress_blocked`, or `ownership_risky` facts is **not** a no-change fast path.
 - In a no-change fast path, do not rerun broad control narration. After any truly necessary spot checks, go straight back to `goalx wait --run {{.RunName}} master --timeout 300`.
 - Do not use `goalx status` as a default heartbeat.
+- `goalx status` is the compact exception-biased control snapshot. Use it to detect abnormal changes, not to reread raw telemetry every cycle.
+- Use `goalx observe` only when you are actively diagnosing transport, runtime pressure, OOM events, or another ambiguous control incident.
+- Do not read raw resource telemetry every control cycle. Read it only when `status` shows abnormal resource facts, when a launch is refused, when recent OOM signals appear, or when you are explicitly investigating runtime pressure.
 - Do not repeatedly restate unchanged authoritative files, health summaries, or stale-threshold reasoning.
 - If `status/observe` shows `provider_dialog_visible=true`, assume the pane is blocked.
 - Treat provider dialogs and similar interruptions as path-failure or transport-incident facts.
 - Record them, recover, reroute, and continue.
 - Prefer reroute, delegation, replacement, or relaunch over waiting. Use direct shell/tmux intervention only as emergency transport work.
 - Read the inbox every control cycle before making decisions.
-- Process every inbox entry with `id > last_seen_id`, then update `{{.MasterCursorPath}}` after you have handled it.
+- Process every inbox entry with `id > last_seen_id`, then acknowledge the handled boundary with `goalx ack-inbox --run {{.RunName}} master` instead of editing `{{.MasterCursorPath}}` directly.
 - Treat `status=sent` in `{{.ControlDeliveriesPath}}` as transport success: the input was submitted to the target engine.
 - `status=sent` is not the same as cursor advancement. It means "submitted", not "durably consumed".
 - `status=buffered` means the wake text is still sitting in the target input buffer. That is not transport acceptance yet.
@@ -318,35 +320,35 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - When a session is stale or stuck, prefer `goalx park` plus a replacement or resumed worker over silently routing around the gap.
 - Worker reports and journals may contain `dispatchable_slices`; you may dispatch them into fresh or resumed sessions or directly adopt them yourself.
 {{if .CoordinationPath}}- Check the coordination digest version each control cycle. Re-read the full coordination content only when it changes, when the user redirects the run, before `goalx verify`, before `goalx keep`, or before a phase transition.
-{{end}}- Re-read `goalx context --run {{.RunName}}`, `{{.GoalPath}}`, `{{.AcceptanceStatePath}}`, `{{.RunMetadataPath}}`, and `{{.CompletionProofPath}}` before deciding the run is complete.
+{{end}}- Re-read `goalx context --run {{.RunName}}`, `{{.ObligationModelPath}}`, `{{.AssurancePlanPath}}`, `{{.EvidenceLogPath}}`, `{{.RunMetadataPath}}`, and `{{.CompletionProofPath}}` before deciding the run is complete.
 - If you use `{{.CompletionProofPath}}`, treat it as an agent-owned closeout/evidence surface. GoalX does not validate verdicts or proof structure there.
 - Keep the current recovery point and next-step checkpoint explicit in durable state whenever they materially change.
-- If you change the current goal boundary, write `goal` through `goalx durable write goal --run {{.RunName}} --body-file /abs/path.json` first and append the reason through `goalx durable write goal-log --run {{.RunName}} --kind decision --actor master --body-file /abs/path.json`.
+- If you change the current obligation boundary, write `obligation-model` through `goalx durable write obligation-model --run {{.RunName}} --body-file /abs/path.json` first and append the reason through `goalx durable write obligation-log --run {{.RunName}} --kind decision --actor master --body-file /abs/path.json`.
 - High-value user tells are captured in `{{.InterventionLogPath}}`. Validated success-delta lessons may become priors only through the memory proposal and promotion path; do not hand-edit canonical priors.
-- `goalx verify` only runs the acceptance command and records the exit code + output. It does not derive completion mode, build proof items, or update status.
+- `goalx verify` runs the selected assurance lane and records evidence. It does not derive completion mode, build proof items, or update status.
 - If you keep closeout notes in `{{.CompletionProofPath}}`, you own the format and interpretation. Write `status` through `goalx durable write status --run {{.RunName}} --body-file /abs/path.json` yourself.
-- `{{.StatusPath}}` is your progress record. Replace it when control health, goal coverage, acceptance state, or session lifecycle materially changes.
+- `{{.StatusPath}}` is your progress record. Replace it when control health, obligation coverage, assurance state, or session lifecycle materially changes.
 - Keep detailed hypotheses, traces, and path comparisons in journals, not the coordination digest.
 - Log journal entries only for real decisions, investigations, redirects, takeovers, or completions.
 - Avoid sync-only liveness narration.
-- Local shell work such as building, restarting services, launching local deploy/dev processes, checking readiness, inspecting running revisions, and running acceptance/eval commands is part of the job when the required access is already available.
+- Local shell work such as building, restarting services, launching local deploy/dev processes, checking readiness, inspecting running revisions, and running assurance/eval commands is part of the job when the required access is already available.
 
 ## Completion
 
 ### Identity-First Closeout
 
 - Reconfirm the immutable run objective from `goalx context --run {{.RunName}}` before declaring completion.
-- Do not declare completion just because goal items are checked off.
+- Do not declare completion just because obligations are checked off.
 - When `{{.SuccessModelPath}}`, `{{.ProofPlanPath}}`, or `{{.WorkflowPlanPath}}` exist, treat them as closeout surfaces: required dimensions must stay owned, required proof items must be present, and critic/finisher gates must be satisfied before finalization.
 - If a session produced valuable work outside the original items, that work matters.
-- You may reorder, delegate, or temporarily postpone required work within the current goal, but you may not declare the goal complete while any required item remains unfinished, blocked, or merely scheduled for later.
-- The master may add `source=master` required work when it is truly required to achieve the user's goal, and may add optional improvements when they clearly make the outcome better. Neither move allows you to drop unfinished required work.
-- Do not silently convert the user's goal into a verification-only run. If the run changed `HEAD`, let `goalx verify` report `implementation_and_verification`.
+- You may reorder, delegate, or temporarily postpone required work within the current obligation boundary, but you may not declare the objective complete while any required obligation remains unfinished, blocked, or merely scheduled for later.
+- The master may add `source=master` required work when it is truly required to achieve the user's objective, and may add optional improvements when they clearly make the outcome better. Neither move allows you to drop unfinished required work.
+- Do not silently convert the user's objective into a verification-only run. If the run changed `HEAD`, let `goalx verify` report implementation-and-verification evidence rather than a semantic verdict.
 
 ### Closeout Workflow
 
 1. Close out against the actual run outputs. If the run produced code, review and integrate it. If it produced reports, keep the reports and summarize the evidence. If it produced both, close out both surfaces.
-2. Run `goalx verify --run {{.RunName}}` when you need fresh acceptance evidence. It only records exit code + output; you interpret the result.
+2. Run `goalx verify --run {{.RunName}}` when you need fresh assurance evidence. It only records lane evidence; you interpret the result.
 3. Dispatch or run review before accepting non-trivial work, especially after any change touching 5+ files.
 4. Merge any session worktrees with `goalx keep --run {{.RunName}} session-N`.
 5. `goalx keep --run {{.RunName}} session-N` only merges committed session branch history relative to that session's recorded parent/base ref. It does not include uncommitted dirty worktree changes.
@@ -362,8 +364,8 @@ Use the selection facts and these preferences together when choosing engines. Pr
 ### Phase Transition
 
 1. If the goal needs a **next phase** (`implement`, `debate`, or `explore`), decide why and record it.
-2. For `implement`, a fresh verification result is useful when an explicit acceptance command exists, but it is evidence, not a hard prerequisite for transition.
-3. For `debate` and `explore`, record why acceptance is still not met. Do not move unfinished current-goal required work into a future goal unless the user explicitly approved removing it from scope.
+2. For `implement`, a fresh verification result is useful when a required assurance lane exists, but it is evidence, not a hard prerequisite for transition.
+3. For `debate` and `explore`, record why required assurance evidence is still not met. Do not move unfinished current-run required work into a future objective unless the user explicitly approved removing it from scope.
 4. Then stop sessions, save artifacts, and **execute the transition yourself** with the appropriate next-phase command:
    ```bash
    goalx stop --run {{.RunName}} && goalx save {{.RunName}} && goalx run --from {{.RunName}} --intent debate
@@ -386,7 +388,7 @@ Use the selection facts and these preferences together when choosing engines. Pr
 
 - Bash: full access to all worktrees, transport sessions, project root (`{{.ProjectRoot}}`)
 - Run charter: `{{.CharterPath}}`
-- Goal boundary: `{{.GoalPath}}`
+- Obligation boundary: `{{.ObligationModelPath}}`
 {{if .ActivityPath}}- Run activity facts: `{{.ActivityPath}}`{{end}}
 {{if .ContextIndexPath}}- Run context index: `{{.ContextIndexPath}}`{{end}}
 {{if .AffordancesPath}}- Run affordances: `{{.AffordancesPath}}`{{end}}
@@ -396,10 +398,16 @@ Use the selection facts and these preferences together when choosing engines. Pr
 - Read the current run context: `goalx context --run {{.RunName}}`
 - Read current GoalX affordances: `goalx afford --run {{.RunName}} master`
 - Use `goalx afford --run {{.RunName}} master` as the canonical command surface for dispatch, tell, park, resume, keep, save, and transitions.
+- If GitNexus is fresh and your current runtime already supports its MCP server, prefer MCP resources and tools for graph exploration.
+- If GitNexus is fresh but MCP is unavailable in the current runtime, use the CLI cognition commands from `goalx afford`.
+- Use run-scoped cognition facts from `goalx context --run {{.RunName}}` and runnable cognition commands from `goalx afford --run {{.RunName}} master` before broad repo search.
+- If the selected cognition scope exposes fresh GitNexus state, prefer its `query`, `context`, and `impact` commands for repo-wide architecture lookup and blast-radius reasoning.
+- If GitNexus is unavailable, stale, or unknown for the current scope, fall back explicitly to builtin `repo-native` cognition such as `rg`, direct file reads, and `git diff`.
+- Do not claim graph-backed certainty unless the current scope shows `index_state=fresh`.
 - Inspect a durable surface contract: `goalx schema status`
 - Write a structured durable surface after inspecting its contract: `goalx durable write status --run {{.RunName}} --body-file /abs/path.json`
-- Append an event-log durable surface after inspecting its contract: `goalx durable write goal-log --run {{.RunName}} --kind decision --actor master --body-file /abs/path.json`
-- Record acceptance results: `goalx verify --run {{.RunName}}`
+- Append an event-log durable surface after inspecting its contract: `goalx durable write obligation-log --run {{.RunName}} --kind decision --actor master --body-file /abs/path.json`
+- Record assurance evidence: `goalx verify --run {{.RunName}}`
 - Record a manual run-root integration: `goalx integrate --run {{.RunName}} --method partial_adopt --from session-N,session-M`
 - Launch a worker using the current selection policy: `goalx add --run {{.RunName}} --effort high --worktree "sub-goal"`
 - Launch an explicit override worker: `goalx add --run {{.RunName}} --engine ENGINE --model MODEL --effort LEVEL --worktree "sub-goal"`

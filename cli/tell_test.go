@@ -297,7 +297,74 @@ func TestTellHelpDoesNotDeliverAnything(t *testing.T) {
 	}
 }
 
-func TestAckSessionMarksLatestInboxEntryConsumed(t *testing.T) {
+func TestAckInboxAcknowledgesMasterAndRefreshesActivity(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+
+	msg, err := AppendMasterInboxMessage(runDir, "tell", "user", "process the worker results")
+	if err != nil {
+		t.Fatalf("AppendMasterInboxMessage: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := AckInbox(repo, []string{"--run", runName, "master"}); err != nil {
+			t.Fatalf("AckInbox: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Acknowledged master inbox") {
+		t.Fatalf("ack output = %q, want master ack confirmation", out)
+	}
+
+	cursor, err := LoadMasterCursorState(MasterCursorPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadMasterCursorState: %v", err)
+	}
+	if cursor == nil || cursor.LastSeenID != msg.ID {
+		t.Fatalf("master cursor = %+v, want last_seen_id=%d", cursor, msg.ID)
+	}
+	if unread := unreadControlInboxCount(MasterInboxPath(runDir), MasterCursorPath(runDir)); unread != 0 {
+		t.Fatalf("master unread = %d, want 0", unread)
+	}
+
+	activity, err := LoadActivitySnapshot(ActivityPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadActivitySnapshot: %v", err)
+	}
+	if activity == nil || activity.Queue.MasterUnread != 0 {
+		t.Fatalf("activity queue = %+v, want master_unread=0", activity)
+	}
+}
+
+func TestAckInboxAcknowledgesSession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+
+	msg, err := AppendControlInboxMessage(runDir, "session-1", "develop", "master", "take next slice")
+	if err != nil {
+		t.Fatalf("AppendControlInboxMessage: %v", err)
+	}
+
+	if err := AckInbox(repo, []string{"--run", runName, "session-1"}); err != nil {
+		t.Fatalf("AckInbox session: %v", err)
+	}
+	cursor, err := LoadMasterCursorState(SessionCursorPath(runDir, "session-1"))
+	if err != nil {
+		t.Fatalf("LoadMasterCursorState(session): %v", err)
+	}
+	if cursor == nil || cursor.LastSeenID != msg.ID {
+		t.Fatalf("session cursor after ack-inbox = %+v, want last_seen_id=%d", cursor, msg.ID)
+	}
+}
+
+func TestAckInboxMarksLatestInboxEntryConsumed(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -309,8 +376,8 @@ func TestAckSessionMarksLatestInboxEntryConsumed(t *testing.T) {
 		t.Fatalf("AppendControlInboxMessage: %v", err)
 	}
 
-	if err := AckSession(repo, []string{"--run", runName, "session-1"}); err != nil {
-		t.Fatalf("AckSession: %v", err)
+	if err := AckInbox(repo, []string{"--run", runName, "session-1"}); err != nil {
+		t.Fatalf("AckInbox: %v", err)
 	}
 
 	state, err := LoadMasterCursorState(SessionCursorPath(runDir, "session-1"))
@@ -386,8 +453,8 @@ func TestRenderSubagentProtocolIncludesSessionInboxAckPath(t *testing.T) {
 	for _, want := range []string{
 		"/tmp/control/inbox/session-1.jsonl",
 		"/tmp/control/session-1-cursor.json",
-		"goalx ack-session --run demo session-1",
-		"cd /tmp/project && goalx ack-session --run demo session-1",
+		"goalx ack-inbox --run demo session-1",
+		"cd /tmp/project && goalx ack-inbox --run demo session-1",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered subagent protocol missing %q:\n%s", want, text)

@@ -34,7 +34,6 @@ type Config struct {
 	Selection       SelectionConfig       `yaml:"selection,omitempty"`
 	Preferences     PreferencesConfig     `yaml:"preferences,omitempty"`
 	Roles           RoleDefaultsConfig    `yaml:"roles,omitempty"`
-	Parallel        int                   `yaml:"parallel,omitempty"`
 	Sessions        []SessionConfig       `yaml:"sessions,omitempty"`
 	Target          TargetConfig          `yaml:"target"`
 	LocalValidation LocalValidationConfig `yaml:"local_validation,omitempty"`
@@ -201,8 +200,7 @@ var BuiltinEngines = map[string]EngineConfig{
 
 // BuiltinDefaults are the hardcoded default values.
 var BuiltinDefaults = Config{
-	Mode:     ModeWorker,
-	Parallel: 1,
+	Mode: ModeWorker,
 	Preferences: PreferencesConfig{
 		Worker: PreferencePolicy{
 			Guidance: "默认 gpt-5.4 medium。复杂分析、架构分歧或高风险收口可升到 high 或改用 opus；轻量切片用 fast。",
@@ -616,14 +614,10 @@ func ExpandSessions(cfg *Config) []SessionConfig {
 	if cfg == nil {
 		return nil
 	}
-	size := len(cfg.Sessions)
-	if cfg.Parallel > size {
-		size = cfg.Parallel
-	}
-	if size == 0 {
+	if len(cfg.Sessions) == 0 {
 		return nil
 	}
-	sessions := make([]SessionConfig, size)
+	sessions := make([]SessionConfig, len(cfg.Sessions))
 	copy(sessions, cfg.Sessions)
 	return sessions
 }
@@ -824,9 +818,6 @@ func mergeConfig(base, overlay *Config) {
 	}
 	if overlayWorker.Effort != "" {
 		base.Roles.Worker.Effort = overlayWorker.Effort
-	}
-	if overlay.Parallel > 0 {
-		base.Parallel = overlay.Parallel
 	}
 	if len(overlay.Sessions) > 0 {
 		base.Sessions = overlay.Sessions

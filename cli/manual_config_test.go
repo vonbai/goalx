@@ -8,10 +8,12 @@ import (
 	"testing"
 
 	goalx "github.com/vonbai/goalx"
+	"github.com/vonbai/goalx/internal/slowtest"
 )
 
 func installStartFakeTmux(t *testing.T) {
 	t.Helper()
+	slowtest.Require(t, "start/manual-config integration test")
 
 	binDir := t.TempDir()
 	stateDir := t.TempDir()
@@ -89,6 +91,7 @@ func TestStartRequiresExplicitManualConfig(t *testing.T) {
 }
 
 func TestStartWithExplicitManualConfig(t *testing.T) {
+	slowtest.Require(t, "start/manual-config integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 

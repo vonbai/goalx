@@ -8,6 +8,19 @@ import (
 	"time"
 )
 
+const (
+	advisorySeverityBlocker    = "blocker"
+	advisorySeverityUrgent     = "urgent"
+	advisorySeverityWarning    = "warning"
+	advisorySeverityDiagnostic = "diagnostic"
+)
+
+type runAdvisory struct {
+	Severity string
+	Group    string
+	Message  string
+}
+
 func refreshDisplayFacts(rc *RunContext) error {
 	if rc == nil {
 		return nil
@@ -23,6 +36,9 @@ func refreshDisplayFacts(rc *RunContext) error {
 		return err
 	}
 	if err := RefreshWorktreeSnapshot(rc.RunDir); err != nil {
+		return err
+	}
+	if err := RefreshResourceState(rc.RunDir); err != nil {
 		return err
 	}
 	if err := refreshControlOperationFacts(rc.RunDir); err != nil {
@@ -50,22 +66,37 @@ func refreshDisplayFacts(rc *RunContext) error {
 			return err
 		}
 	}
-	snapshot, err := BuildActivitySnapshot(rc.ProjectRoot, rc.Name, rc.RunDir)
-	if err != nil {
-		return err
-	}
-	if snapshot != nil {
-		if err := SaveActivitySnapshot(rc.RunDir, snapshot); err != nil {
-			return err
-		}
-	}
-	if err := RefreshEvolveFacts(rc.RunDir); err != nil {
+	if err := refreshComputedControlFacts(rc.ProjectRoot, rc.Name, rc.RunDir); err != nil {
 		return err
 	}
 	return nil
 }
 
-func printRunAdvisories(rc *RunContext) error {
+func refreshComputedControlFacts(projectRoot, runName, runDir string) error {
+	snapshot, err := BuildActivitySnapshot(projectRoot, runName, runDir)
+	if err != nil {
+		return err
+	}
+	if snapshot != nil {
+		if err := SaveActivitySnapshot(runDir, snapshot); err != nil {
+			return err
+		}
+	}
+	if err := RefreshEvolveFacts(runDir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func printRunAdvisoriesCompact(rc *RunContext) error {
+	return printRunAdvisoriesWithLimit(rc, 5, true)
+}
+
+func printRunAdvisoriesFull(rc *RunContext) error {
+	return printRunAdvisoriesWithLimit(rc, 0, false)
+}
+
+func printRunAdvisoriesWithLimit(rc *RunContext, limit int, mentionOverflow bool) error {
 	advisories, err := collectRunAdvisories(rc)
 	if err != nil {
 		return err
@@ -74,14 +105,132 @@ func printRunAdvisories(rc *RunContext) error {
 		return nil
 	}
 	fmt.Println("### advisories")
-	for _, advisory := range advisories {
-		fmt.Printf("- %s\n", advisory)
+	rendered := advisories
+	omitted := 0
+	if limit > 0 {
+		var messages []string
+		messages, omitted = compactAdvisoryMessages(advisories, limit)
+		for _, message := range messages {
+			fmt.Printf("- %s\n", message)
+		}
+	} else {
+		for _, advisory := range rendered {
+			fmt.Printf("- %s\n", advisory.Message)
+		}
+	}
+	if mentionOverflow && limit > 0 && omitted > 0 {
+		fmt.Printf("- additional_advisories=%d (see `goalx observe` for full diagnostics)\n", omitted)
 	}
 	fmt.Println()
 	return nil
 }
 
-func collectRunAdvisories(rc *RunContext) ([]string, error) {
+func compactAdvisoryMessages(advisories []runAdvisory, limit int) ([]string, int) {
+	if len(advisories) <= limit {
+		out := make([]string, 0, len(advisories))
+		for _, advisory := range advisories {
+			out = append(out, advisory.Message)
+		}
+		return out, 0
+	}
+	rendered := make([]runAdvisory, 0, len(advisories))
+	for _, severity := range []string{advisorySeverityBlocker, advisorySeverityUrgent} {
+		for _, advisory := range advisories {
+			if advisory.Severity == severity {
+				rendered = append(rendered, advisory)
+			}
+		}
+	}
+	seenWarningGroups := map[string]bool{}
+	for _, advisory := range advisories {
+		if advisory.Severity != advisorySeverityWarning {
+			continue
+		}
+		group := advisory.Group
+		if group == "" {
+			group = advisory.Message
+		}
+		if seenWarningGroups[group] {
+			continue
+		}
+		seenWarningGroups[group] = true
+		rendered = append(rendered, advisory)
+	}
+	if len(rendered) == 0 {
+		seenDiagnosticGroups := map[string]bool{}
+		for _, advisory := range advisories {
+			group := advisory.Group
+			if group == "" {
+				group = advisory.Message
+			}
+			if seenDiagnosticGroups[group] {
+				continue
+			}
+			seenDiagnosticGroups[group] = true
+			rendered = append(rendered, advisory)
+		}
+	}
+	sort.SliceStable(rendered, func(i, j int) bool {
+		if rendered[i].Severity != rendered[j].Severity {
+			return advisorySeverityPriority(rendered[i].Severity) < advisorySeverityPriority(rendered[j].Severity)
+		}
+		return advisoryGroupPriority(rendered[i]) < advisoryGroupPriority(rendered[j])
+	})
+	if len(rendered) > limit {
+		rendered = rendered[:limit]
+	}
+	out := make([]string, 0, len(rendered))
+	for _, advisory := range rendered {
+		out = append(out, advisory.Message)
+	}
+	omitted := len(advisories) - len(rendered)
+	if omitted < 0 {
+		omitted = 0
+	}
+	return out, omitted
+}
+
+func advisorySeverityPriority(severity string) int {
+	switch severity {
+	case advisorySeverityBlocker:
+		return 0
+	case advisorySeverityUrgent:
+		return 1
+	case advisorySeverityWarning:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func advisoryGroupPriority(advisory runAdvisory) int {
+	switch advisory.Group {
+	case "resource":
+		return 0
+	case "transport":
+		return 1
+	case "required_frontier":
+		return 2
+	case "operations":
+		return 3
+	case "evolve_management":
+		return 4
+	case "control_gap":
+		return 5
+	case "closeout":
+		return 6
+	case "objective_integrity":
+		return 7
+	case "quality_debt":
+		return 8
+	case "status_drift":
+		return 9
+	default:
+		return 10
+	}
+}
+
+func collectRunAdvisories(rc *RunContext) ([]runAdvisory, error) {
 	if rc == nil {
 		return nil, nil
 	}
@@ -92,9 +241,9 @@ func collectRunAdvisories(rc *RunContext) ([]string, error) {
 	}
 	summaryExists := closeoutFacts.SummaryExists
 	completionExists := closeoutFacts.CompletionExists
-	advisories := make([]string, 0, 2)
+	advisories := make([]runAdvisory, 0, 2)
 	if err == nil && status != nil && status.RequiredRemaining != nil && *status.RequiredRemaining == 0 && (!summaryExists || !completionExists) {
-		advisories = append(advisories, fmt.Sprintf("Closeout artifacts missing: required_remaining=0 summary_exists=%t completion_proof_exists=%t", summaryExists, completionExists))
+		advisories = append(advisories, runAdvisory{Severity: advisorySeverityBlocker, Group: "closeout", Message: fmt.Sprintf("Closeout artifacts missing: required_remaining=0 summary_exists=%t completion_proof_exists=%t", summaryExists, completionExists)})
 	} else if err != nil {
 		return nil, err
 	}
@@ -103,17 +252,17 @@ func collectRunAdvisories(rc *RunContext) ([]string, error) {
 		return nil, err
 	}
 	if statusComparison != nil && statusComparison.StatusRequiredRemaining != nil && statusComparison.GoalRequiredRemaining != nil && !statusComparison.RequiredRemainingMatch {
-		advisories = append(advisories, fmt.Sprintf("Status drift: status_required_remaining=%d goal_required_remaining=%d goal_remaining_ids=%s", *statusComparison.StatusRequiredRemaining, *statusComparison.GoalRequiredRemaining, strings.Join(statusComparison.GoalRemainingRequiredIDs, ",")))
+		advisories = append(advisories, runAdvisory{Severity: advisorySeverityWarning, Group: "status_drift", Message: fmt.Sprintf("Status drift: status_required_remaining=%d boundary_required_remaining=%d boundary_remaining_ids=%s", *statusComparison.StatusRequiredRemaining, *statusComparison.GoalRequiredRemaining, strings.Join(statusComparison.GoalRemainingRequiredIDs, ","))})
 	}
 	if statusComparison != nil && statusComparison.StatusOpenRequiredIDsRecorded && !statusComparison.OpenRequiredIDsMatch {
-		advisories = append(advisories, fmt.Sprintf("Status drift: status_open_required_ids=%s goal_remaining_ids=%s", strings.Join(statusComparison.StatusOpenRequiredIDs, ","), strings.Join(statusComparison.GoalRemainingRequiredIDs, ",")))
+		advisories = append(advisories, runAdvisory{Severity: advisorySeverityWarning, Group: "status_drift", Message: fmt.Sprintf("Status drift: status_open_required_ids=%s boundary_remaining_ids=%s", strings.Join(statusComparison.StatusOpenRequiredIDs, ","), strings.Join(statusComparison.GoalRemainingRequiredIDs, ","))})
 	}
 	if statusComparison != nil && statusComparison.StatusActiveSessionsRecorded && !statusComparison.ActiveSessionsMatch {
-		advisories = append(advisories, fmt.Sprintf("Status drift: status_active_sessions=%s runtime_active_sessions=%s", strings.Join(statusComparison.StatusActiveSessions, ","), strings.Join(statusComparison.RuntimeActiveSessions, ",")))
+		advisories = append(advisories, runAdvisory{Severity: advisorySeverityWarning, Group: "status_drift", Message: fmt.Sprintf("Status drift: status_active_sessions=%s runtime_active_sessions=%s", strings.Join(statusComparison.StatusActiveSessions, ","), strings.Join(statusComparison.RuntimeActiveSessions, ","))})
 	}
 	if objective := formatObjectiveIntegritySummary(rc.RunDir); objective != "" {
 		if closeoutFacts.ObjectiveContractPresent && (!closeoutFacts.ObjectiveContractLocked || !closeoutFacts.ObjectiveIntegrityOK) {
-			advisories = append(advisories, "Objective integrity pending: "+objective)
+			advisories = append(advisories, runAdvisory{Severity: advisorySeverityWarning, Group: "objective_integrity", Message: "Objective integrity pending: " + objective})
 		}
 	}
 	activity, err := LoadActivitySnapshot(ActivityPath(rc.RunDir))
@@ -122,7 +271,7 @@ func collectRunAdvisories(rc *RunContext) ([]string, error) {
 	}
 	if activity != nil {
 		if activity.Budget.MaxDurationSeconds > 0 && activity.Budget.Exhausted && activity.Lifecycle.RunActive {
-			advisories = append(advisories, "Budget exhausted: "+formatBudgetSummary(activity.Budget))
+			advisories = append(advisories, runAdvisory{Severity: advisorySeverityBlocker, Group: "resource", Message: "Budget exhausted: " + formatBudgetSummary(activity.Budget)})
 		}
 		coverage := activity.Coverage
 		if parts := requiredFrontierFactParts(coverage); coverage.RequiredPresent && len(parts) > 0 {
@@ -131,16 +280,16 @@ func collectRunAdvisories(rc *RunContext) ([]string, error) {
 			if len(reusable) > 0 {
 				parts = append(parts, "reusable_sessions="+strings.Join(reusable, ","))
 			}
-			advisories = append(advisories, "Required frontier facts: "+strings.Join(parts, " "))
+			advisories = append(advisories, runAdvisory{Severity: advisorySeverityUrgent, Group: "required_frontier", Message: "Required frontier facts: " + strings.Join(parts, " ")})
 		}
 		if targetAttention := formatTargetAttentionAdvisory(activity.Attention); targetAttention != "" {
-			advisories = append(advisories, targetAttention)
+			advisories = append(advisories, runAdvisory{Severity: advisorySeverityUrgent, Group: "transport", Message: targetAttention})
 		}
 		if frontier := formatRequiredFrontierAdvisory(rc.RunDir, coverage, activity.Attention); frontier != "" {
-			advisories = append(advisories, frontier)
+			advisories = append(advisories, runAdvisory{Severity: advisorySeverityDiagnostic, Group: "required_frontier", Message: frontier})
 		}
 		if operations := formatOperationAdvisory(activity.Operations); operations != "" {
-			advisories = append(advisories, operations)
+			advisories = append(advisories, runAdvisory{Severity: advisorySeverityUrgent, Group: "operations", Message: operations})
 		}
 	}
 	evolveFacts, err := LoadCurrentEvolveFacts(rc.RunDir)
@@ -148,19 +297,21 @@ func collectRunAdvisories(rc *RunContext) ([]string, error) {
 		return nil, err
 	}
 	if advisory := formatEvolveManagementAdvisory(evolveFacts, status); advisory != "" {
-		advisories = append(advisories, advisory)
+		advisories = append(advisories, runAdvisory{Severity: advisorySeverityUrgent, Group: "evolve_management", Message: advisory})
 	}
 	controlGapFacts, err := BuildControlGapFacts(rc.RunDir)
 	if err != nil {
 		return nil, err
 	}
-	advisories = append(advisories, formatControlGapAdvisories(controlGapFacts)...)
+	for _, advisory := range formatControlGapAdvisories(controlGapFacts) {
+		advisories = append(advisories, runAdvisory{Severity: advisorySeverityWarning, Group: "control_gap", Message: advisory})
+	}
 	qualityDebt, err := BuildQualityDebt(rc.RunDir)
 	if err != nil {
 		return nil, err
 	}
 	if advisory := formatQualityDebtAdvisory(qualityDebt); advisory != "" {
-		advisories = append(advisories, advisory)
+		advisories = append(advisories, runAdvisory{Severity: advisorySeverityWarning, Group: "quality_debt", Message: advisory})
 	}
 	return advisories, nil
 }

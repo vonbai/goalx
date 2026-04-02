@@ -204,7 +204,6 @@ local_validation:
 		Name:      "research-a",
 		Mode:      goalx.ModeWorker,
 		Objective: "audit auth flow",
-		Parallel:  2,
 		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		Roles: goalx.RoleDefaultsConfig{
 			Worker: goalx.SessionConfig{Engine: "claude-code", Model: "sonnet"},
@@ -216,7 +215,6 @@ local_validation:
 
 	if err := Debate(projectRoot, []string{
 		"--from", "research-a",
-		"--parallel", "3",
 		"--objective", "custom debate objective",
 		"--dimension", "depth,adversarial,evidence",
 		"--budget", "15m",
@@ -229,9 +227,6 @@ local_validation:
 	if err != nil {
 		t.Fatalf("load goalx.yaml: %v", err)
 	}
-	if cfg.Parallel != 3 {
-		t.Fatalf("parallel = %d, want 3", cfg.Parallel)
-	}
 	if cfg.Roles.Worker.Engine != "claude-code" || cfg.Roles.Worker.Model != "sonnet" {
 		t.Fatalf("worker role = %s/%s, want claude-code/sonnet", cfg.Roles.Worker.Engine, cfg.Roles.Worker.Model)
 	}
@@ -241,17 +236,17 @@ local_validation:
 	if cfg.Budget.MaxDuration != 15*60*1_000_000_000 {
 		t.Fatalf("budget = %v, want 15m", cfg.Budget.MaxDuration)
 	}
-	if len(cfg.Sessions) != 3 {
-		t.Fatalf("sessions = %#v, want 3 seeded sessions", cfg.Sessions)
+	if len(cfg.Sessions) != 2 {
+		t.Fatalf("sessions = %#v, want 2 canonical debate lanes", cfg.Sessions)
 	}
 	for i, session := range cfg.Sessions {
-		if got, want := session.Dimensions, []string{"depth", "adversarial", "evidence"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		if got, want := session.Dimensions, []string{"depth", "adversarial", "evidence"}; len(got) != len(want) || strings.Join(got, ",") != strings.Join(want, ",") {
 			t.Fatalf("session[%d].dimensions = %#v, want %#v", i, got, want)
 		}
 	}
 }
 
-func TestDebateInheritsSavedParallelWithoutOverride(t *testing.T) {
+func TestDebateDoesNotSeedSessionsWithoutExplicitSavedSessions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -260,7 +255,6 @@ func TestDebateInheritsSavedParallelWithoutOverride(t *testing.T) {
 		Name:      "research-a",
 		Mode:      goalx.ModeWorker,
 		Objective: "audit auth flow",
-		Parallel:  5,
 		Master:    goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
 		Roles: goalx.RoleDefaultsConfig{
 			Worker: goalx.SessionConfig{Engine: "codex", Model: "gpt-5.4"},
@@ -278,8 +272,8 @@ func TestDebateInheritsSavedParallelWithoutOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load goalx.yaml: %v", err)
 	}
-	if cfg.Parallel != 5 {
-		t.Fatalf("parallel = %d, want 5", cfg.Parallel)
+	if len(cfg.Sessions) != 2 {
+		t.Fatalf("sessions = %#v, want 2 canonical debate lanes", cfg.Sessions)
 	}
 }
 
@@ -310,11 +304,8 @@ func TestDebateInheritsSavedSessionFanoutWithoutParallel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load goalx.yaml: %v", err)
 	}
-	if cfg.Parallel != 4 {
-		t.Fatalf("parallel = %d, want 4", cfg.Parallel)
-	}
-	if len(cfg.Sessions) != 4 {
-		t.Fatalf("sessions = %#v, want 4 inherited fan-out sessions", cfg.Sessions)
+	if len(cfg.Sessions) != 2 {
+		t.Fatalf("sessions = %#v, want 2 canonical debate lanes", cfg.Sessions)
 	}
 }
 
@@ -327,7 +318,6 @@ func TestDebateUsesSavedManifestReportArtifacts(t *testing.T) {
 		Name:      "research-a",
 		Mode:      goalx.ModeWorker,
 		Objective: "audit auth flow",
-		Parallel:  1,
 		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		Roles: goalx.RoleDefaultsConfig{
 			Worker: goalx.SessionConfig{Engine: "claude-code", Model: "sonnet"},
@@ -413,8 +403,12 @@ func TestDebateReadsLegacyProjectScopedSavedRun(t *testing.T) {
 		t.Fatalf("write intake: %v", err)
 	}
 
-	if err := Debate(projectRoot, []string{"--from", "research-a", "--write-config"}); err != nil {
-		t.Fatalf("Debate: %v", err)
+	err = Debate(projectRoot, []string{"--from", "research-a", "--write-config"})
+	if err == nil {
+		t.Fatal("Debate unexpectedly accepted legacy project-scoped saved run")
+	}
+	if !strings.Contains(err.Error(), "missing canonical") {
+		t.Fatalf("Debate error = %v, want canonical surface failure", err)
 	}
 }
 
@@ -451,8 +445,8 @@ func TestDebateRejectsSavedRunMissingCanonicalIntake(t *testing.T) {
 	if err == nil {
 		t.Fatal("Debate unexpectedly succeeded without canonical intake")
 	}
-	if !strings.Contains(err.Error(), "intake") || !strings.Contains(err.Error(), "legacy") {
-		t.Fatalf("Debate error = %v, want legacy intake rejection", err)
+	if !strings.Contains(err.Error(), "intake") || !strings.Contains(err.Error(), "canonical") {
+		t.Fatalf("Debate error = %v, want canonical intake rejection", err)
 	}
 }
 

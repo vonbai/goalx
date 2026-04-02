@@ -11,6 +11,9 @@ import (
 
 func writeSavedRunFixture(t *testing.T, projectRoot, runName string, cfg goalx.Config, files map[string]string) {
 	t.Helper()
+	if files == nil {
+		files = map[string]string{}
+	}
 
 	runDir := SavedRunDir(projectRoot, runName)
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
@@ -33,6 +36,16 @@ func writeSavedRunFixture(t *testing.T, projectRoot, runName string, cfg goalx.C
 		ContextRefs:  append([]string(nil), cfg.Context.Refs...),
 	}); err != nil {
 		t.Fatalf("write intake.json: %v", err)
+	}
+	objectiveHash := hashObjectiveText(cfg.Objective)
+	if _, ok := files["objective-contract.json"]; !ok {
+		files["objective-contract.json"] = "{\n  \"version\": 1,\n  \"objective_hash\": \"" + objectiveHash + "\",\n  \"state\": \"locked\",\n  \"clauses\": []\n}\n"
+	}
+	if _, ok := files["obligation-model.json"]; !ok {
+		files["obligation-model.json"] = "{\n  \"version\": 1,\n  \"objective_contract_hash\": \"" + objectiveHash + "\",\n  \"required\": [],\n  \"optional\": [],\n  \"guardrails\": []\n}\n"
+	}
+	if _, ok := files["assurance-plan.json"]; !ok {
+		files["assurance-plan.json"] = "{\n  \"version\": 1,\n  \"scenarios\": []\n}\n"
 	}
 
 	for name, content := range files {

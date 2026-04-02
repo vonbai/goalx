@@ -44,10 +44,8 @@ func EnsureProjectGoalxIgnoredWithConfig(projectRoot string, cfg *goalx.Config) 
 		return err
 	}
 	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
-	managed := []string{goalxExcludeBegin, ".goalx/goalx.yaml"}
-	if worktreeIgnore := worktreeIgnorePattern(projectRoot, cfg); worktreeIgnore != "" {
-		managed = append(managed, worktreeIgnore)
-	}
+	managed := []string{goalxExcludeBegin}
+	managed = append(managed, managedProjectIgnorePatterns(projectRoot, cfg)...)
 	managed = append(managed, goalxExcludeEnd)
 	out := make([]string, 0, len(lines)+len(managed))
 	skippingManaged := false
@@ -89,11 +87,30 @@ func EnsureProjectGoalxIgnoredWithConfig(projectRoot string, cfg *goalx.Config) 
 	return os.WriteFile(excludePath, []byte(text), 0o644)
 }
 
-func worktreeIgnorePattern(projectRoot string, cfg *goalx.Config) string {
-	if cfg == nil || strings.TrimSpace(cfg.WorktreeRoot) == "" {
+func managedProjectIgnorePatterns(projectRoot string, cfg *goalx.Config) []string {
+	patterns := []string{".goalx/goalx.yaml"}
+	seen := map[string]bool{
+		".goalx/goalx.yaml": true,
+	}
+	for _, pattern := range []string{
+		configuredRootIgnorePattern(projectRoot, resolveConfiguredWorktreeRoot(projectRoot, cfg.WorktreeRoot)),
+		configuredRootIgnorePattern(projectRoot, goalx.ResolveRunRoot(projectRoot, cfg)),
+		configuredRootIgnorePattern(projectRoot, goalx.ResolveSavedRunRoot(projectRoot, cfg)),
+	} {
+		if pattern == "" || seen[pattern] {
+			continue
+		}
+		seen[pattern] = true
+		patterns = append(patterns, pattern)
+	}
+	return patterns
+}
+
+func configuredRootIgnorePattern(projectRoot, resolvedRoot string) string {
+	root := strings.TrimSpace(resolvedRoot)
+	if root == "" {
 		return ""
 	}
-	root := strings.TrimSpace(cfg.WorktreeRoot)
 	if filepath.IsAbs(root) {
 		rel, err := filepath.Rel(projectRoot, root)
 		if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {

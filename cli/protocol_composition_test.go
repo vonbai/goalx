@@ -15,7 +15,7 @@ func TestBuildProtocolCompositionLoadsCompilerArtifacts(t *testing.T) {
 	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
 		Version:               1,
 		ObjectiveContractHash: "obj-hash",
-		GoalHash:              "goal-hash",
+		ObligationModelHash:              "obligation-hash",
 		Dimensions: []SuccessDimension{
 			{ID: "dim-objective", Kind: "objective", Text: "ship it", Required: true},
 		},
@@ -44,7 +44,7 @@ func TestBuildProtocolCompositionLoadsCompilerArtifacts(t *testing.T) {
 	if err := SaveCompilerInput(CompilerInputPath(runDir), &CompilerInput{
 		Version:              1,
 		ObjectiveContractRef: "objective-contract.json",
-		GoalRef:              "goal.json",
+		ObligationModelRef:              "obligation-model.json",
 		SelectedPriorRefs:    []string{"prior/from-input"},
 		SourceSlots: []CompilerInputSlot{
 			{Slot: CompilerInputSlotRepoPolicy, Refs: []string{"README.md"}},
@@ -105,7 +105,7 @@ func TestRenderMasterProtocolIncludesCompilerComposedDoctrine(t *testing.T) {
 	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
 		Version:               1,
 		ObjectiveContractHash: "obj-hash",
-		GoalHash:              "goal-hash",
+		ObligationModelHash:              "obligation-hash",
 		Dimensions: []SuccessDimension{
 			{ID: "dim-objective", Kind: "objective", Text: "ship it", Required: true},
 		},
@@ -134,7 +134,7 @@ func TestRenderMasterProtocolIncludesCompilerComposedDoctrine(t *testing.T) {
 	if err := SaveCompilerInput(CompilerInputPath(runDir), &CompilerInput{
 		Version:              1,
 		ObjectiveContractRef: "objective-contract.json",
-		GoalRef:              "goal.json",
+		ObligationModelRef:              "obligation-model.json",
 		SourceSlots: []CompilerInputSlot{
 			{Slot: CompilerInputSlotRepoPolicy, Refs: []string{"README.md"}},
 		},

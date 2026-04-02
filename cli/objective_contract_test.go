@@ -181,3 +181,64 @@ func TestBuildObjectiveIntegritySummaryReportsMissingCoverage(t *testing.T) {
 		t.Fatalf("missing acceptance clauses = %#v, want ucl-accept", summary.MissingAcceptanceClauseIDs)
 	}
 }
+
+func TestBuildObjectiveIntegritySummaryUsesObligationModelCoverage(t *testing.T) {
+	runDir := t.TempDir()
+	if err := SaveObjectiveContract(ObjectiveContractPath(runDir), &ObjectiveContract{
+		Version:       1,
+		State:         objectiveContractStateLocked,
+		ObjectiveHash: "sha256:demo",
+		Clauses: []ObjectiveClause{
+			{
+				ID:               "ucl-goal",
+				Text:             "ship the user-facing outcome",
+				Kind:             objectiveClauseKindDelivery,
+				SourceExcerpt:    "ship the user-facing outcome",
+				RequiredSurfaces: []ObjectiveRequiredSurface{objectiveRequiredSurfaceGoal},
+			},
+			{
+				ID:               "ucl-accept",
+				Text:             "verify the user-facing outcome",
+				Kind:             objectiveClauseKindVerification,
+				SourceExcerpt:    "verify the user-facing outcome",
+				RequiredSurfaces: []ObjectiveRequiredSurface{objectiveRequiredSurfaceAcceptance},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveObjectiveContract: %v", err)
+	}
+	if err := SaveObligationModel(ObligationModelPath(runDir), &ObligationModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:demo",
+		Required: []ObligationItem{
+			{
+				ID:                "obl-goal",
+				Text:              "ship the outcome",
+				Kind:              "outcome",
+				CoversClauses:     []string{"ucl-goal"},
+				AssuranceRequired: true,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveObligationModel: %v", err)
+	}
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
+		Version: 2,
+		Checks: []AcceptanceCheck{
+			{ID: "chk-1", Command: "printf ok", Covers: []string{"ucl-accept"}, State: acceptanceCheckStateActive},
+		},
+	}); err != nil {
+		t.Fatalf("SaveAcceptanceState: %v", err)
+	}
+
+	summary, err := BuildObjectiveIntegritySummary(runDir)
+	if err != nil {
+		t.Fatalf("BuildObjectiveIntegritySummary: %v", err)
+	}
+	if !summary.IntegrityOK() {
+		t.Fatalf("IntegrityOK() = false, want true with obligation+acceptance coverage: %+v", summary)
+	}
+	if summary.GoalCoveredCount != 1 || summary.AcceptanceCoveredCount != 1 {
+		t.Fatalf("coverage counts = %+v, want 1/1", summary)
+	}
+}

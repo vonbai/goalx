@@ -313,7 +313,7 @@ func TestBuildTargetAttentionFactsIgnoresStoppedSessions(t *testing.T) {
 		Version:   1,
 		CheckedAt: time.Now().UTC().Format(time.RFC3339),
 		Targets: map[string]TargetPresenceFacts{
-			"session-1": {Target: "session-1", State: TargetPresenceWindowMissing},
+			"session-1": {Target: "session-1", State: TargetPresenceInactive},
 		},
 	}
 
@@ -425,7 +425,7 @@ func TestBuildRequiredCoverageDoesNotCollapseTargetAttentionIntoFrontierFacts(t 
 		t.Fatalf("UpsertSessionRuntimeState session-2: %v", err)
 	}
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "blocked owner", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "risky owner", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},

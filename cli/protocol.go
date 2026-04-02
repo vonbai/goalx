@@ -36,20 +36,20 @@ type ProtocolData struct {
 	RunWorktreePath        string
 	SummaryPath            string
 	ObjectiveContractPath  string
+	ObligationModelPath    string
+	ObligationLogPath      string
+	AssurancePlanPath      string
+	EvidenceLogPath        string
 	SuccessModelPath       string
 	ProofPlanPath          string
 	WorkflowPlanPath       string
 	DomainPackPath         string
 	CompilerInputPath      string
 	CompilerReportPath     string
-	GoalPath               string
-	GoalLogPath            string
 	InterventionLogPath    string
 	IntegrationStatePath   string
 	CharterPath            string
 	IdentityFencePath      string
-	AcceptanceNotesPath    string
-	AcceptanceStatePath    string
 	CompletionProofPath    string
 	RunStatePath           string
 	SessionsStatePath      string
@@ -145,8 +145,8 @@ func RenderSubagentProtocol(data ProtocolData, runDir string, sessionIdx int) er
 }
 
 func normalizeProtocolData(data ProtocolData, runDir string) ProtocolData {
-	if data.GoalLogPath == "" && data.GoalPath != "" {
-		data.GoalLogPath = filepath.Join(filepath.Dir(data.GoalPath), "goal-log.jsonl")
+	if data.ObligationLogPath == "" && data.ObligationModelPath != "" {
+		data.ObligationLogPath = filepath.Join(filepath.Dir(data.ObligationModelPath), "obligation-log.jsonl")
 	}
 	if data.ObjectiveContractPath == "" && runDir != "" {
 		data.ObjectiveContractPath = ObjectiveContractPath(runDir)

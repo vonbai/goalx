@@ -19,9 +19,9 @@ func TestRenderSubagentProtocolIncludesResumeInstructions(t *testing.T) {
 		Engine:                    "codex",
 		ProjectRoot:               "/tmp/project",
 		Target:                    goalx.TargetConfig{Files: []string{"main.go"}},
-		GoalPath:                  "/tmp/goal.json",
+		ObligationModelPath:       "/tmp/obligation-model.json",
 		IntegrationStatePath:      "/tmp/integration.json",
-		AcceptanceStatePath:       "/tmp/acceptance.json",
+		AssurancePlanPath:         "/tmp/assurance-plan.json",
 		LocalValidationCommand:    "go test ./...",
 		SessionName:               "session-1",
 		JournalPath:               "/tmp/journal.jsonl",
@@ -56,6 +56,13 @@ func TestRenderSubagentProtocolIncludesResumeInstructions(t *testing.T) {
 		"Local validation command: `go test ./...`",
 		"`goalx context --run demo`",
 		"`goalx afford --run demo session-1`",
+		"Do not inspect host/resource telemetry unless your assignment is runtime/perf/ops-focused or your path is blocked by an explicit resource refusal or runtime incident.",
+		"prefer `goalx observe --run demo` over repeatedly reading raw control files",
+		"prefer MCP resources and tools for graph exploration",
+		"If GitNexus is fresh but MCP is unavailable in your runtime, use the CLI cognition commands from `goalx afford`.",
+		"scope-aware cognition command surface",
+		"fall back explicitly to builtin `repo-native` cognition",
+		"Do not claim graph-backed certainty unless your current scope shows `index_state=fresh`.",
 		"`goalx wait --run demo session-1 --timeout 300`",
 		"## Resume From Durable State",
 		"Do not rebuild the full chat history",
@@ -621,18 +628,18 @@ func TestRenderSubagentProtocolDeclaresReadonlyBoundary(t *testing.T) {
 func TestRenderMasterProtocolDeclaresReadonlyBoundaryToMaster(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:         "demo",
-		Objective:       "investigate auth",
-		Mode:            goalx.ModeWorker,
-		Master:          goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
-		Target:          goalx.TargetConfig{Files: []string{"report.md"}, Readonly: []string{"."}},
-		TmuxSession:     "ar-demo",
-		SummaryPath:     "/tmp/summary.md",
-		StatusPath:      "/tmp/status.json",
-		GoalPath:        "/tmp/goal.json",
-		ReportsDir:      "/tmp/run/reports",
-		EngineCommand:   "codex exec",
-		RunWorktreePath: "/tmp/run-root",
+		RunName:             "demo",
+		Objective:           "investigate auth",
+		Mode:                goalx.ModeWorker,
+		Master:              goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		Target:              goalx.TargetConfig{Files: []string{"report.md"}, Readonly: []string{"."}},
+		TmuxSession:         "ar-demo",
+		SummaryPath:         "/tmp/summary.md",
+		StatusPath:          "/tmp/status.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
+		ReportsDir:          "/tmp/run/reports",
+		EngineCommand:       "codex exec",
+		RunWorktreePath:     "/tmp/run-root",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -854,8 +861,8 @@ func TestRenderSubagentProtocolIncludesTeamContext(t *testing.T) {
 		JournalPath:         "/tmp/journal.jsonl",
 		SessionInboxPath:    "/tmp/control/inbox/session-1.jsonl",
 		SessionCursorPath:   "/tmp/control/session-1-cursor.json",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalPath:            "/tmp/goal.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		Sessions: []SessionData{
 			{Name: "session-1", WorktreePath: "/tmp/worktree-1"},
 			{Name: "session-2", WorktreePath: "/tmp/worktree-2"},
@@ -876,7 +883,7 @@ func TestRenderSubagentProtocolIncludesTeamContext(t *testing.T) {
 		"session-1",
 		"session-2",
 		"of 2 sessions",
-		"goal.json",
+		"obligation-model.json",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered protocol missing %q", want)
@@ -898,8 +905,8 @@ func TestRenderSubagentProtocolMakesGoalBoundaryExplicit(t *testing.T) {
 		JournalPath:            "/tmp/journal.jsonl",
 		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
 		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
-		GoalPath:               "/tmp/goal.json",
-		AcceptanceStatePath:    "/tmp/acceptance.json",
+		ObligationModelPath:    "/tmp/obligation-model.json",
+		AssurancePlanPath:      "/tmp/assurance-plan.json",
 		Sessions: []SessionData{
 			{Name: "session-1", WorktreePath: "/tmp/worktree-1", Mode: goalx.ModeWorker},
 		},
@@ -915,11 +922,11 @@ func TestRenderSubagentProtocolMakesGoalBoundaryExplicit(t *testing.T) {
 	}
 	text := string(out)
 	for _, want := range []string{
-		"Goal boundary: `/tmp/goal.json`",
-		"The goal boundary defines what must be true before the overall goal can be considered complete.",
+		"Obligation boundary: `/tmp/obligation-model.json`",
+		"The obligation boundary defines what must be true before the overall objective can be considered complete.",
 		"Your current assignment defines what to do next, not what counts as full completion.",
-		"Required goal items are the canonical current-goal obligations for the overall run.",
-		"Your assignment is the decomposition; the goal boundary is not.",
+		"Required obligations are the canonical mutable obligations for the overall run.",
+		"Your assignment is the decomposition; the obligation boundary is not.",
 		"one coherent capability slice at a time",
 	} {
 		if !strings.Contains(text, want) {
@@ -928,6 +935,51 @@ func TestRenderSubagentProtocolMakesGoalBoundaryExplicit(t *testing.T) {
 	}
 	if strings.Contains(text, "one fix at a time") {
 		t.Fatalf("rendered protocol should replace one-fix framing with capability-slice framing:\n%s", text)
+	}
+}
+
+func TestRenderSubagentProtocolPrefersObligationBoundaryWhenPresent(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		RunName:                "demo",
+		Objective:              "ship it",
+		Mode:                   goalx.ModeWorker,
+		Engine:                 "codex",
+		ProjectRoot:            "/tmp/project",
+		SessionName:            "session-1",
+		Target:                 goalx.TargetConfig{Files: []string{"main.go"}},
+		LocalValidationCommand: "go test ./...",
+		JournalPath:            "/tmp/journal.jsonl",
+		SessionInboxPath:       "/tmp/control/inbox/session-1.jsonl",
+		SessionCursorPath:      "/tmp/control/session-1-cursor.json",
+		ObligationModelPath:    "/tmp/obligation-model.json",
+		AssurancePlanPath:      "/tmp/assurance-plan.json",
+		EvidenceLogPath:        "/tmp/evidence-log.jsonl",
+		Sessions: []SessionData{
+			{Name: "session-1", WorktreePath: "/tmp/worktree-1", Mode: goalx.ModeWorker},
+		},
+	}
+
+	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
+		t.Fatalf("RenderSubagentProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "program-1.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"Obligation boundary: `/tmp/obligation-model.json`",
+		"The obligation boundary defines what must be true before the overall objective can be considered complete.",
+		"Required obligations are the canonical mutable obligations for the overall run.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered protocol missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "Goal boundary") {
+		t.Fatalf("rendered protocol should prefer obligation boundary wording:\n%s", text)
 	}
 }
 
@@ -944,8 +996,9 @@ func TestRenderSubagentProtocolEscalatesProofOnlyAssignmentsAgainstMissingOutcom
 		JournalPath:         "/tmp/journal.jsonl",
 		SessionInboxPath:    "/tmp/control/inbox/session-1.jsonl",
 		SessionCursorPath:   "/tmp/control/session-1-cursor.json",
-		GoalPath:            "/tmp/goal.json",
-		AcceptanceStatePath: "/tmp/acceptance.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		EvidenceLogPath:     "/tmp/evidence-log.jsonl",
 		Sessions: []SessionData{
 			{Name: "session-1", WorktreePath: "/tmp/worktree-1", Mode: goalx.ModeWorker},
 		},
@@ -969,7 +1022,7 @@ func TestRenderSubagentProtocolEscalatesProofOnlyAssignmentsAgainstMissingOutcom
 	}
 }
 
-func TestRenderMasterProtocolIncludesGoalBoundaryChecklistInstructions(t *testing.T) {
+func TestRenderMasterProtocolIncludesObligationBoundaryChecklistInstructions(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
 		Objective:           "ship it",
@@ -977,8 +1030,9 @@ func TestRenderMasterProtocolIncludesGoalBoundaryChecklistInstructions(t *testin
 		Mode:                goalx.ModeWorker,
 		TmuxSession:         "ar-demo",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalPath:            "/tmp/goal.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		EvidenceLogPath:     "/tmp/evidence-log.jsonl",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		StatusPath:          "/tmp/status.json",
 		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
 	}
@@ -997,21 +1051,28 @@ func TestRenderMasterProtocolIncludesGoalBoundaryChecklistInstructions(t *testin
 		"No explicit intent was provided. Choose the best execution path yourself.",
 		"## Operations",
 		"run-charter.json",
-		"goal boundary",
+		"obligation boundary",
 		"control/identity-fence.json",
-		"acceptance.json",
-		"goal.json",
-		"goal-log.jsonl",
-		"`goalx schema goal`",
-		"Do not invent goal item fields from memory or from older docs.",
+		"assurance-plan.json",
+		"evidence-log.jsonl",
+		"obligation-model.json",
+		"obligation-log.jsonl",
+		"`goalx schema obligation-model`",
+		"`goalx schema assurance-plan`",
+		"Do not invent obligation fields from memory or from older docs.",
 		"goalx verify --run demo",
 		"goalx add --run demo",
 		"goalx afford --run demo master",
+		"prefer MCP resources and tools for graph exploration",
+		"If GitNexus is fresh but MCP is unavailable in the current runtime, use the CLI cognition commands from `goalx afford`.",
+		"prefer its `query`, `context`, and `impact` commands",
+		"fall back explicitly to builtin `repo-native` cognition",
+		"Do not claim graph-backed certainty unless the current scope shows `index_state=fresh`.",
 		"canonical command surface",
 		"orchestrator",
 		"check evidence density, clear evidence, and actionability of findings",
 		"If any required item is uncovered, that is a scheduling bug.",
-		"If parallel capacity exists and independent required work remains, dispatch it now instead of waiting.",
+		"If independent capacity exists and required work remains, dispatch it now instead of waiting.",
 		"An external blocker does not silence dispatch",
 		"If a required item stays stuck, reassign it, split it, or take it over yourself.",
 		"Do not wait on one session if other independent required work can proceed.",
@@ -1056,10 +1117,11 @@ func TestRenderMasterProtocolRequiresBoundaryDesignBeforeFirstDispatch(t *testin
 		TmuxSession:           "ar-demo",
 		SummaryPath:           "/tmp/summary.md",
 		ObjectiveContractPath: "/tmp/objective-contract.json",
-		AcceptanceStatePath:   "/tmp/acceptance.json",
+		AssurancePlanPath:     "/tmp/assurance-plan.json",
+		EvidenceLogPath:       "/tmp/evidence-log.jsonl",
 		CoordinationPath:      "/tmp/coordination.json",
-		GoalPath:              "/tmp/goal.json",
-		GoalLogPath:           "/tmp/goal-log.jsonl",
+		ObligationModelPath:   "/tmp/obligation-model.json",
+		ObligationLogPath:     "/tmp/obligation-log.jsonl",
 		MasterCursorPath:      "/tmp/master-cursor.json",
 		EngineCommand:         "claude --model claude-opus-4-6 --permission-mode auto",
 	}
@@ -1074,11 +1136,54 @@ func TestRenderMasterProtocolRequiresBoundaryDesignBeforeFirstDispatch(t *testin
 	}
 	text := string(out)
 	for _, want := range []string{
-		"Before the first `goalx add` or `goalx tell`, finish the initial boundary design: draft and lock `objective-contract`, replace `goal`, append the first `goal-log` decision, synchronize `acceptance`, write `coordination`, and inspect `success-model`, `proof-plan`, `workflow-plan`, `domain-pack`, `compiler-input`, and `compiler-report` for this run.",
+		"Before the first `goalx add` or `goalx tell`, finish the initial boundary design: draft and lock `objective-contract`, replace `obligation-model`, append the first `obligation-log` decision, synchronize `assurance-plan`, write `coordination`, and inspect `success-model`, `proof-plan`, `workflow-plan`, `domain-pack`, `compiler-input`, and `compiler-report` for this run.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
 		}
+	}
+}
+
+func TestRenderMasterProtocolPrefersObligationBoundaryAuthoringWhenPresent(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:             "ship it",
+		RunName:               "demo",
+		Mode:                  goalx.ModeWorker,
+		TmuxSession:           "ar-demo",
+		SummaryPath:           "/tmp/summary.md",
+		ObjectiveContractPath: "/tmp/objective-contract.json",
+		ObligationModelPath:   "/tmp/obligation-model.json",
+		ObligationLogPath:     "/tmp/obligation-log.jsonl",
+		AssurancePlanPath:     "/tmp/assurance-plan.json",
+		EvidenceLogPath:       "/tmp/evidence-log.jsonl",
+		CoordinationPath:      "/tmp/coordination.json",
+		MasterCursorPath:      "/tmp/master-cursor.json",
+		EngineCommand:         "claude --model claude-opus-4-6 --permission-mode auto",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"`goalx schema obligation-log`",
+		"replace `obligation-model`",
+		"`/tmp/obligation-model.json` is the only mutable completion boundary.",
+		"goalx durable write obligation-model --run demo --body-file /abs/path.json",
+		"goalx durable write obligation-log --run demo --kind decision --actor master --body-file /abs/path.json",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "goalx durable write goal --run demo --body-file /abs/path.json") {
+		t.Fatalf("rendered master protocol should not prefer goal durable-write wording when obligation-model is present:\n%s", text)
 	}
 }
 
@@ -1091,9 +1196,10 @@ func TestRenderMasterProtocolRequiresObjectiveContractIntegrity(t *testing.T) {
 		TmuxSession:           "ar-demo",
 		SummaryPath:           "/tmp/summary.md",
 		ObjectiveContractPath: "/tmp/objective-contract.json",
-		AcceptanceStatePath:   "/tmp/acceptance.json",
-		GoalPath:              "/tmp/goal.json",
-		GoalLogPath:           "/tmp/goal-log.jsonl",
+		AssurancePlanPath:     "/tmp/assurance-plan.json",
+		EvidenceLogPath:       "/tmp/evidence-log.jsonl",
+		ObligationModelPath:   "/tmp/obligation-model.json",
+		ObligationLogPath:     "/tmp/obligation-log.jsonl",
 		CoordinationPath:      "/tmp/coordination.json",
 		EngineCommand:         "claude --model claude-opus-4-6 --permission-mode auto",
 	}
@@ -1110,7 +1216,7 @@ func TestRenderMasterProtocolRequiresObjectiveContractIntegrity(t *testing.T) {
 	for _, want := range []string{
 		"`/tmp/objective-contract.json`",
 		"`objective-contract.json` is the immutable extracted user-clause contract for this run.",
-		"After `objective-contract` is locked, user-originated clauses may not be narrowed, downgraded to optional-only coverage, or removed from acceptance coverage without explicit user approval.",
+		"After `objective-contract` is locked, user-originated clauses may not be narrowed, downgraded to optional-only coverage, or removed from assurance coverage without explicit user approval.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
@@ -1139,7 +1245,7 @@ func TestRenderMasterProtocolRequiresBoundaryShapeComparisonBeforeDispatch(t *te
 	}
 	text := string(out)
 	for _, want := range []string{
-		"Before first dispatch on a non-trivial goal, compare at least a shallow user-restatement boundary and an obligation-grammar boundary, then record the choice in `goal-log`.",
+		"Before first dispatch on a non-trivial goal, compare at least a shallow user-restatement boundary and an obligation-grammar boundary, then record the choice in `obligation-log`.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
@@ -1168,7 +1274,7 @@ func TestRenderMasterProtocolForbidsProofOnlyBoundaryCollapse(t *testing.T) {
 	}
 	text := string(out)
 	for _, want := range []string{
-		"Do not write `goal.json` as a proof plan. In mixed delivery runs, `proof` obligations support `outcome` and `enabler` obligations; they do not replace them.",
+		"Do not turn `obligation-model` into a proof plan. In mixed delivery runs, `proof` obligations support `outcome` and `enabler` obligations; they do not replace them.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
@@ -1210,7 +1316,7 @@ func TestRenderMasterProtocolIncludesOptimizerDoctrine(t *testing.T) {
 		"keep it short: current problem, chosen path, and one-line reason",
 		"run-charter.json",
 		"control/identity-fence.json",
-		"Do not ask the user to choose between implementation paths unless the choice materially changes scope, risk, acceptance, or irreversible cost.",
+		"Do not ask the user to choose between implementation paths unless the choice materially changes scope, risk, assurance strategy, or irreversible cost.",
 		"Otherwise decide yourself, record why, and execute.",
 		"Before you commit on a non-trivial goal, compare at least 2-3 concrete paths first.",
 		"If later evidence shows the chosen path is stuck, falsified, or clearly lower-value, switch paths autonomously and record why.",
@@ -1230,8 +1336,8 @@ func TestRenderMasterProtocolDefinesGenericLastMileAutonomy(t *testing.T) {
 		Master:                goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		TmuxSession:           "ar-demo",
 		SummaryPath:           "/tmp/summary.md",
-		AcceptanceStatePath:   "/tmp/acceptance.json",
-		GoalPath:              "/tmp/goal.json",
+		AssurancePlanPath:     "/tmp/assurance-plan.json",
+		ObligationModelPath:   "/tmp/obligation-model.json",
 		RunStatePath:          "/tmp/state/run.json",
 		SessionsStatePath:     "/tmp/state/sessions.json",
 		MasterInboxPath:       "/tmp/control/master-inbox.jsonl",
@@ -1256,12 +1362,12 @@ func TestRenderMasterProtocolDefinesGenericLastMileAutonomy(t *testing.T) {
 	text := string(out)
 	for _, want := range []string{
 		"Do not label work as external just because it happens late in the run or touches runtime state.",
-		"Local shell work such as building, restarting services, launching local deploy/dev processes, checking readiness, inspecting running revisions, and running acceptance/eval commands is part of the job when the required access is already available.",
+		"Local shell work such as building, restarting services, launching local deploy/dev processes, checking readiness, inspecting running revisions, and running assurance/eval commands is part of the job when the required access is already available.",
 		"Before recording a required item as externally blocked, verify that the blocker is truly outside your available permissions, credentials, or reachable environment.",
 		"If a required proof step depends on a long-running local process, confirm that the live process matches current `HEAD`; if it does not, rebuild/restart or relaunch it yourself before evaluating.",
 		"Do not stop at intermediate states such as \"implementation complete\", \"ready for eval\", or \"awaiting external verification\" while an actionable required item remains.",
 		"If the only remaining gap is proof or verification that you can execute yourself, run it now instead of waiting for another cycle.",
-		"If a better path becomes clear during execution, update the goal boundary, switch, and continue without waiting for a user tell.",
+		"If a better path becomes clear during execution, update the obligation boundary, switch, and continue without waiting for a user tell.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q", want)
@@ -1272,13 +1378,12 @@ func TestRenderMasterProtocolDefinesGenericLastMileAutonomy(t *testing.T) {
 func TestRenderMasterProtocolIncludesIntentAndWorkerLaunchGuidance(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective:           "audit auth",
-		RunName:             "demo",
-		Mode:                goalx.ModeWorker,
-		TmuxSession:         "ar-demo",
-		SummaryPath:         "/tmp/summary.md",
-		AcceptanceNotesPath: "/tmp/acceptance.md",
-		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
+		Objective:     "audit auth",
+		RunName:       "demo",
+		Mode:          goalx.ModeWorker,
+		TmuxSession:   "ar-demo",
+		SummaryPath:   "/tmp/summary.md",
+		EngineCommand: "claude --model claude-opus-4-6 --permission-mode auto",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -1531,16 +1636,15 @@ func TestRenderMasterProtocolOmitsLegacyPlannedSessionsAndPresetDisplays(t *test
 func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective:           "ship it",
-		RunName:             "demo",
-		Mode:                goalx.ModeWorker,
-		Engines:             goalx.BuiltinEngines,
-		Master:              goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
-		TmuxSession:         "ar-demo",
-		SummaryPath:         "/tmp/summary.md",
-		AcceptanceNotesPath: "/tmp/acceptance.md",
-		StatusPath:          "/tmp/status.json",
-		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
+		Objective:     "ship it",
+		RunName:       "demo",
+		Mode:          goalx.ModeWorker,
+		Engines:       goalx.BuiltinEngines,
+		Master:        goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		TmuxSession:   "ar-demo",
+		SummaryPath:   "/tmp/summary.md",
+		StatusPath:    "/tmp/status.json",
+		EngineCommand: "claude --model claude-opus-4-6 --permission-mode auto",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -1560,6 +1664,9 @@ func TestRenderMasterProtocolIncludesTransitionRecommendationInstructions(t *tes
 		"Replace `goalx run --from demo --intent debate` with `goalx run --from demo --intent implement` or `goalx run --from demo --intent explore`",
 		"goalx stop --run demo",
 		"## Status",
+		"`goalx status` is the compact exception-biased control snapshot.",
+		"Use `goalx observe` only when you are actively diagnosing transport, runtime pressure, OOM events, or another ambiguous control incident.",
+		"Do not read raw resource telemetry every control cycle.",
 		"You drive the transition.",
 		"Inspect the canonical status contract with `goalx schema status`",
 		"Do NOT just write a recommendation and wait.",
@@ -1648,7 +1755,7 @@ func TestRenderMasterProtocolIncludesNoChangeFastPathGuidance(t *testing.T) {
 		SummaryPath:         "/tmp/summary.md",
 		CompletionProofPath: "/tmp/proof/completion.json",
 		StatusPath:          "/tmp/status.json",
-		GoalPath:            "/tmp/goal.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		CoordinationPath:    "/tmp/coordination.json",
 		MasterInboxPath:     "/tmp/control/inbox/master.jsonl",
 		RunStatePath:        "/tmp/state/run.json",
@@ -1668,7 +1775,7 @@ func TestRenderMasterProtocolIncludesNoChangeFastPathGuidance(t *testing.T) {
 	for _, want := range []string{
 		"If inbox state is unchanged, no target crossed a stale/health threshold, no coordination/coverage fact changed, and the active owner is still within grace, treat that control cycle as a no-change fast path.",
 		"If `required_remaining` is 0 but `/tmp/summary.md` or `/tmp/proof/completion.json` is missing, that control cycle is **not** a no-change fast path.",
-		"If `/tmp/status.json` disagrees with `/tmp/goal.json` about required remaining work, treat `/tmp/goal.json` as canonical and repair `/tmp/status.json` before you idle or close out.",
+		"If `/tmp/status.json` disagrees with `/tmp/obligation-model.json` about required remaining work, treat `/tmp/obligation-model.json` as canonical and repair `/tmp/status.json` before you idle or close out.",
 		"An active session with `active_idle`, `transport_blocked`, `progress_blocked`, or `ownership_risky` facts is **not** a no-change fast path.",
 		"Do not use `goalx status` as a default heartbeat.",
 		"Do not repeatedly restate unchanged authoritative files, health summaries, or stale-threshold reasoning.",
@@ -1718,16 +1825,16 @@ func TestRenderMasterProtocolBindsRequiredFrontierFactsToImmediateIntervention(t
 func TestRenderMasterProtocolIncludesReportsAndCompletionGuidance(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective:      "audit auth",
-		RunName:        "demo",
-		Mode:           goalx.ModeWorker,
-		Master:         goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
-		TmuxSession:    "ar-demo",
-		SummaryPath:    "/tmp/summary.md",
-		StatusPath:     "/tmp/status.json",
-		GoalPath:       "/tmp/goal.json",
-		ReportsDir:     "/tmp/run/reports",
-		DimensionsPath: "/tmp/control/dimensions.json",
+		Objective:           "audit auth",
+		RunName:             "demo",
+		Mode:                goalx.ModeWorker,
+		Master:              goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		TmuxSession:         "ar-demo",
+		SummaryPath:         "/tmp/summary.md",
+		StatusPath:          "/tmp/status.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
+		ReportsDir:          "/tmp/run/reports",
+		DimensionsPath:      "/tmp/control/dimensions.json",
 		DimensionsCatalog: map[string]string{
 			"depth":    "Depth focus",
 			"evidence": "Evidence focus",
@@ -1745,14 +1852,14 @@ func TestRenderMasterProtocolIncludesReportsAndCompletionGuidance(t *testing.T) 
 	}
 	text := string(out)
 	for _, want := range []string{
-		"`/tmp/goal.json` required items are the canonical current-goal obligations and definition of done.",
-		"Do not use required goal items as implementation tasks or temporary decomposition.",
-		"Keep execution decomposition in coordination, inbox, journals, and session briefs instead of rewriting goal items.",
-		"Only move a required item toward closeout when decisive evidence says the goal outcome itself is satisfied or the user explicitly approved removing it from scope.",
+		"`/tmp/obligation-model.json` required items are the canonical mutable obligations and definition of done.",
+		"Do not use required obligations as implementation tasks or temporary decomposition.",
+		"Keep execution decomposition in coordination, inbox, journals, and session briefs instead of rewriting obligations.",
+		"Only move a required obligation toward closeout when decisive evidence says the outcome itself is satisfied or the user explicitly approved removing it from scope.",
 		"Missing user credentials, external approval, or real-world publish access does not justify treating a required outcome as end-to-end verified.",
 		"If a session produced valuable work outside the original items, that work matters.",
 		"If a session shows no journal output for 15+ minutes while its lease is healthy",
-		"Run `goalx verify --run demo` when you need fresh acceptance evidence.",
+		"Run `goalx verify --run demo` when you need fresh assurance evidence.",
 		"goalx dimension [--run NAME] <session-N|all> --set depth,adversarial",
 		"goalx dimension [--run NAME] <session-N> --add creative",
 		"goalx dimension [--run NAME] <session-N> --remove depth",
@@ -1767,21 +1874,21 @@ func TestRenderMasterProtocolIncludesReportsAndCompletionGuidance(t *testing.T) 
 		t.Fatalf("rendered master protocol should omit legacy strategy guidance:\n%s", text)
 	}
 	if strings.Contains(text, "Goal items are your working decomposition, not the definition of done.") {
-		t.Fatalf("rendered master protocol should not describe goal items as decomposition:\n%s", text)
+		t.Fatalf("rendered master protocol should not describe obligations as decomposition:\n%s", text)
 	}
 }
 
 func TestRenderMasterProtocolOmitsDuplicatedColdTablesButKeepsDispatchGuidance(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective:   "audit auth",
-		RunName:     "demo",
-		Mode:        goalx.ModeWorker,
-		Master:      goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
-		TmuxSession: "ar-demo",
-		SummaryPath: "/tmp/summary.md",
-		StatusPath:  "/tmp/status.json",
-		GoalPath:    "/tmp/goal.json",
+		Objective:           "audit auth",
+		RunName:             "demo",
+		Mode:                goalx.ModeWorker,
+		Master:              goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
+		TmuxSession:         "ar-demo",
+		SummaryPath:         "/tmp/summary.md",
+		StatusPath:          "/tmp/status.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		Sessions: []SessionData{
 			{Name: "session-1", WorktreePath: "/tmp/wt-1"},
 		},
@@ -1873,9 +1980,8 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		Master:                goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		TmuxSession:           "ar-demo",
 		SummaryPath:           "/tmp/summary.md",
-		AcceptanceNotesPath:   "/tmp/acceptance.md",
-		AcceptanceStatePath:   "/tmp/acceptance.json",
-		GoalPath:              "/tmp/goal.json",
+		AssurancePlanPath:     "/tmp/assurance-plan.json",
+		ObligationModelPath:   "/tmp/obligation-model.json",
 		MasterJournalPath:     "/tmp/master.jsonl",
 		StatusPath:            "/tmp/status.json",
 		CoordinationPath:      "/tmp/coordination.json",
@@ -1917,12 +2023,11 @@ func TestRenderMasterProtocolIncludesMixedModeCoordinationGuidance(t *testing.T)
 		"Check the coordination digest version each control cycle.",
 		"Default to current repo state, control files, runtime state, and latest session outputs.",
 		"Only reread older journal history when the current state is ambiguous",
-		"You may reorder, delegate, or temporarily postpone required work within the current goal",
-		"you may not declare the goal complete while any required item remains unfinished, blocked, or merely scheduled for later",
+		"You may reorder, delegate, or temporarily postpone required work within the current obligation boundary",
+		"you may not declare the objective complete while any required obligation remains unfinished, blocked, or merely scheduled for later",
 		"If any required item is uncovered, that is a scheduling bug.",
 		"If you use `/tmp/proof/completion.json`, treat it as an agent-owned closeout/evidence surface.",
-		"If parallel capacity exists and independent required work remains, dispatch it now instead of waiting.",
-		"Treat configured `parallel` as initial fan-out guidance, not a permanent ceiling;",
+		"If independent capacity exists and required work remains, dispatch it now instead of waiting.",
 		"An external blocker does not silence dispatch",
 		"Do not wait on one session if other independent required work can proceed.",
 		"Prefer reusing a parked or idle session with fresh inbox instructions before launching another session.",
@@ -1969,9 +2074,8 @@ func TestRenderMasterProtocolOmitsOldSyncOnlyLivenessGuidance(t *testing.T) {
 		Master:              goalx.MasterConfig{Engine: "codex", Model: "best"},
 		TmuxSession:         "ar-demo",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptanceNotesPath: "/tmp/acceptance.md",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalPath:            "/tmp/goal.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		CoordinationPath:    "/tmp/coordination.json",
 		StatusPath:          "/tmp/status.json",
 		MasterJournalPath:   "/tmp/master.jsonl",
@@ -2006,9 +2110,8 @@ func TestRenderMasterProtocolIncludesOptimizationDoctrine(t *testing.T) {
 		Master:              goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		TmuxSession:         "ar-demo",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptanceNotesPath: "/tmp/acceptance.md",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalPath:            "/tmp/goal.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		CoordinationPath:    "/tmp/coordination.json",
 		StatusPath:          "/tmp/status.json",
 		EngineCommand:       "claude --model claude-opus-4-6 --permission-mode auto",
@@ -2055,8 +2158,8 @@ func TestRenderMasterProtocolIncludesCurrentTimeAndEvolveIntentFacts(t *testing.
 		Master:               goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
 		TmuxSession:          "ar-demo",
 		SummaryPath:          "/tmp/summary.md",
-		AcceptanceStatePath:  "/tmp/acceptance.json",
-		GoalPath:             "/tmp/goal.json",
+		AssurancePlanPath:    "/tmp/assurance-plan.json",
+		ObligationModelPath:  "/tmp/obligation-model.json",
 		StatusPath:           "/tmp/status.json",
 		CoordinationPath:     "/tmp/coordination.json",
 		EngineCommand:        "codex --model gpt-5.4",
@@ -2118,8 +2221,8 @@ func TestRenderMasterProtocolIncludesBudgetExhaustionGracefulStopDoctrine(t *tes
 		Master:              goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
 		ActivityPath:        "/tmp/activity.json",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalPath:            "/tmp/goal.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		StatusPath:          "/tmp/status.json",
 	}
 
@@ -2180,15 +2283,15 @@ func TestRenderMasterProtocolOmitsStaticBudgetLiteral(t *testing.T) {
 func TestRenderSubagentProtocolOmitsBudgetSection(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:      "demo",
-		Objective:    "ship it",
-		Mode:         goalx.ModeWorker,
-		Engine:       "codex",
-		SessionName:  "session-1",
-		SessionInboxPath: "/tmp/control/inbox/session-1.jsonl",
+		RunName:           "demo",
+		Objective:         "ship it",
+		Mode:              goalx.ModeWorker,
+		Engine:            "codex",
+		SessionName:       "session-1",
+		SessionInboxPath:  "/tmp/control/inbox/session-1.jsonl",
 		SessionCursorPath: "/tmp/control/session-1-cursor.json",
-		JournalPath:  "/tmp/journal.jsonl",
-		Budget:       goalx.BudgetConfig{MaxDuration: 8 * time.Hour, MaxRounds: 5},
+		JournalPath:       "/tmp/journal.jsonl",
+		Budget:            goalx.BudgetConfig{MaxDuration: 8 * time.Hour, MaxRounds: 5},
 	}
 
 	if err := RenderSubagentProtocol(data, runDir, 0); err != nil {
@@ -2217,8 +2320,8 @@ func TestRenderMasterProtocolIncludesExploreIntentFacts(t *testing.T) {
 		Master:              goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
 		TmuxSession:         "ar-demo",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalPath:            "/tmp/goal.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		StatusPath:          "/tmp/status.json",
 		CoordinationPath:    "/tmp/coordination.json",
 		EngineCommand:       "codex --model gpt-5.4",
@@ -2258,8 +2361,8 @@ func TestRenderMasterProtocolIncludesDebateIntentFacts(t *testing.T) {
 		Master:              goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
 		TmuxSession:         "ar-demo",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalPath:            "/tmp/goal.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		StatusPath:          "/tmp/status.json",
 		CoordinationPath:    "/tmp/coordination.json",
 		EngineCommand:       "codex --model gpt-5.4",
@@ -2298,8 +2401,8 @@ func TestRenderMasterProtocolIncludesImplementIntentFacts(t *testing.T) {
 		Master:              goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
 		TmuxSession:         "ar-demo",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalPath:            "/tmp/goal.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		StatusPath:          "/tmp/status.json",
 		CoordinationPath:    "/tmp/coordination.json",
 		EngineCommand:       "codex --model gpt-5.4",
@@ -2319,7 +2422,7 @@ func TestRenderMasterProtocolIncludesImplementIntentFacts(t *testing.T) {
 		"This run was launched with explicit `implement` intent.",
 		"Treat prior reports, debate output, and saved evidence as the input contract for implementation.",
 		"Default toward concrete implementation, validation, review, and integration slices instead of reopening broad exploration.",
-		"If the saved evidence conflicts with the current repo, runtime, or goal boundary, resolve the contradiction quickly and record it before continuing.",
+		"If the saved evidence conflicts with the current repo, runtime, or obligation boundary, resolve the contradiction quickly and record it before continuing.",
 		"Do not treat prior recommendations as self-authenticating; verify they still hold in the current repo before you commit on them.",
 	} {
 		if !strings.Contains(text, want) {
@@ -2337,8 +2440,8 @@ func TestRenderMasterProtocolUsesCondensedOperatingSections(t *testing.T) {
 		Master:                goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
 		TmuxSession:           "ar-demo",
 		SummaryPath:           "/tmp/summary.md",
-		AcceptanceStatePath:   "/tmp/acceptance.json",
-		GoalPath:              "/tmp/goal.json",
+		AssurancePlanPath:     "/tmp/assurance-plan.json",
+		ObligationModelPath:   "/tmp/obligation-model.json",
 		StatusPath:            "/tmp/status.json",
 		CoordinationPath:      "/tmp/coordination.json",
 		MasterInboxPath:       "/tmp/control/inbox/master.jsonl",
@@ -2429,12 +2532,12 @@ func TestRenderMasterProtocolUsesInspectFirstStaleEscalation(t *testing.T) {
 func TestRenderMasterProtocolRequiresActionOnBlockedOwnerFacts(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		RunName:     "demo",
-		Objective:   "ship it",
-		Mode:        goalx.ModeWorker,
-		Engine:      "codex",
-		ProjectRoot: "/tmp/project",
-		GoalPath:    "/tmp/goal.json",
+		RunName:             "demo",
+		Objective:           "ship it",
+		Mode:                goalx.ModeWorker,
+		Engine:              "codex",
+		ProjectRoot:         "/tmp/project",
+		ObligationModelPath: "/tmp/obligation-model.json",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -2500,8 +2603,8 @@ func TestRenderMasterProtocolIncludesExplicitCoverageOwnershipGuidance(t *testin
 		Master:              goalx.MasterConfig{Engine: "codex", Model: "gpt-5.4"},
 		TmuxSession:         "ar-demo",
 		SummaryPath:         "/tmp/summary.md",
-		AcceptanceStatePath: "/tmp/acceptance.json",
-		GoalPath:            "/tmp/goal.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
 		CoordinationPath:    "/tmp/coordination.json",
 		StatusPath:          "/tmp/status.json",
 		MasterJournalPath:   "/tmp/master.jsonl",
@@ -2519,7 +2622,7 @@ func TestRenderMasterProtocolIncludesExplicitCoverageOwnershipGuidance(t *testin
 	text := string(out)
 	for _, want := range []string{
 		"When durable ownership becomes explicit, inspect `goalx schema coordination` and write `coordination` through `goalx durable write coordination --run demo --body-file /abs/path.json`.",
-		"If `/tmp/coordination.json` shows uncovered current-goal work, required outcomes must not remain silently unmapped.",
+		"If `/tmp/coordination.json` shows uncovered current required work, required outcomes must not remain silently unmapped.",
 		"When explicit coverage facts show uncovered required work and reusable capacity exists, either dispatch or reassign it now, or record why this control cycle stays serial.",
 		"Do not infer ownership from journals or `owner_scope`.",
 	} {
@@ -2731,7 +2834,7 @@ func TestRenderMasterProtocolIncludesAutonomyPersistenceGuidance(t *testing.T) {
 	}
 	text := string(out)
 	for _, want := range []string{
-		"If the goal boundary is clear and a concrete next action exists, continue acting. Method uncertainty is not intent uncertainty.",
+		"If the obligation boundary is clear and a concrete next action exists, continue acting. Method uncertainty is not intent uncertainty.",
 		"Context compaction is normal. Recover from durable state and continue; do not hand off or close out early because context was trimmed.",
 	} {
 		if !strings.Contains(text, want) {
@@ -2765,7 +2868,7 @@ func TestRenderMasterProtocolIncludesGenericExecutionGuidanceForCodex(t *testing
 	for _, want := range []string{
 		"**Execution rule**: Treat action verbs in this protocol as instructions to execute the corresponding tool action in this control cycle. Stating intent is not action.",
 		"Choose the execution surface with the lowest volatility that can still produce the required outcome and proof.",
-		"If the goal boundary is clear and a concrete next action exists, continue acting. Method uncertainty is not intent uncertainty.",
+		"If the obligation boundary is clear and a concrete next action exists, continue acting. Method uncertainty is not intent uncertainty.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
@@ -2807,7 +2910,7 @@ func TestRenderMasterProtocolIncludesAutonomyPersistenceGuidanceForCodex(t *test
 	}
 	text := string(out)
 	for _, want := range []string{
-		"If the goal boundary is clear and a concrete next action exists, continue acting. Method uncertainty is not intent uncertainty.",
+		"If the obligation boundary is clear and a concrete next action exists, continue acting. Method uncertainty is not intent uncertainty.",
 		"Context compaction is normal. Recover from durable state and continue; do not hand off or close out early because context was trimmed.",
 	} {
 		if !strings.Contains(text, want) {
@@ -2921,10 +3024,11 @@ func TestRenderMasterProtocolIncludesSelectionFacts(t *testing.T) {
 func TestRenderMasterProtocolUsesContextInsteadOfCharterForStartup(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
-		Objective: "ship it",
-		RunName:   "demo",
-		Mode:      goalx.ModeWorker,
-		Master:    goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		Objective:        "ship it",
+		RunName:          "demo",
+		Mode:             goalx.ModeWorker,
+		Master:           goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		MasterCursorPath: "/tmp/control/master-cursor.json",
 	}
 
 	if err := RenderMasterProtocol(data, runDir); err != nil {
@@ -2978,6 +3082,36 @@ func TestRenderMasterProtocolRoutesSessionDispatchThroughTell(t *testing.T) {
 	}
 }
 
+func TestRenderMasterProtocolUsesAckInboxForMasterCursorAdvance(t *testing.T) {
+	runDir := t.TempDir()
+	data := ProtocolData{
+		Objective:        "ship it",
+		RunName:          "demo",
+		Mode:             goalx.ModeWorker,
+		Master:           goalx.MasterConfig{Engine: "claude-code", Model: "opus"},
+		MasterCursorPath: "/tmp/control/master-cursor.json",
+	}
+
+	if err := RenderMasterProtocol(data, runDir); err != nil {
+		t.Fatalf("RenderMasterProtocol: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(runDir, "master.md"))
+	if err != nil {
+		t.Fatalf("read rendered protocol: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"`goalx ack-inbox --run demo master`",
+		"instead of editing `",
+		"master-cursor.json",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered master protocol missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestRenderMasterProtocolStatusRecordIsFactsOnly(t *testing.T) {
 	runDir := t.TempDir()
 	data := ProtocolData{
@@ -3015,11 +3149,11 @@ func TestRenderMasterProtocolStatusRecordIsFactsOnly(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"`goalx schema goal`",
-		"`goalx schema acceptance`",
+		"`goalx schema obligation-model`",
+		"`goalx schema assurance-plan`",
 		"`goalx schema coordination`",
 		"`goalx schema status`",
-		"`goalx schema goal-log`",
+		"`goalx schema obligation-log`",
 		"`goalx schema experiments`",
 	} {
 		if !strings.Contains(text, want) {
@@ -3036,8 +3170,9 @@ func TestRenderMasterProtocolIncludesSuccessModelCloseoutDoctrine(t *testing.T) 
 		Mode:                goalx.ModeWorker,
 		Engine:              "codex",
 		ProjectRoot:         "/tmp/project",
-		GoalPath:            "/tmp/goal.json",
-		AcceptanceStatePath: "/tmp/acceptance.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
+		EvidenceLogPath:     "/tmp/evidence-log.jsonl",
 		StatusPath:          "/tmp/status.json",
 		CoordinationPath:    "/tmp/coordination.json",
 	}
@@ -3074,8 +3209,8 @@ func TestRenderMasterProtocolIncludesPriorPromotionBoundary(t *testing.T) {
 		Mode:                goalx.ModeWorker,
 		Engine:              "codex",
 		ProjectRoot:         "/tmp/project",
-		GoalPath:            "/tmp/goal.json",
-		AcceptanceStatePath: "/tmp/acceptance.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
 		StatusPath:          "/tmp/status.json",
 	}
 
@@ -3102,8 +3237,8 @@ func TestRenderMasterProtocolIncludesCompilerReportGuidance(t *testing.T) {
 		Mode:                goalx.ModeWorker,
 		Engine:              "codex",
 		ProjectRoot:         "/tmp/project",
-		GoalPath:            "/tmp/goal.json",
-		AcceptanceStatePath: "/tmp/acceptance.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
 		StatusPath:          "/tmp/status.json",
 		CoordinationPath:    "/tmp/coordination.json",
 	}
@@ -3140,8 +3275,8 @@ func TestRenderSubagentProtocolIncludesCriticFinisherAndPriorGuidance(t *testing
 		SessionInboxPath:    "/tmp/control/inbox/session-1.jsonl",
 		SessionCursorPath:   "/tmp/control/session-1-cursor.json",
 		JournalPath:         "/tmp/journal.jsonl",
-		GoalPath:            "/tmp/goal.json",
-		AcceptanceStatePath: "/tmp/acceptance.json",
+		ObligationModelPath: "/tmp/obligation-model.json",
+		AssurancePlanPath:   "/tmp/assurance-plan.json",
 		WorktreePath:        "/tmp/worktree",
 	}
 

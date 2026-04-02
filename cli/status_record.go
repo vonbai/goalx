@@ -29,9 +29,9 @@ type RunStatusRecord struct {
 type RunStatusComparison struct {
 	Phase                         string   `json:"phase,omitempty"`
 	StatusRequiredRemaining       *int     `json:"status_required_remaining,omitempty"`
-	GoalRequiredRemaining         *int     `json:"goal_required_remaining,omitempty"`
+	GoalRequiredRemaining         *int     `json:"boundary_required_remaining,omitempty"`
 	StatusOpenRequiredIDs         []string `json:"status_open_required_ids,omitempty"`
-	GoalRemainingRequiredIDs      []string `json:"goal_remaining_required_ids,omitempty"`
+	GoalRemainingRequiredIDs      []string `json:"boundary_remaining_required_ids,omitempty"`
 	StatusOpenRequiredIDsRecorded bool     `json:"status_open_required_ids_recorded,omitempty"`
 	StatusActiveSessions          []string `json:"status_active_sessions,omitempty"`
 	RuntimeActiveSessions         []string `json:"runtime_active_sessions,omitempty"`
@@ -107,7 +107,7 @@ func validateRunStatusRecordAgainstGoal(path string, record *RunStatusRecord) er
 	if record == nil || strings.TrimSpace(path) == "" {
 		return nil
 	}
-	goalState, err := LoadGoalState(GoalPath(filepath.Dir(path)))
+	goalState, err := LoadCanonicalGoalState(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
@@ -116,11 +116,11 @@ func validateRunStatusRecordAgainstGoal(path string, record *RunStatusRecord) er
 	}
 	summary := SummarizeGoalState(goalState)
 	if *record.RequiredRemaining != summary.RequiredRemaining {
-		return fmt.Errorf("run status record required_remaining=%d does not match goal required_remaining=%d", *record.RequiredRemaining, summary.RequiredRemaining)
+		return fmt.Errorf("run status record required_remaining=%d does not match boundary required_remaining=%d", *record.RequiredRemaining, summary.RequiredRemaining)
 	}
 	remainingIDs := goalRemainingRequiredIDs(goalState)
 	if len(record.OpenRequiredIDs) > 0 && !slices.Equal(record.OpenRequiredIDs, remainingIDs) {
-		return fmt.Errorf("run status record open_required_ids=%q does not match goal remaining_required_ids=%q", strings.Join(record.OpenRequiredIDs, ","), strings.Join(remainingIDs, ","))
+		return fmt.Errorf("run status record open_required_ids=%q does not match boundary remaining_required_ids=%q", strings.Join(record.OpenRequiredIDs, ","), strings.Join(remainingIDs, ","))
 	}
 	return nil
 }
@@ -130,7 +130,7 @@ func BuildRunStatusComparison(runDir string) (*RunStatusComparison, error) {
 	if err != nil {
 		return nil, err
 	}
-	goalState, err := LoadGoalState(GoalPath(runDir))
+	goalState, err := LoadCanonicalGoalState(runDir)
 	if err != nil {
 		return nil, err
 	}

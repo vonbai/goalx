@@ -164,15 +164,15 @@ func EnsureControlState(runDir string) error {
 		if !os.IsNotExist(err) {
 			return err
 		}
-			if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
-				Version:         1,
-				GoalState:       "open",
-				ContinuityState: "running",
-				UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
-			}); err != nil {
-				return err
-			}
+		if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+			Version:         1,
+			GoalState:       "open",
+			ContinuityState: "running",
+			UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
+		}); err != nil {
+			return err
 		}
+	}
 	if _, err := LoadControlLease(ControlLeasePath(runDir, "master")); err != nil {
 		if !os.IsNotExist(err) {
 			return err
@@ -181,9 +181,9 @@ func EnsureControlState(runDir string) error {
 			return err
 		}
 	}
-		if _, err := LoadControlReminders(ControlRemindersPath(runDir)); err != nil {
-			if !os.IsNotExist(err) {
-				return err
+	if _, err := LoadControlReminders(ControlRemindersPath(runDir)); err != nil {
+		if !os.IsNotExist(err) {
+			return err
 		}
 		if err := SaveControlReminders(ControlRemindersPath(runDir), &ControlReminders{Version: 1, Items: []ControlReminder{}}); err != nil {
 			return err
@@ -477,9 +477,7 @@ func deriveControlRunIdentity(runDir string) (*ControlRunIdentity, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	identity := &ControlRunIdentity{
 		Version:     1,
-		RunID:       newRunID(),
 		RunName:     filepath.Base(runDir),
-		Epoch:       1,
 		CreatedAt:   now,
 		CharterPath: RunCharterPath(runDir),
 	}
@@ -498,6 +496,25 @@ func deriveControlRunIdentity(runDir string) (*ControlRunIdentity, error) {
 	if charter != nil {
 		if err := ValidateRunCharterLinkage(meta, charter); err != nil {
 			return nil, err
+		}
+		if charter.RunName != "" {
+			identity.RunName = charter.RunName
+		}
+		if charter.RunID != "" {
+			identity.RunID = charter.RunID
+		}
+		if charter.ProjectRoot != "" {
+			identity.ProjectRoot = charter.ProjectRoot
+			identity.ProjectID = goalx.ProjectID(charter.ProjectRoot)
+		}
+		if charter.CreatedAt != "" {
+			identity.CreatedAt = charter.CreatedAt
+		}
+		if charter.Mode != "" {
+			identity.Mode = charter.Mode
+		}
+		if charter.PhaseKind != "" {
+			identity.PhaseKind = charter.PhaseKind
 		}
 		identity.CharterID = charter.CharterID
 		if digest, err := hashRunCharter(charter); err == nil {

@@ -11,11 +11,13 @@ import (
 
 	goalx "github.com/vonbai/goalx"
 	"github.com/vonbai/goalx/cli"
+	"github.com/vonbai/goalx/internal/slowtest"
 	"gopkg.in/yaml.v3"
 )
 
 func buildGoalxBinary(t *testing.T, home string) string {
 	t.Helper()
+	slowtest.Require(t, "main command integration test")
 
 	pkgDir, err := os.Getwd()
 	if err != nil {
@@ -69,6 +71,16 @@ func writeSavedRunFixture(t *testing.T, projectRoot, runName string, cfg goalx.C
 	}); err != nil {
 		t.Fatalf("write intake.json: %v", err)
 	}
+	objectiveHash := "sha256:demo"
+	if _, ok := files["objective-contract.json"]; !ok {
+		files["objective-contract.json"] = "{\n  \"version\": 1,\n  \"objective_hash\": \"" + objectiveHash + "\",\n  \"state\": \"locked\",\n  \"clauses\": []\n}\n"
+	}
+	if _, ok := files["obligation-model.json"]; !ok {
+		files["obligation-model.json"] = "{\n  \"version\": 1,\n  \"objective_contract_hash\": \"" + objectiveHash + "\",\n  \"required\": [],\n  \"optional\": [],\n  \"guardrails\": []\n}\n"
+	}
+	if _, ok := files["assurance-plan.json"]; !ok {
+		files["assurance-plan.json"] = "{\n  \"version\": 1,\n  \"scenarios\": []\n}\n"
+	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(runDir, name), []byte(content), 0o644); err != nil {
 			t.Fatalf("write %s: %v", name, err)
@@ -78,6 +90,7 @@ func writeSavedRunFixture(t *testing.T, projectRoot, runName string, cfg goalx.C
 }
 
 func TestMainSupportsResultCommand(t *testing.T) {
+	slowtest.Require(t, "main command integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	binPath := buildGoalxBinary(t, home)
@@ -124,6 +137,7 @@ func TestRootUsageOmitsRemovedGuidedFlag(t *testing.T) {
 }
 
 func TestMainInitWritesPreviewManualDraftOnEmptyProject(t *testing.T) {
+	slowtest.Require(t, "main command integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	binPath := buildGoalxBinary(t, home)
@@ -150,6 +164,7 @@ func TestMainInitWritesPreviewManualDraftOnEmptyProject(t *testing.T) {
 }
 
 func TestMainDebateWriteConfigReResolvesFromSharedConfig(t *testing.T) {
+	slowtest.Require(t, "main command integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	binPath := buildGoalxBinary(t, home)
@@ -366,7 +381,7 @@ func TestUsageDescribesDurableAsWritePath(t *testing.T) {
 }
 
 func TestRunCommandRejectsLegacyTopLevelAliases(t *testing.T) {
-	for _, legacy := range []string{"auto", "research", "develop", "debate", "implement", "explore"} {
+	for _, legacy := range []string{"auto", "research", "develop", "debate", "implement", "explore", "ack-session"} {
 		if err := runCommand(t.TempDir(), legacy, []string{"demo"}); !errors.Is(err, errUnknownCommand) {
 			t.Fatalf("runCommand %s error = %v, want errUnknownCommand", legacy, err)
 		}

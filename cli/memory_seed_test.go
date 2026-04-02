@@ -20,11 +20,12 @@ func TestAppendMemorySeedFromVerifyResult(t *testing.T) {
 	writeAndCommit(t, repo, "README.md", "demo", "base commit")
 
 	runName, runDir, _, _ := writeReadOnlyRunFixture(t, repo)
-	if err := os.WriteFile(AcceptanceEvidencePath(runDir), []byte("gate ok\n"), 0o644); err != nil {
+	evidencePath := filepath.Join(runDir, "evidence-gate.txt")
+	if err := os.WriteFile(evidencePath, []byte("gate ok\n"), 0o644); err != nil {
 		t.Fatalf("write acceptance evidence: %v", err)
 	}
 	exitCode := 0
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version: 2,
 		Checks: []AcceptanceCheck{
 			{ID: "chk-1", Command: "printf 'gate ok\\n'", State: acceptanceCheckStateActive},
@@ -32,9 +33,9 @@ func TestAppendMemorySeedFromVerifyResult(t *testing.T) {
 		LastResult: AcceptanceResult{
 			CheckedAt:    "2026-03-27T08:00:00Z",
 			ExitCode:     &exitCode,
-			EvidencePath: AcceptanceEvidencePath(runDir),
+			EvidencePath: evidencePath,
 			CheckResults: []AcceptanceCheckResult{
-				{ID: "chk-1", Command: "printf 'gate ok\\n'", ExitCode: &exitCode, EvidencePath: AcceptanceEvidencePath(runDir)},
+				{ID: "chk-1", Command: "printf 'gate ok\\n'", ExitCode: &exitCode, EvidencePath: evidencePath},
 			},
 		},
 	}); err != nil {
@@ -59,19 +60,54 @@ func TestAppendMemorySeedFromVerifyResult(t *testing.T) {
 	if seed.Run != runName {
 		t.Fatalf("seed run = %q, want %q", seed.Run, runName)
 	}
-	if seed.CreatedAt != "2026-03-27T08:00:00Z" {
-		t.Fatalf("seed created_at = %q, want verify timestamp", seed.CreatedAt)
+	if strings.TrimSpace(seed.CreatedAt) == "" {
+		t.Fatalf("seed created_at = %q, want evidence log timestamp", seed.CreatedAt)
 	}
-	if !strings.Contains(seed.Message, "exit_code=0") {
-		t.Fatalf("seed message = %q, want exit code detail", seed.Message)
+	if !strings.Contains(seed.Message, "scenario=scenario-chk-1") {
+		t.Fatalf("seed message = %q, want scenario detail", seed.Message)
 	}
 	for _, banned := range []string{"important", "best practice", "recommended"} {
 		if strings.Contains(strings.ToLower(seed.Message), banned) {
 			t.Fatalf("seed message should stay factual, found %q in %q", banned, seed.Message)
 		}
 	}
-	if len(seed.Evidence) != 2 {
-		t.Fatalf("seed evidence len = %d, want 2", len(seed.Evidence))
+	if len(seed.Evidence) < 2 {
+		t.Fatalf("seed evidence len = %d, want at least 2", len(seed.Evidence))
+	}
+}
+
+func TestAppendMemorySeedFromVerifyResultUsesEvidenceLogWhenPresent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+
+	_, runDir, _, _ := writeReadOnlyRunFixture(t, repo)
+	if err := AppendEvidenceLogEvent(EvidenceLogPath(runDir), "scenario.executed", "master", EvidenceEventBody{
+		ScenarioID:   "scenario-cli-first-run",
+		Scope:        "run-root",
+		Revision:     "def456",
+		HarnessKind:  "cli",
+		OracleResult: map[string]any{"exit_code": 0},
+		ArtifactRefs: []string{"reports/assurance/stdout.txt"},
+	}); err != nil {
+		t.Fatalf("AppendEvidenceLogEvent: %v", err)
+	}
+
+	if err := AppendMemorySeedFromVerifyResult(runDir); err != nil {
+		t.Fatalf("AppendMemorySeedFromVerifyResult: %v", err)
+	}
+
+	seeds, err := LoadMemorySeeds(MemorySeedsPath(runDir))
+	if err != nil {
+		t.Fatalf("LoadMemorySeeds: %v", err)
+	}
+	if len(seeds) != 1 {
+		t.Fatalf("memory seeds len = %d, want 1", len(seeds))
+	}
+	if !strings.Contains(seeds[0].Message, "scenario=scenario-cli-first-run") {
+		t.Fatalf("seed message = %q, want scenario detail", seeds[0].Message)
 	}
 }
 
@@ -111,8 +147,25 @@ func TestCollectRunMemorySeedsIncludesSavedArtifacts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(ReportsDir(runDir), "repo-summary.md"), []byte("repo report\n"), 0o644); err != nil {
 		t.Fatalf("write report: %v", err)
 	}
-	if err := os.WriteFile(AcceptanceEvidencePath(runDir), []byte("gate ok\n"), 0o644); err != nil {
-		t.Fatalf("write acceptance evidence: %v", err)
+	evidencePath := filepath.Join(runDir, "evidence-saved.txt")
+	if err := os.WriteFile(evidencePath, []byte("gate ok\n"), 0o644); err != nil {
+		t.Fatalf("write evidence artifact: %v", err)
+	}
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
+		Version: 2,
+		Checks: []AcceptanceCheck{
+			{ID: "chk-1", Command: "printf 'gate ok\\n'", State: acceptanceCheckStateActive},
+		},
+		LastResult: AcceptanceResult{
+			CheckedAt:    "2026-03-27T08:00:00Z",
+			ExitCode:     intPtr(0),
+			EvidencePath: evidencePath,
+			CheckResults: []AcceptanceCheckResult{
+				{ID: "chk-1", Command: "printf 'gate ok\\n'", ExitCode: intPtr(0), EvidencePath: evidencePath},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("write assurance fixture: %v", err)
 	}
 	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -187,9 +240,6 @@ func TestCollectRunMemorySeedsIncludesConfiguredSavedArtifacts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(ReportsDir(runDir), "repo-summary.md"), []byte("repo report\n"), 0o644); err != nil {
 		t.Fatalf("write report: %v", err)
 	}
-	if err := os.WriteFile(AcceptanceEvidencePath(runDir), []byte("gate ok\n"), 0o644); err != nil {
-		t.Fatalf("write acceptance evidence: %v", err)
-	}
 	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -215,6 +265,36 @@ func TestCollectRunMemorySeedsIncludesConfiguredSavedArtifacts(t *testing.T) {
 func TestRuntimeHostRefreshesMemorySeedsWithoutCanonicalMutation(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	seedGuidanceSessionFixture(t, runDir, cfg)
+
+	prevLookPath := lookPathFunc
+	t.Cleanup(func() { lookPathFunc = prevLookPath })
+	lookPathFunc = func(file string) (string, error) {
+		switch file {
+		case "gitnexus", "npx":
+			return "", os.ErrNotExist
+		default:
+			return prevLookPath(file)
+		}
+	}
+
+	prev := resourceReadFile
+	t.Cleanup(func() { resourceReadFile = prev })
+	resourceReadFile = func(path string) ([]byte, error) {
+		switch path {
+		case "/proc/meminfo":
+			return []byte("MemTotal: 32768 kB\nMemAvailable: 20971520 kB\nSwapTotal: 16384 kB\nSwapFree: 16384 kB\n"), nil
+		case "/proc/pressure/memory":
+			return []byte("some avg10=0.10 avg60=0 avg300=0 total=0\nfull avg10=0 avg60=0 avg300=0 total=0\n"), nil
+		case "/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.high", "/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.swap.current", "/sys/fs/cgroup/memory.swap.max":
+			return []byte("0\n"), nil
+		case "/sys/fs/cgroup/memory.events":
+			return []byte("low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\n"), nil
+		}
+		if strings.HasSuffix(path, "/status") {
+			return []byte("Name:\tgoalx\nVmRSS:\t1048576 kB\n"), nil
+		}
+		return nil, os.ErrNotExist
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {

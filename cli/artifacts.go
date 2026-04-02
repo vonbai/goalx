@@ -281,14 +281,14 @@ func CollectSavedPhaseContext(runDir string, base goalx.ContextConfig) (goalx.Co
 		SummaryPath(runDir),
 		filepath.Join(runDir, "intake.json"),
 		ObjectiveContractPath(runDir),
-		GoalPath(runDir),
-		AcceptanceStatePath(runDir),
+		ObligationModelPath(runDir),
+		AssurancePlanPath(runDir),
+		EvidenceLogPath(runDir),
 		RunStatusPath(runDir),
 		CoordinationPath(runDir),
 		ExperimentsLogPath(runDir),
 		IntegrationStatePath(runDir),
 		filepath.Join(runDir, "proof", "completion.json"),
-		AcceptanceEvidencePath(runDir),
 	} {
 		if info, err := os.Stat(path); err == nil && !info.IsDir() && info.Size() > 0 {
 			addPath(path)

@@ -67,7 +67,7 @@ func TestLoadRunStatusRecordRejectsMissingVersion(t *testing.T) {
 
 func TestSaveRunStatusRecordRejectsRequiredRemainingDriftFromGoal(t *testing.T) {
 	runDir := t.TempDir()
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{
@@ -91,7 +91,7 @@ func TestSaveRunStatusRecordRejectsRequiredRemainingDriftFromGoal(t *testing.T) 
 	if err == nil {
 		t.Fatal("SaveRunStatusRecord should reject required_remaining drift")
 	}
-	if !strings.Contains(err.Error(), "required_remaining=0 does not match goal required_remaining=1") {
+	if !strings.Contains(err.Error(), "required_remaining=0 does not match boundary required_remaining=1") {
 		t.Fatalf("SaveRunStatusRecord error = %v, want required_remaining drift", err)
 	}
 }
@@ -163,7 +163,7 @@ func TestBuildRunStatusComparisonDoesNotTreatMissingActiveSessionsAsDrift(t *tes
 
 func TestBuildRunStatusComparisonDetectsOpenRequiredIDDriftEvenWhenCountsMatch(t *testing.T) {
 	runDir := t.TempDir()
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{
@@ -208,5 +208,35 @@ func TestBuildRunStatusComparisonDetectsOpenRequiredIDDriftEvenWhenCountsMatch(t
 	}
 	if got := strings.Join(comparison.GoalRemainingRequiredIDs, ","); got != "req-1" {
 		t.Fatalf("GoalRemainingRequiredIDs = %q, want req-1", got)
+	}
+}
+
+func TestBuildRunStatusComparisonUsesObligationModelWhenGoalMissing(t *testing.T) {
+	runDir := t.TempDir()
+	if err := SaveObligationModel(ObligationModelPath(runDir), &ObligationModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:objective",
+		Required: []ObligationItem{
+			{ID: "obl-1", Text: "ship feature", Kind: "outcome", CoversClauses: []string{"ucl-1"}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveObligationModel: %v", err)
+	}
+	requiredRemaining := 1
+	if err := SaveRunStatusRecord(RunStatusPath(runDir), &RunStatusRecord{
+		Version:           1,
+		Phase:             runStatusPhaseWorking,
+		RequiredRemaining: &requiredRemaining,
+		OpenRequiredIDs:   []string{"obl-1"},
+	}); err != nil {
+		t.Fatalf("SaveRunStatusRecord: %v", err)
+	}
+
+	comparison, err := BuildRunStatusComparison(runDir)
+	if err != nil {
+		t.Fatalf("BuildRunStatusComparison: %v", err)
+	}
+	if comparison == nil || comparison.GoalRequiredRemaining == nil || *comparison.GoalRequiredRemaining != 1 {
+		t.Fatalf("comparison = %+v, want obligation-backed required_remaining=1", comparison)
 	}
 }

@@ -232,7 +232,6 @@ func TestSaveWritesToConfiguredSavedRunRoot(t *testing.T) {
 		Name:          runName,
 		Mode:          goalx.ModeWorker,
 		Objective:     "inspect",
-		Parallel:      1,
 		SavedRunRoot:  "./custom-saved",
 		Target: goalx.TargetConfig{
 			Files: []string{"notes.md"},
@@ -401,6 +400,31 @@ func TestLoadSavedPhaseSourceUsesConfiguredSavedRoot(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write intake: %v", err)
 	}
+	if err := SaveObligationModel(ObligationModelPath(savedDir), &ObligationModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:demo",
+		Required: []ObligationItem{{
+			ID:            "goal-1",
+			Text:          "keep report available",
+			Kind:          "outcome",
+			CoversClauses: []string{"goal:1"},
+		}},
+	}); err != nil {
+		t.Fatalf("write obligation model: %v", err)
+	}
+	if err := SaveAssurancePlan(AssurancePlanPath(savedDir), &AssurancePlan{
+		Version:        1,
+		ObligationRefs: []string{"goal-1"},
+		Scenarios: []AssuranceScenario{{
+			ID:                "scenario-1",
+			CoversObligations: []string{"goal-1"},
+			Harness:           AssuranceHarness{Kind: "command", Command: "true"},
+			Oracle:            AssuranceOracle{Kind: "exit_code", CheckDefinitions: []AssuranceOracleCheck{{Kind: "exit_code", Equals: "0"}}},
+			Evidence:          []AssuranceEvidenceRequirement{{Kind: "log"}},
+		}},
+	}); err != nil {
+		t.Fatalf("write assurance plan: %v", err)
+	}
 
 	source, err := loadSavedPhaseSource(projectRoot, "demo")
 	if err != nil {
@@ -564,6 +588,31 @@ func TestLoadSavedPhaseSourceFallsBackToRegistryAfterSavedRunRootConfigChange(t 
 		ContextFiles: []string{"report.md"},
 	}); err != nil {
 		t.Fatalf("write intake: %v", err)
+	}
+	if err := SaveObligationModel(ObligationModelPath(savedDir), &ObligationModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:phase-drift",
+		Required: []ObligationItem{{
+			ID:            "goal-1",
+			Text:          "preserve saved report",
+			Kind:          "outcome",
+			CoversClauses: []string{"goal:1"},
+		}},
+	}); err != nil {
+		t.Fatalf("write obligation model: %v", err)
+	}
+	if err := SaveAssurancePlan(AssurancePlanPath(savedDir), &AssurancePlan{
+		Version:        1,
+		ObligationRefs: []string{"goal-1"},
+		Scenarios: []AssuranceScenario{{
+			ID:                "scenario-1",
+			CoversObligations: []string{"goal-1"},
+			Harness:           AssuranceHarness{Kind: "command", Command: "true"},
+			Oracle:            AssuranceOracle{Kind: "exit_code", CheckDefinitions: []AssuranceOracleCheck{{Kind: "exit_code", Equals: "0"}}},
+			Evidence:          []AssuranceEvidenceRequirement{{Kind: "log"}},
+		}},
+	}); err != nil {
+		t.Fatalf("write assurance plan: %v", err)
 	}
 	if err := RegisterSavedRun(projectRoot, &layers.Config); err != nil {
 		t.Fatalf("RegisterSavedRun: %v", err)

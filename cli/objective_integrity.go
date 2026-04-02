@@ -11,12 +11,12 @@ type ObjectiveIntegritySummary struct {
 	ContractState              string   `json:"contract_state,omitempty"`
 	ContractLocked             bool     `json:"contract_locked,omitempty"`
 	ClauseCount                int      `json:"clause_count,omitempty"`
-	GoalClauseCount            int      `json:"goal_clause_count,omitempty"`
-	AcceptanceClauseCount      int      `json:"acceptance_clause_count,omitempty"`
-	GoalCoveredCount           int      `json:"goal_covered_count,omitempty"`
-	AcceptanceCoveredCount     int      `json:"acceptance_covered_count,omitempty"`
-	MissingGoalClauseIDs       []string `json:"missing_goal_clause_ids,omitempty"`
-	MissingAcceptanceClauseIDs []string `json:"missing_acceptance_clause_ids,omitempty"`
+	GoalClauseCount            int      `json:"obligation_clause_count,omitempty"`
+	AcceptanceClauseCount      int      `json:"assurance_clause_count,omitempty"`
+	GoalCoveredCount           int      `json:"obligation_covered_count,omitempty"`
+	AcceptanceCoveredCount     int      `json:"assurance_covered_count,omitempty"`
+	MissingGoalClauseIDs       []string `json:"missing_obligation_clause_ids,omitempty"`
+	MissingAcceptanceClauseIDs []string `json:"missing_assurance_clause_ids,omitempty"`
 }
 
 func BuildObjectiveIntegritySummary(runDir string) (ObjectiveIntegritySummary, error) {
@@ -30,19 +30,22 @@ func BuildObjectiveIntegritySummary(runDir string) (ObjectiveIntegritySummary, e
 	if contract == nil {
 		return ObjectiveIntegritySummary{}, nil
 	}
-	goalState, err := LoadGoalState(GoalPath(runDir))
+	obligationModel, err := LoadObligationModel(ObligationModelPath(runDir))
 	if err != nil {
 		return ObjectiveIntegritySummary{}, err
 	}
-	acceptanceState, err := LoadAcceptanceState(AcceptanceStatePath(runDir))
+	assurancePlan, err := LoadAssurancePlan(AssurancePlanPath(runDir))
 	if err != nil {
 		return ObjectiveIntegritySummary{}, err
 	}
 
 	goalClauses := objectiveClausesBySurface(contract, objectiveRequiredSurfaceGoal)
 	acceptanceClauses := objectiveClausesBySurface(contract, objectiveRequiredSurfaceAcceptance)
-	goalCoverage := requiredGoalCoverageCounts(goalState)
-	acceptanceCoverage := acceptanceCoverageCounts(acceptanceState)
+	goalCoverage := map[string]int{}
+	if obligationModel != nil && obligationModelHasContent(obligationModel) {
+		goalCoverage = requiredObligationCoverageCounts(obligationModel)
+	}
+	acceptanceCoverage := assuranceCoverageCounts(assurancePlan)
 
 	summary := ObjectiveIntegritySummary{
 		ContractPresent:       true,
@@ -84,10 +87,10 @@ func refreshBoundaryEstablishmentOperation(runDir string) error {
 		pendingConditions = append(pendingConditions, "objective_contract_locked")
 	}
 	if len(summary.MissingGoalClauseIDs) > 0 {
-		pendingConditions = append(pendingConditions, "goal_required_coverage_ready")
+		pendingConditions = append(pendingConditions, "obligation_required_coverage_ready")
 	}
 	if len(summary.MissingAcceptanceClauseIDs) > 0 {
-		pendingConditions = append(pendingConditions, "acceptance_required_coverage_ready")
+		pendingConditions = append(pendingConditions, "assurance_required_coverage_ready")
 	}
 	target := ControlOperationTarget{
 		Kind:              ControlOperationKindBoundaryEstablishment,
@@ -173,8 +176,8 @@ func validateLockedObjectiveGoalCoverage(contract *ObjectiveContract, state *Goa
 	return nil
 }
 
-func validateAcceptanceStateIntegrity(runDir string, state *AcceptanceState) error {
-	if strings.TrimSpace(runDir) == "" || state == nil {
+func validateAssurancePlanIntegrity(runDir string, plan *AssurancePlan) error {
+	if strings.TrimSpace(runDir) == "" || plan == nil {
 		return nil
 	}
 	contract, err := LoadObjectiveContract(ObjectiveContractPath(runDir))
@@ -184,31 +187,79 @@ func validateAcceptanceStateIntegrity(runDir string, state *AcceptanceState) err
 	if contract == nil || contract.State != objectiveContractStateLocked {
 		return nil
 	}
-	return validateLockedObjectiveAcceptanceCoverage(contract, state)
+	return validateLockedObjectiveAssuranceCoverage(contract, plan)
 }
 
-func validateLockedObjectiveAcceptanceCoverage(contract *ObjectiveContract, state *AcceptanceState) error {
-	if contract == nil || state == nil {
+func validateObligationModelIntegrity(runDir string, model *ObligationModel) error {
+	if strings.TrimSpace(runDir) == "" || model == nil {
+		return nil
+	}
+	contract, err := LoadObjectiveContract(ObjectiveContractPath(runDir))
+	if err != nil {
+		return err
+	}
+	if contract == nil || contract.State != objectiveContractStateLocked {
+		return nil
+	}
+	return validateLockedObjectiveObligationCoverage(contract, model)
+}
+
+func validateLockedObjectiveObligationCoverage(contract *ObjectiveContract, model *ObligationModel) error {
+	if contract == nil || model == nil {
+		return nil
+	}
+	goalClauses := objectiveClausesBySurface(contract, objectiveRequiredSurfaceGoal)
+	if len(goalClauses) == 0 {
+		return nil
+	}
+	coverage := requiredObligationCoverageCounts(model)
+	for _, item := range model.Required {
+		if len(compactStrings(item.CoversClauses)) == 0 {
+			return fmt.Errorf("required obligation %s is missing covers_clauses", item.ID)
+		}
+		for _, clauseID := range compactStrings(item.CoversClauses) {
+			if _, ok := goalClauses[clauseID]; !ok {
+				return fmt.Errorf("obligation %s references unknown objective clause %q", item.ID, clauseID)
+			}
+		}
+	}
+	for _, item := range append(append([]ObligationItem{}, model.Optional...), model.Guardrails...) {
+		for _, clauseID := range compactStrings(item.CoversClauses) {
+			if _, ok := goalClauses[clauseID]; !ok {
+				return fmt.Errorf("obligation %s references unknown objective clause %q", item.ID, clauseID)
+			}
+		}
+	}
+	for clauseID := range goalClauses {
+		if coverage[clauseID] == 0 {
+			return fmt.Errorf("objective clause %s requires required obligation coverage", clauseID)
+		}
+	}
+	return nil
+}
+
+func validateLockedObjectiveAssuranceCoverage(contract *ObjectiveContract, plan *AssurancePlan) error {
+	if contract == nil || plan == nil {
 		return nil
 	}
 	acceptanceClauses := objectiveClausesBySurface(contract, objectiveRequiredSurfaceAcceptance)
 	if len(acceptanceClauses) == 0 {
 		return nil
 	}
-	coverage := acceptanceCoverageCounts(state)
-	for _, check := range state.Checks {
-		if len(trimmedGoalCovers(check.Covers)) == 0 {
-			return fmt.Errorf("acceptance check %s is missing covers", check.ID)
+	coverage := assuranceCoverageCounts(plan)
+	for _, scenario := range plan.Scenarios {
+		if len(compactStrings(scenario.CoversObligations)) == 0 {
+			return fmt.Errorf("assurance scenario %s is missing covers_obligations", scenario.ID)
 		}
-		for _, clauseID := range trimmedGoalCovers(check.Covers) {
+		for _, clauseID := range compactStrings(scenario.CoversObligations) {
 			if _, ok := acceptanceClauses[clauseID]; !ok {
-				return fmt.Errorf("acceptance check %s references unknown objective clause %q", check.ID, clauseID)
+				return fmt.Errorf("assurance scenario %s references unknown objective clause %q", scenario.ID, clauseID)
 			}
 		}
 	}
 	for clauseID := range acceptanceClauses {
 		if coverage[clauseID] == 0 {
-			return fmt.Errorf("objective clause %s requires acceptance coverage", clauseID)
+			return fmt.Errorf("objective clause %s requires assurance coverage", clauseID)
 		}
 	}
 	return nil
@@ -243,13 +294,13 @@ func requiredGoalCoverageCounts(state *GoalState) map[string]int {
 	return coverage
 }
 
-func acceptanceCoverageCounts(state *AcceptanceState) map[string]int {
+func assuranceCoverageCounts(plan *AssurancePlan) map[string]int {
 	coverage := map[string]int{}
-	if state == nil {
+	if plan == nil {
 		return coverage
 	}
-	for _, check := range state.Checks {
-		for _, clauseID := range trimmedGoalCovers(check.Covers) {
+	for _, scenario := range plan.Scenarios {
+		for _, clauseID := range compactStrings(scenario.CoversObligations) {
 			coverage[clauseID]++
 		}
 	}
@@ -258,4 +309,17 @@ func acceptanceCoverageCounts(state *AcceptanceState) map[string]int {
 
 func requiredGoalCoverageIDs(item GoalItem) []string {
 	return trimmedGoalCovers(item.Covers)
+}
+
+func requiredObligationCoverageCounts(model *ObligationModel) map[string]int {
+	coverage := map[string]int{}
+	if model == nil {
+		return coverage
+	}
+	for _, item := range model.Required {
+		for _, clauseID := range compactStrings(item.CoversClauses) {
+			coverage[clauseID]++
+		}
+	}
+	return coverage
 }

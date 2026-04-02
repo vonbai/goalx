@@ -142,6 +142,75 @@ func TestBuildTargetPresenceFactsTreatsParkedSessionAsNotMissing(t *testing.T) {
 	}
 }
 
+func TestBuildTargetPresenceFactsTreatsStoppedSessionAsNotMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, meta := writeTargetPresenceFixture(t)
+	installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
+	if err := RenewControlLease(runDir, "runtime-host", meta.RunID, meta.Epoch, time.Minute, "process", os.Getpid()); err != nil {
+		t.Fatalf("RenewControlLease runtime-host: %v", err)
+	}
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{
+		Name:  "session-1",
+		State: "stopped",
+		Mode:  string(goalx.ModeWorker),
+	}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+
+	facts, err := BuildTargetPresenceFacts(runDir, goalx.TmuxSessionName(repo, cfg.Name))
+	if err != nil {
+		t.Fatalf("BuildTargetPresenceFacts: %v", err)
+	}
+
+	sessionFacts := facts["session-1"]
+	if sessionFacts.State != TargetPresenceInactive {
+		t.Fatalf("session state = %q, want %q for stopped session", sessionFacts.State, TargetPresenceInactive)
+	}
+	if sessionFacts.WindowExpected {
+		t.Fatalf("stopped session should not expect a window: %+v", sessionFacts)
+	}
+	if !sessionFacts.SessionExists || sessionFacts.WindowExists || sessionFacts.PaneExists {
+		t.Fatalf("stopped session presence wrong: %+v", sessionFacts)
+	}
+}
+
+func TestRefreshActivityFactsPersistsStoppedSessionInactiveExplicitly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo, runDir, cfg, _ := writeTargetPresenceFixture(t)
+	installFakePresenceTmux(t, true, "master", "%0\\tmaster\\n")
+	if err := UpsertSessionRuntimeState(runDir, SessionRuntimeState{Name: "session-1", State: "stopped", Mode: string(goalx.ModeWorker)}); err != nil {
+		t.Fatalf("UpsertSessionRuntimeState: %v", err)
+	}
+
+	if err := refreshActivityFacts(runDir, repo, cfg.Name); err != nil {
+		t.Fatalf("refreshActivityFacts: %v", err)
+	}
+
+	raw, err := os.ReadFile(ActivityPath(runDir))
+	if err != nil {
+		t.Fatalf("Read activity: %v", err)
+	}
+	var snapshot map[string]any
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		t.Fatalf("Unmarshal activity: %v", err)
+	}
+	targets, ok := snapshot["targets"].(map[string]any)
+	if !ok {
+		t.Fatalf("activity snapshot missing targets: %+v", snapshot)
+	}
+	sessionFacts, ok := targets["session-1"].(map[string]any)
+	if !ok {
+		t.Fatalf("activity snapshot missing session-1 target: %+v", targets)
+	}
+	if sessionFacts["state"] != TargetPresenceInactive {
+		t.Fatalf("session-1 facts = %+v, want explicit inactive state", sessionFacts)
+	}
+}
+
 func TestBuildTargetPresenceFactsReportsTmuxSessionMissingForTmuxTargets(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

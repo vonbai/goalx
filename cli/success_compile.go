@@ -32,24 +32,24 @@ func EnsureSuccessCompilation(projectRoot, runDir string, cfg *goalx.Config, met
 		return fmt.Errorf("refresh run memory context: %w", err)
 	}
 
-	goalState, err := EnsureGoalState(runDir)
-	if err != nil {
-		return fmt.Errorf("ensure goal state: %w", err)
-	}
 	objectiveContract, err := EnsureObjectiveContract(runDir, cfg.Objective)
 	if err != nil {
 		return fmt.Errorf("ensure objective contract: %w", err)
 	}
-	acceptanceState, err := EnsureAcceptanceState(runDir, cfg, goalState.Version)
-	if err != nil {
-		return fmt.Errorf("ensure acceptance state: %w", err)
-	}
-
 	objectiveContractHash, err := hashFileSHA256(ObjectiveContractPath(runDir))
 	if err != nil {
 		return err
 	}
-	goalHash, err := hashFileSHA256(GoalPath(runDir))
+	obligationModel, err := EnsureObligationModel(runDir, nil, objectiveContract, objectiveContractHash, cfg.Objective)
+	if err != nil {
+		return fmt.Errorf("ensure obligation model: %w", err)
+	}
+	acceptanceState := NewAcceptanceState(cfg, 0)
+	assurancePlan, err := EnsureAssurancePlan(runDir, acceptanceState)
+	if err != nil {
+		return fmt.Errorf("ensure assurance plan: %w", err)
+	}
+	goalHash, err := hashFileSHA256(CanonicalBoundaryPath(runDir))
 	if err != nil {
 		return err
 	}
@@ -62,11 +62,11 @@ func EnsureSuccessCompilation(projectRoot, runDir string, cfg *goalx.Config, met
 		return err
 	}
 
-	successModel := compileBootstrapSuccessModel(cfg, objectiveContract, goalState, objectiveContractHash, goalHash, compilerSources)
+	successModel := compileBootstrapSuccessModel(cfg, objectiveContract, nil, obligationModel, objectiveContractHash, goalHash, compilerSources)
 	if err := SaveSuccessModel(SuccessModelPath(runDir), successModel); err != nil {
 		return err
 	}
-	proofPlan := compileBootstrapProofPlan(goalState, acceptanceState, successModel)
+	proofPlan := compileBootstrapProofPlan(nil, obligationModel, nil, assurancePlan, successModel)
 	if err := SaveProofPlan(ProofPlanPath(runDir), proofPlan); err != nil {
 		return err
 	}
@@ -182,12 +182,12 @@ func RefreshRunSuccessContext(projectRoot, runDir string, cfg *goalx.Config, met
 		(!stringSliceEqual(successPriorStatements(beforeContext), successPriorStatements(afterContext)) && compilerInputSignature(afterCompilerInput) == ""), nil
 }
 
-func compileBootstrapSuccessModel(cfg *goalx.Config, objectiveContract *ObjectiveContract, goalState *GoalState, objectiveContractHash, goalHash string, sources *bootstrapCompilerSources) *SuccessModel {
+func compileBootstrapSuccessModel(cfg *goalx.Config, objectiveContract *ObjectiveContract, goalState *GoalState, obligationModel *ObligationModel, objectiveContractHash, goalHash string, sources *bootstrapCompilerSources) *SuccessModel {
 	model := &SuccessModel{
 		Version:               1,
 		CompilerVersion:       successCompilerVersion,
 		ObjectiveContractHash: objectiveContractHash,
-		GoalHash:              goalHash,
+		ObligationModelHash:   goalHash,
 		Dimensions: []SuccessDimension{
 			{
 				ID:       "dim-objective",
@@ -197,7 +197,7 @@ func compileBootstrapSuccessModel(cfg *goalx.Config, objectiveContract *Objectiv
 			},
 		},
 		CloseoutRequirements: []string{
-			"all_required_goal_items_resolved",
+			"all_required_obligations_resolved",
 			"proof_plan_coverage_ready",
 			"workflow_gates_present",
 		},
@@ -205,7 +205,19 @@ func compileBootstrapSuccessModel(cfg *goalx.Config, objectiveContract *Objectiv
 	if objectiveContract != nil && strings.TrimSpace(objectiveContract.ObjectiveHash) != "" {
 		model.CloseoutRequirements = append(model.CloseoutRequirements, "objective_contract_present")
 	}
-	if goalState != nil {
+	if obligationModel != nil {
+		for _, item := range obligationModel.Required {
+			if strings.TrimSpace(item.ID) == "" || strings.TrimSpace(item.Text) == "" {
+				continue
+			}
+			model.Dimensions = append(model.Dimensions, SuccessDimension{
+				ID:       item.ID,
+				Kind:     firstNonEmpty(strings.TrimSpace(item.Kind), "obligation"),
+				Text:     strings.TrimSpace(item.Text),
+				Required: true,
+			})
+		}
+	} else if goalState != nil {
 		for _, item := range goalState.Required {
 			if strings.TrimSpace(item.ID) == "" || strings.TrimSpace(item.Text) == "" {
 				continue
@@ -233,7 +245,7 @@ func compileBootstrapSuccessModel(cfg *goalx.Config, objectiveContract *Objectiv
 	return model
 }
 
-func compileBootstrapProofPlan(goalState *GoalState, acceptanceState *AcceptanceState, successModel *SuccessModel) *ProofPlan {
+func compileBootstrapProofPlan(goalState *GoalState, obligationModel *ObligationModel, acceptanceState *AcceptanceState, assurancePlan *AssurancePlan, successModel *SuccessModel) *ProofPlan {
 	plan := &ProofPlan{
 		Version: 1,
 		Items: []ProofPlanItem{
@@ -246,7 +258,26 @@ func compileBootstrapProofPlan(goalState *GoalState, acceptanceState *Acceptance
 			},
 		},
 	}
-	if goalState != nil {
+	if obligationModel != nil {
+		for _, item := range obligationModel.Required {
+			if strings.TrimSpace(item.ID) == "" {
+				continue
+			}
+			proofKind := "run_artifact"
+			sourceSurface := "summary"
+			if strings.TrimSpace(item.Kind) == "proof" {
+				proofKind = "assurance_check"
+				sourceSurface = "assurance"
+			}
+			plan.Items = append(plan.Items, ProofPlanItem{
+				ID:               "proof-obligation-" + goalx.Slugify(item.ID),
+				CoversDimensions: []string{item.ID},
+				Kind:             proofKind,
+				Required:         true,
+				SourceSurface:    sourceSurface,
+			})
+		}
+	} else if goalState != nil {
 		for _, item := range goalState.Required {
 			if strings.TrimSpace(item.ID) == "" {
 				continue
@@ -254,11 +285,11 @@ func compileBootstrapProofPlan(goalState *GoalState, acceptanceState *Acceptance
 			proofKind := "run_artifact"
 			sourceSurface := "summary"
 			if strings.TrimSpace(item.Role) == goalItemRoleProof {
-				proofKind = "acceptance_check"
-				sourceSurface = "acceptance"
+				proofKind = "assurance_check"
+				sourceSurface = "assurance"
 			}
 			plan.Items = append(plan.Items, ProofPlanItem{
-				ID:               "proof-goal-" + goalx.Slugify(item.ID),
+				ID:               "proof-obligation-compat-" + goalx.Slugify(item.ID),
 				CoversDimensions: []string{item.ID},
 				Kind:             proofKind,
 				Required:         true,
@@ -266,17 +297,34 @@ func compileBootstrapProofPlan(goalState *GoalState, acceptanceState *Acceptance
 			})
 		}
 	}
-	if acceptanceState != nil {
+	if assurancePlan != nil && len(assurancePlan.Scenarios) > 0 {
+		for _, scenario := range assurancePlan.Scenarios {
+			if strings.TrimSpace(scenario.ID) == "" {
+				continue
+			}
+			covers := compactStrings(scenario.CoversObligations)
+			if len(covers) == 0 {
+				covers = []string{"dim-objective"}
+			}
+			plan.Items = append(plan.Items, ProofPlanItem{
+				ID:               "proof-assurance-" + goalx.Slugify(scenario.ID),
+				CoversDimensions: covers,
+				Kind:             "assurance_check",
+				Required:         true,
+				SourceSurface:    "assurance",
+			})
+		}
+	} else if acceptanceState != nil {
 		for _, check := range acceptanceState.Checks {
 			if strings.TrimSpace(check.ID) == "" {
 				continue
 			}
 			plan.Items = append(plan.Items, ProofPlanItem{
-				ID:               "proof-acceptance-" + goalx.Slugify(check.ID),
+				ID:               "proof-assurance-compat-" + goalx.Slugify(check.ID),
 				CoversDimensions: []string{"dim-objective"},
-				Kind:             "acceptance_check",
+				Kind:             "assurance_check",
 				Required:         true,
-				SourceSurface:    "acceptance",
+				SourceSurface:    "assurance",
 			})
 		}
 	}
@@ -364,7 +412,7 @@ func compileBootstrapCompilerInput(runDir string, sources *bootstrapCompilerSour
 		Version:              1,
 		CompilerVersion:      successCompilerVersion,
 		ObjectiveContractRef: filepath.Base(ObjectiveContractPath(runDir)),
-		GoalRef:              filepath.Base(GoalPath(runDir)),
+		ObligationModelRef:   filepath.Base(CanonicalBoundaryPath(runDir)),
 	}
 	if sources == nil {
 		return input

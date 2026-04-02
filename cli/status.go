@@ -33,7 +33,7 @@ func Status(projectRoot string, args []string) error {
 
 	fmt.Printf("Run: %s\n", rc.Name)
 	printStatusControlSummary(rc)
-	if err := printRunAdvisories(rc); err != nil {
+	if err := printRunAdvisoriesCompact(rc); err != nil {
 		return err
 	}
 
@@ -217,6 +217,7 @@ func printStatusControlSummary(rc *RunContext) {
 	if rc == nil {
 		return
 	}
+	startup, _ := LoadRunStartupState(rc.RunDir, rc.TmuxSession)
 	unread := unreadControlInboxCount(MasterInboxPath(rc.RunDir), MasterCursorPath(rc.RunDir))
 	masterLease := controlLeaseSummary(rc.RunDir, "master")
 	runtimeHost := controlLeaseSummary(rc.RunDir, "runtime-host")
@@ -227,12 +228,14 @@ func printStatusControlSummary(rc *RunContext) {
 				masterLease = actor.Lease
 			}
 		}
-			if runtimeHost == "missing" {
-				if actor, ok := activity.Actors["runtime-host"]; ok && actor.Lease != "" {
-					runtimeHost = actor.Lease
-				}
+		if runtimeHost == "missing" {
+			if actor, ok := activity.Actors["runtime-host"]; ok && actor.Lease != "" {
+				runtimeHost = actor.Lease
 			}
+		}
 	}
+	masterLease = startupLeaseSummary(masterLease, startup)
+	runtimeHost = startupLeaseSummary(runtimeHost, startup)
 	runID := "-"
 	epoch := "-"
 	charter := "missing"
@@ -252,7 +255,9 @@ func printStatusControlSummary(rc *RunContext) {
 		}
 	}
 	fmt.Printf("Control: run_id=%s epoch=%s charter=%s run_status=%s unread_inbox=%d master_lease=%s runtime_host=%s reminders_due=%d deliveries_failed=%d\n", runID, epoch, charter, runStatus, unread, masterLease, runtimeHost, remindersDue, deliveriesFailed)
-	if missing := targetLossSummary(rc); missing != "" {
+	if summary := formatStartupSummary(startup); summary != "" {
+		fmt.Println(summary)
+	} else if missing := targetLossSummary(rc); missing != "" {
 		fmt.Printf("Targets: %s\n", missing)
 	}
 	if activity, err := LoadActivitySnapshot(ActivityPath(rc.RunDir)); err == nil && activity != nil {
@@ -281,10 +286,32 @@ func printStatusControlSummary(rc *RunContext) {
 	if memory := formatMemorySummary(rc.RunDir); memory != "" {
 		fmt.Printf("Memory: %s\n", memory)
 	}
+	if resource := formatResourceSummary(rc.RunDir); resource != "" {
+		fmt.Printf("Resources: %s\n", resource)
+	}
 	if objective := formatObjectiveIntegritySummary(rc.RunDir); objective != "" {
 		fmt.Printf("Objective: %s\n", objective)
 	}
 	fmt.Println()
+}
+
+func formatResourceSummary(runDir string) string {
+	state, err := LoadResourceState(ResourceStatePath(runDir))
+	if err != nil || state == nil || !resourceStateNeedsAttention(state) {
+		return ""
+	}
+	parts := []string{"state=" + blankAsUnknown(state.State)}
+	if state.HeadroomBytes > 0 {
+		parts = append(parts, fmt.Sprintf("headroom_bytes=%d", state.HeadroomBytes))
+	}
+	if state.PSI != nil && (state.PSI.MemorySomeAvg10 > 0 || state.PSI.MemoryFullAvg10 > 0) {
+		parts = append(parts, fmt.Sprintf("memory_some_avg10=%.2f", state.PSI.MemorySomeAvg10))
+		parts = append(parts, fmt.Sprintf("memory_full_avg10=%.2f", state.PSI.MemoryFullAvg10))
+	}
+	if len(state.Reasons) > 0 {
+		parts = append(parts, "reasons="+strings.Join(state.Reasons, ","))
+	}
+	return strings.Join(parts, " ")
 }
 
 func formatEvolveStatusSummary(runDir string) string {
@@ -332,10 +359,10 @@ func targetLossSummary(rc *RunContext) string {
 			}
 		}
 	}
-		if runtimeHostFacts, err := LoadTargetPresenceFact(rc.RunDir, rc.TmuxSession, "runtime-host"); err == nil && targetPresenceMissing(runtimeHostFacts) {
-			parts = append(parts, "runtime host missing ("+runtimeHostFacts.State+")")
-		}
-		return strings.Join(parts, " | ")
+	if runtimeHostFacts, err := LoadTargetPresenceFact(rc.RunDir, rc.TmuxSession, "runtime-host"); err == nil && targetPresenceMissing(runtimeHostFacts) {
+		parts = append(parts, "runtime host missing ("+runtimeHostFacts.State+")")
+	}
+	return strings.Join(parts, " | ")
 }
 
 func formatObjectiveIntegritySummary(runDir string) string {
@@ -349,16 +376,16 @@ func formatObjectiveIntegritySummary(runDir string) string {
 	parts := []string{
 		"contract_state=" + summary.ContractState,
 		fmt.Sprintf("clauses=%d", summary.ClauseCount),
-		fmt.Sprintf("goal_coverage=%d/%d", summary.GoalCoveredCount, summary.GoalClauseCount),
-		fmt.Sprintf("acceptance_coverage=%d/%d", summary.AcceptanceCoveredCount, summary.AcceptanceClauseCount),
+		fmt.Sprintf("obligation_coverage=%d/%d", summary.GoalCoveredCount, summary.GoalClauseCount),
+		fmt.Sprintf("assurance_coverage=%d/%d", summary.AcceptanceCoveredCount, summary.AcceptanceClauseCount),
 		fmt.Sprintf("integrity_ready=%t", summary.ReadyForNoShrinkEnforcement()),
 		fmt.Sprintf("integrity_ok=%t", summary.IntegrityOK()),
 	}
 	if len(summary.MissingGoalClauseIDs) > 0 {
-		parts = append(parts, "missing_goal="+strings.Join(summary.MissingGoalClauseIDs, ","))
+		parts = append(parts, "missing_obligation="+strings.Join(summary.MissingGoalClauseIDs, ","))
 	}
 	if len(summary.MissingAcceptanceClauseIDs) > 0 {
-		parts = append(parts, "missing_acceptance="+strings.Join(summary.MissingAcceptanceClauseIDs, ","))
+		parts = append(parts, "missing_assurance="+strings.Join(summary.MissingAcceptanceClauseIDs, ","))
 	}
 	return strings.Join(parts, " ")
 }

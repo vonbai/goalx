@@ -35,13 +35,13 @@ func TestSaveRunRuntimeStateDoesNotPersistRecommendationField(t *testing.T) {
 	}
 }
 
-func TestSnapshotSessionRuntimeDoesNotProjectAckSessionAsLifecycleState(t *testing.T) {
+func TestSnapshotSessionRuntimeDoesNotProjectAckInboxAsLifecycleState(t *testing.T) {
 	runDir := t.TempDir()
 	worktreePath := t.TempDir()
 	if err := os.MkdirAll(filepath.Dir(JournalPath(runDir, "session-1")), 0o755); err != nil {
 		t.Fatalf("mkdir journals dir: %v", err)
 	}
-	if err := os.WriteFile(JournalPath(runDir, "session-1"), []byte("{\"round\":2,\"status\":\"ack-session\",\"desc\":\"read inbox\",\"owner_scope\":\"fix queue drift\"}\n"), 0o644); err != nil {
+	if err := os.WriteFile(JournalPath(runDir, "session-1"), []byte("{\"round\":2,\"status\":\"ack-inbox\",\"desc\":\"read inbox\",\"owner_scope\":\"fix queue drift\"}\n"), 0o644); err != nil {
 		t.Fatalf("write journal: %v", err)
 	}
 
@@ -52,8 +52,8 @@ func TestSnapshotSessionRuntimeDoesNotProjectAckSessionAsLifecycleState(t *testi
 	if snapshot.State != "" {
 		t.Fatalf("snapshot state = %q, want empty for control-only ack status", snapshot.State)
 	}
-	if snapshot.LastJournalState != "ack-session" {
-		t.Fatalf("last journal state = %q, want ack-session", snapshot.LastJournalState)
+	if snapshot.LastJournalState != "ack-inbox" {
+		t.Fatalf("last journal state = %q, want ack-inbox", snapshot.LastJournalState)
 	}
 	if snapshot.OwnerScope != "fix queue drift" {
 		t.Fatalf("owner scope = %q, want fix queue drift", snapshot.OwnerScope)

@@ -6,7 +6,6 @@ type ResolveRequest struct {
 	Name                      string
 	Mode                      Mode
 	Objective                 string
-	Parallel                  int
 	ClearSessions             bool
 	RequireEngineAvailability bool
 	TargetOverride            *TargetConfig

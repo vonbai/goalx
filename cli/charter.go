@@ -37,10 +37,10 @@ type RunCharter struct {
 }
 
 type RunCharterPaths struct {
-	Charter    string `json:"charter,omitempty"`
-	Goal       string `json:"goal,omitempty"`
-	Acceptance string `json:"acceptance,omitempty"`
-	Proof      string `json:"proof,omitempty"`
+	Charter         string `json:"charter,omitempty"`
+	ObligationModel string `json:"obligation_model,omitempty"`
+	AssurancePlan   string `json:"assurance_plan,omitempty"`
+	Proof           string `json:"proof,omitempty"`
 }
 
 type RunCharterRoleContracts struct {
@@ -104,10 +104,10 @@ func NewRunCharter(runDir, runName, objective string, meta *RunMetadata) (*RunCh
 			},
 		},
 		Paths: RunCharterPaths{
-			Charter:    RunCharterPath(runDir),
-			Goal:       GoalPath(runDir),
-			Acceptance: AcceptanceStatePath(runDir),
-			Proof:      CompletionStatePath(runDir),
+			Charter:         RunCharterPath(runDir),
+			ObligationModel: ObligationModelPath(runDir),
+			AssurancePlan:   AssurancePlanPath(runDir),
+			Proof:           CompletionStatePath(runDir),
 		},
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
@@ -135,14 +135,62 @@ func LoadRunCharter(path string) (*RunCharter, error) {
 		}
 		return nil, err
 	}
-	var charter RunCharter
-	if len(strings.TrimSpace(string(data))) == 0 {
-		charter.Version = 1
-		normalizeRunCharter(&charter)
-		return &charter, nil
+	type runCharterCompat struct {
+		Version       int                     `json:"version"`
+		CharterID     string                  `json:"charter_id,omitempty"`
+		RunID         string                  `json:"run_id,omitempty"`
+		RootRunID     string                  `json:"root_run_id,omitempty"`
+		RunName       string                  `json:"run_name,omitempty"`
+		ProjectID     string                  `json:"project_id,omitempty"`
+		ProjectRoot   string                  `json:"project_root,omitempty"`
+		Objective     string                  `json:"objective,omitempty"`
+		Mode          string                  `json:"mode,omitempty"`
+		PhaseKind     string                  `json:"phase_kind,omitempty"`
+		SourceRun     string                  `json:"source_run,omitempty"`
+		SourcePhase   string                  `json:"source_phase,omitempty"`
+		ParentRun     string                  `json:"parent_run,omitempty"`
+		RoleContracts RunCharterRoleContracts `json:"role_contracts,omitempty"`
+		Paths         struct {
+			Charter         string `json:"charter,omitempty"`
+			ObligationModel string `json:"obligation_model,omitempty"`
+			AssurancePlan   string `json:"assurance_plan,omitempty"`
+			Goal            string `json:"goal,omitempty"`
+			Acceptance      string `json:"acceptance,omitempty"`
+			Proof           string `json:"proof,omitempty"`
+		} `json:"paths,omitempty"`
+		CreatedAt string `json:"created_at,omitempty"`
 	}
-	if err := json.Unmarshal(data, &charter); err != nil {
+	var payload runCharterCompat
+	if len(strings.TrimSpace(string(data))) == 0 {
+		charter := &RunCharter{Version: 1}
+		normalizeRunCharter(charter)
+		return charter, nil
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, fmt.Errorf("parse run charter: %w", err)
+	}
+	charter := RunCharter{
+		Version:       payload.Version,
+		CharterID:     payload.CharterID,
+		RunID:         payload.RunID,
+		RootRunID:     payload.RootRunID,
+		RunName:       payload.RunName,
+		ProjectID:     payload.ProjectID,
+		ProjectRoot:   payload.ProjectRoot,
+		Objective:     payload.Objective,
+		Mode:          payload.Mode,
+		PhaseKind:     payload.PhaseKind,
+		SourceRun:     payload.SourceRun,
+		SourcePhase:   payload.SourcePhase,
+		ParentRun:     payload.ParentRun,
+		RoleContracts: payload.RoleContracts,
+		Paths: RunCharterPaths{
+			Charter:         payload.Paths.Charter,
+			ObligationModel: firstNonEmpty(strings.TrimSpace(payload.Paths.ObligationModel), strings.TrimSpace(payload.Paths.Goal)),
+			AssurancePlan:   firstNonEmpty(strings.TrimSpace(payload.Paths.AssurancePlan), strings.TrimSpace(payload.Paths.Acceptance)),
+			Proof:           payload.Paths.Proof,
+		},
+		CreatedAt: payload.CreatedAt,
 	}
 	normalizeRunCharter(&charter)
 	return &charter, nil

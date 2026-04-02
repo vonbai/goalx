@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -48,22 +46,6 @@ type AcceptanceState struct {
 	UpdatedAt   string           `json:"updated_at,omitempty"`
 }
 
-func AcceptanceNotesPath(runDir string) string {
-	return filepath.Join(runDir, "acceptance.md")
-}
-
-func AcceptanceStatePath(runDir string) string {
-	return filepath.Join(runDir, "acceptance.json")
-}
-
-func AcceptanceEvidencePath(runDir string) string {
-	return filepath.Join(runDir, "acceptance-last.txt")
-}
-
-func AcceptanceCheckEvidencePath(runDir, checkID string) string {
-	return filepath.Join(runDir, fmt.Sprintf("acceptance-%s.txt", goalx.Slugify(checkID)))
-}
-
 func NewAcceptanceState(cfg *goalx.Config, goalVersion int) *AcceptanceState {
 	state := &AcceptanceState{
 		Version:     2,
@@ -83,59 +65,13 @@ func NewAcceptanceState(cfg *goalx.Config, goalVersion int) *AcceptanceState {
 	return state
 }
 
-func LoadAcceptanceState(path string) (*AcceptanceState, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	state, err := parseAcceptanceState(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	return state, nil
-}
-
-func SaveAcceptanceState(path string, state *AcceptanceState) error {
-	if state == nil {
-		return fmt.Errorf("acceptance state is nil")
-	}
-	if err := validateAcceptanceState(state); err != nil {
-		return err
-	}
-	normalizeAcceptanceState(state)
-	if err := validateAcceptanceStateIntegrity(filepath.Dir(path), state); err != nil {
-		return err
-	}
-	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	return writeJSONFile(path, state)
-}
-
-func EnsureAcceptanceState(runDir string, cfg *goalx.Config, goalVersion int) (*AcceptanceState, error) {
-	path := AcceptanceStatePath(runDir)
-	state, err := LoadAcceptanceState(path)
-	if err != nil {
-		return nil, err
-	}
-	if state == nil {
-		state = NewAcceptanceState(cfg, goalVersion)
-		if err := SaveAcceptanceState(path, state); err != nil {
-			return nil, err
-		}
-		return state, nil
-	}
-	return state, nil
-}
-
 func parseAcceptanceState(data []byte) (*AcceptanceState, error) {
 	var state AcceptanceState
 	if err := decodeStrictJSON(data, &state); err != nil {
-		return nil, durableSchemaHintError(DurableSurfaceAcceptance, err)
+		return nil, durableSchemaHintError(DurableSurfaceAssurancePlan, err)
 	}
 	if err := validateAcceptanceState(&state); err != nil {
-		return nil, durableSchemaHintError(DurableSurfaceAcceptance, err)
+		return nil, durableSchemaHintError(DurableSurfaceAssurancePlan, err)
 	}
 	normalizeAcceptanceState(&state)
 	return &state, nil

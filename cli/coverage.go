@@ -22,7 +22,7 @@ type RequiredCoverage struct {
 }
 
 func BuildRequiredCoverage(runDir string) (RequiredCoverage, error) {
-	goal, err := LoadGoalState(GoalPath(runDir))
+	goal, err := LoadCanonicalGoalState(runDir)
 	if err != nil {
 		return RequiredCoverage{}, err
 	}

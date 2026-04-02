@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,7 +33,6 @@ func TestExtractRunFlagMissingValue(t *testing.T) {
 func TestParseStartInitArgs(t *testing.T) {
 	opts, err := parseStartInitArgs([]string{
 		"ship feature",
-		"--parallel", "3",
 		"--name", "demo-run",
 		"--master", "codex/best",
 		"--worker", "codex/fast",
@@ -43,9 +45,6 @@ func TestParseStartInitArgs(t *testing.T) {
 	}
 	if opts.Mode != goalx.ModeWorker {
 		t.Fatalf("mode = %q, want %q", opts.Mode, goalx.ModeWorker)
-	}
-	if opts.Parallel != 3 {
-		t.Fatalf("parallel = %d, want 3", opts.Parallel)
 	}
 	if opts.Name != "demo-run" {
 		t.Fatalf("name = %q, want demo-run", opts.Name)
@@ -65,23 +64,10 @@ func TestParseLaunchOptionsRejectsAmbiguousTopLevelEngineFlags(t *testing.T) {
 	}
 }
 
-func TestParseLaunchOptionsLeavesParallelUnsetWhenOmitted(t *testing.T) {
-	opts, err := parseLaunchOptions([]string{"audit auth"}, goalx.ModeWorker, false)
-	if err != nil {
-		t.Fatalf("parseLaunchOptions: %v", err)
-	}
-	if opts.Parallel != 0 {
-		t.Fatalf("parallel = %d, want 0 when omitted", opts.Parallel)
-	}
-}
-
-func TestParseLaunchOptionsLeavesParallelUnsetByDefault(t *testing.T) {
-	opts, err := parseLaunchOptions([]string{"audit auth"}, goalx.ModeWorker, true)
-	if err != nil {
-		t.Fatalf("parseLaunchOptions: %v", err)
-	}
-	if opts.Parallel != 0 {
-		t.Fatalf("parallel = %d, want 0 when omitted", opts.Parallel)
+func TestParseLaunchOptionsRejectsRemovedParallelFlag(t *testing.T) {
+	_, err := parseLaunchOptions([]string{"audit auth", "--parallel", "3"}, goalx.ModeWorker, true)
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("parseLaunchOptions error = %v, want removed --parallel to fail", err)
 	}
 }
 
@@ -152,6 +138,54 @@ func TestParseLaunchOptionsSplitsCommaDelimitedContextItems(t *testing.T) {
 				t.Fatalf("context[%d] = %q, want %q (all=%#v)", i, got[i], want[i], got)
 			}
 		}
+	}
+}
+
+func TestParseLaunchOptionsSupportsObjectiveFlag(t *testing.T) {
+	opts, err := parseLaunchOptions([]string{"--objective", "audit auth"}, goalx.ModeWorker, true)
+	if err != nil {
+		t.Fatalf("parseLaunchOptions: %v", err)
+	}
+	if opts.Objective != "audit auth" {
+		t.Fatalf("objective = %q, want audit auth", opts.Objective)
+	}
+}
+
+func TestParseLaunchOptionsSupportsObjectiveFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "objective.txt")
+	if err := os.WriteFile(path, []byte("audit auth from file\n"), 0o644); err != nil {
+		t.Fatalf("write objective file: %v", err)
+	}
+	opts, err := parseLaunchOptions([]string{"--objective-file", path}, goalx.ModeWorker, true)
+	if err != nil {
+		t.Fatalf("parseLaunchOptions: %v", err)
+	}
+	if opts.Objective != "audit auth from file" {
+		t.Fatalf("objective = %q, want objective file contents", opts.Objective)
+	}
+}
+
+func TestParseLaunchOptionsRejectsPositionalObjectiveWithObjectiveFlag(t *testing.T) {
+	_, err := parseLaunchOptions([]string{"audit auth", "--objective", "override"}, goalx.ModeWorker, true)
+	if err == nil {
+		t.Fatal("expected objective conflict error")
+	}
+	if !strings.Contains(err.Error(), "objective") {
+		t.Fatalf("parseLaunchOptions error = %v, want objective conflict", err)
+	}
+}
+
+func TestParseLaunchOptionsRejectsObjectiveFileWithObjectiveFlag(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "objective.txt")
+	if err := os.WriteFile(path, []byte("audit auth from file\n"), 0o644); err != nil {
+		t.Fatalf("write objective file: %v", err)
+	}
+	_, err := parseLaunchOptions([]string{"--objective", "inline", "--objective-file", path}, goalx.ModeWorker, true)
+	if err == nil {
+		t.Fatal("expected objective source conflict error")
+	}
+	if !strings.Contains(err.Error(), "objective") {
+		t.Fatalf("parseLaunchOptions error = %v, want objective conflict", err)
 	}
 }
 
@@ -251,7 +285,6 @@ func TestParseSessionIndex(t *testing.T) {
 
 func TestSessionCountPrefersExplicitSessions(t *testing.T) {
 	cfg := &goalx.Config{
-		Parallel: 1,
 		Sessions: []goalx.SessionConfig{{Hint: "a"}, {Hint: "b"}},
 	}
 	if got := sessionCount(cfg); got != 2 {

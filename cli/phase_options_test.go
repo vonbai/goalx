@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -11,7 +12,6 @@ func TestParsePhaseOptions(t *testing.T) {
 	opts, err := parsePhaseOptions("debate", []string{
 		"--from", "research-a",
 		"--objective", "debate findings",
-		"--parallel", "3",
 		"--master", "codex/best",
 		"--worker", "codex/fast",
 		"--master-effort", "high",
@@ -29,9 +29,6 @@ func TestParsePhaseOptions(t *testing.T) {
 	}
 	if opts.From != "research-a" {
 		t.Fatalf("from = %q", opts.From)
-	}
-	if opts.Parallel != 3 {
-		t.Fatalf("parallel = %d", opts.Parallel)
 	}
 	if opts.Master != "codex/best" {
 		t.Fatalf("master = %q", opts.Master)
@@ -71,6 +68,13 @@ func TestParsePhaseOptions(t *testing.T) {
 func TestParsePhaseOptionsRequiresFrom(t *testing.T) {
 	if _, err := parsePhaseOptions("debate", nil); err == nil {
 		t.Fatal("expected missing --from error")
+	}
+}
+
+func TestParsePhaseOptionsRejectsRemovedParallelFlag(t *testing.T) {
+	_, err := parsePhaseOptions("debate", []string{"--from", "research-a", "--parallel", "3"})
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("parsePhaseOptions error = %v, want removed --parallel to fail", err)
 	}
 }
 

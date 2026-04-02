@@ -43,7 +43,7 @@ func TestRunCharterPathAndRoundTrip(t *testing.T) {
 	if charter.Objective != "user objective" {
 		t.Fatalf("Objective = %q, want %q", charter.Objective, "user objective")
 	}
-	if charter.Paths.Goal != GoalPath(runDir) || charter.Paths.Acceptance != AcceptanceStatePath(runDir) || charter.Paths.Proof != CompletionStatePath(runDir) {
+	if charter.Paths.ObligationModel != ObligationModelPath(runDir) || charter.Paths.AssurancePlan != AssurancePlanPath(runDir) || charter.Paths.Proof != CompletionStatePath(runDir) {
 		t.Fatalf("charter paths = %+v", charter.Paths)
 	}
 	if charter.RoleContracts.Master == nil || charter.RoleContracts.Worker == nil {
@@ -69,7 +69,7 @@ func TestRunCharterPathAndRoundTrip(t *testing.T) {
 	if reloaded.CharterID != charter.CharterID {
 		t.Fatalf("CharterID = %q, want %q", reloaded.CharterID, charter.CharterID)
 	}
-	if reloaded.Paths.Goal != charter.Paths.Goal || reloaded.Paths.Acceptance != charter.Paths.Acceptance || reloaded.Paths.Proof != charter.Paths.Proof {
+	if reloaded.Paths.ObligationModel != charter.Paths.ObligationModel || reloaded.Paths.AssurancePlan != charter.Paths.AssurancePlan || reloaded.Paths.Proof != charter.Paths.Proof {
 		t.Fatalf("reloaded charter paths = %+v, want %+v", reloaded.Paths, charter.Paths)
 	}
 }
@@ -113,7 +113,7 @@ func TestRunCharterRoundTripKeepsReadablePaths(t *testing.T) {
 		t.Fatalf("marshal charter: %v", err)
 	}
 	text := string(marshaled)
-	for _, want := range []string{"run-charter.json", GoalPath(runDir), AcceptanceStatePath(runDir), CompletionStatePath(runDir)} {
+	for _, want := range []string{"run-charter.json", ObligationModelPath(runDir), AssurancePlanPath(runDir), CompletionStatePath(runDir)} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("charter JSON missing %q:\n%s", want, text)
 		}

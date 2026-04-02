@@ -2,12 +2,14 @@ package cli
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	goalx "github.com/vonbai/goalx"
+	"github.com/vonbai/goalx/internal/slowtest"
 )
 
 func TestAddExtendsExplicitSessionsSnapshot(t *testing.T) {
@@ -29,7 +31,6 @@ roles:
   worker:
     engine: codex
     model: fast
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -82,6 +83,7 @@ local_validation:
 }
 
 func TestAddNoLongerRequiresModeFlag(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -100,7 +102,6 @@ roles:
   worker:
     engine: codex
     model: fast
-parallel: 1
 sessions:
   - hint: first
 target:
@@ -134,6 +135,7 @@ local_validation:
 }
 
 func TestAddAttachesDimensionsWithoutReplacingDirection(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -152,7 +154,6 @@ roles:
   worker:
     engine: codex
     model: fast
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -198,6 +199,7 @@ local_validation:
 }
 
 func TestAddCreatesDimensionsStateEvenWithoutDimensionOverrides(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -216,7 +218,6 @@ roles:
   worker:
     engine: codex
     model: fast
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -254,6 +255,7 @@ local_validation:
 }
 
 func TestAddDoesNotPublishSessionRuntimeStateToCoordination(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -272,7 +274,6 @@ roles:
   worker:
     engine: codex
     model: fast
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -314,6 +315,77 @@ local_validation:
 	}
 }
 
+func TestAddWorktreeRefreshesSessionCognitionState(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	prev := lookPathFunc
+	defer func() { lookPathFunc = prev }()
+	lookPathFunc = func(name string) (string, error) {
+		switch name {
+		case "git", "npx":
+			return "/usr/bin/" + name, nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	fakeBin := t.TempDir()
+	tmuxPath := filepath.Join(fakeBin, "tmux")
+	writeReadyTmuxScript(t, tmuxPath)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	snapshot := []byte(`name: add-run
+mode: worker
+objective: implement audit fixes
+roles:
+  worker:
+    engine: codex
+    model: fast
+sessions:
+  - hint: first
+    mode: worker
+target:
+  files: ["."]
+local_validation:
+  command: "go test ./..."
+`)
+	runName, runDir := writeAddRunFixture(t, repo, string(snapshot))
+	runWT := RunWorktreePath(runDir)
+	if err := CreateWorktree(repo, runWT, "goalx/"+runName+"/root"); err != nil {
+		t.Fatalf("CreateWorktree run root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
+		t.Fatalf("seed session-1 journal: %v", err)
+	}
+
+	if err := Add(repo, []string{"audit root cause", "--worktree", "--run", runName}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	state, err := LoadCognitionState(CognitionStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadCognitionState: %v", err)
+	}
+	if state == nil || len(state.Scopes) < 2 {
+		t.Fatalf("cognition scopes = %#v, want run-root + session scope", state)
+	}
+	found := false
+	for _, scope := range state.Scopes {
+		if scope.Scope == "session-2" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("cognition scopes = %#v, want session-2 scope", state.Scopes)
+	}
+}
+
 func TestAddFailsWhenRunBudgetIsExhausted(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -333,7 +405,6 @@ roles:
   worker:
     engine: codex
     model: fast
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -377,6 +448,7 @@ local_validation:
 }
 
 func TestAddPropagatesEngineToRenderedProtocol(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -395,7 +467,6 @@ roles:
   worker:
     engine: claude-code
     model: opus
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -451,7 +522,6 @@ roles:
   worker:
     engine: codex
     model: fast
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -490,6 +560,7 @@ local_validation:
 }
 
 func TestAddWorktreeUsesSessionBaseBranch(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -508,7 +579,6 @@ roles:
   worker:
     engine: codex
     model: gpt-5.4
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -606,7 +676,6 @@ roles:
   worker:
     engine: codex
     model: gpt-5.4
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -635,6 +704,7 @@ local_validation:
 }
 
 func TestAddWorktreeWithoutExplicitBaseRecordsRunRootParent(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -653,7 +723,6 @@ roles:
   worker:
     engine: codex
     model: gpt-5.4
-parallel: 0
 target:
   files: ["src/"]
 local_validation:
@@ -703,7 +772,6 @@ roles:
   worker:
     engine: claude-code
     model: opus
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -718,8 +786,8 @@ acceptance:
 	if err := os.WriteFile(filepath.Join(runDir, "acceptance.md"), []byte("- deploy succeeds\n- e2e passes\n"), 0o644); err != nil {
 		t.Fatalf("write acceptance checklist: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "acceptance.json"), []byte(`{"version":1,"goal_version":1,"default_command":"go test -run E2E ./...","effective_command":"go test -run E2E ./...","last_result":{}}`), 0o644); err != nil {
-		t.Fatalf("write acceptance state: %v", err)
+	if err := os.WriteFile(filepath.Join(runDir, "assurance-plan.json"), []byte(`{"version":1,"scenarios":[]}`), 0o644); err != nil {
+		t.Fatalf("write assurance plan: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(runDir, "journals", "session-1.jsonl"), nil, 0o644); err != nil {
 		t.Fatalf("seed session-1 journal: %v", err)
@@ -739,8 +807,8 @@ acceptance:
 		"session-1",
 		"session-2",
 		"of 2 sessions",
-		"acceptance.md",
-		"acceptance.json",
+		"assurance-plan.json",
+		"evidence-log.jsonl",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("rendered protocol missing %q:\n%s", want, text)
@@ -788,7 +856,6 @@ roles:
   worker:
     engine: claude-code
     model: opus
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -817,12 +884,12 @@ local_validation:
 		t.Fatalf("read tmux log: %v", err)
 	}
 	logText := string(logData)
-		for _, want := range []string{
-			"new-window -t " + goalx.TmuxSessionName(repo, runName) + " -n session-2 -c " + WorktreePath(runDir, runName, 2) + " env ",
-			"target-runner --run",
-			"--holder",
-			"session-2",
-			"FOO_TOOLCHAIN_ROOT='/opt/add-after'",
+	for _, want := range []string{
+		"new-window -t " + goalx.TmuxSessionName(repo, runName) + " -n session-2 -c " + WorktreePath(runDir, runName, 2) + " env ",
+		"target-runner --run",
+		"--holder",
+		"session-2",
+		"FOO_TOOLCHAIN_ROOT='/opt/add-after'",
 		"HOME='" + home + "'",
 		"PATH='" + fakeBin + ":/tmp/goalx-bin:/usr/bin'",
 		"ANTHROPIC_API_KEY='anthropic-after'",
@@ -844,6 +911,7 @@ local_validation:
 }
 
 func TestAddLaunchesSessionInRunWorktreeByDefault(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -881,7 +949,6 @@ roles:
   worker:
     engine: codex
     model: codex
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -930,6 +997,7 @@ local_validation:
 }
 
 func TestAddWithWorktreeCopiesGitignoredFiles(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -950,7 +1018,6 @@ roles:
   worker:
     engine: codex
     model: codex
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -983,6 +1050,7 @@ local_validation:
 }
 
 func TestAddNotifiesMasterViaInbox(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1001,7 +1069,6 @@ roles:
   worker:
     engine: codex
     model: codex
-parallel: 1
 master:
   engine: codex
   model: gpt-5.4
@@ -1082,7 +1149,6 @@ roles:
   worker:
     engine: codex
     model: codex
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -1154,7 +1220,6 @@ roles:
   worker:
     engine: codex
     model: fast
-parallel: 3
 target:
   files: ["."]
 local_validation:
@@ -1208,7 +1273,6 @@ roles:
   worker:
     engine: claude-code
     model: opus
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -1284,7 +1348,6 @@ roles:
     engine: claude-code
     model: opus
     effort: high
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -1342,7 +1405,6 @@ roles:
   worker:
     engine: claude-code
     model: opus
-parallel: 0
 target:
   files: ["src/"]
 local_validation:
@@ -1394,7 +1456,6 @@ roles:
   worker:
     engine: codex
     model: gpt-5.4
-parallel: 0
 target:
   files: ["src/"]
 local_validation:
@@ -1444,7 +1505,6 @@ roles:
   worker:
     engine: codex
     model: gpt-5.4
-parallel: 0
 target:
   files: ["src/"]
 local_validation:
@@ -1476,7 +1536,6 @@ roles:
   worker:
     engine: codex
     model: codex
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -1533,7 +1592,6 @@ roles:
   worker:
     engine: codex
     model: codex
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -1593,6 +1651,7 @@ local_validation:
 }
 
 func TestAddRollsBackWhenLaunchHandshakeStaysBlank(t *testing.T) {
+	slowtest.Require(t, "tmux/worktree add integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -1637,7 +1696,6 @@ roles:
   worker:
     engine: codex
     model: codex
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -1722,7 +1780,6 @@ roles:
   worker:
     engine: claude-code
     model: opus
-parallel: 1
 target:
   files: ["src/"]
 local_validation:
@@ -1833,7 +1890,6 @@ roles:
   worker:
     engine: codex
     model: codex
-parallel: 1
 sessions:
   - hint: first
     mode: worker
@@ -1908,15 +1964,14 @@ func writeAddRunFixture(t *testing.T, repo, snapshot string) (string, string) {
 	if err != nil {
 		t.Fatalf("EnsureRunMetadata: %v", err)
 	}
-	goalState, err := EnsureGoalState(runDir)
-	if err != nil {
-		t.Fatalf("EnsureGoalState: %v", err)
+	if _, err := EnsureObligationModel(runDir, nil, nil, "bootstrap-objective", cfg.Objective); err != nil {
+		t.Fatalf("EnsureObligationModel: %v", err)
 	}
-	if err := EnsureGoalLog(runDir); err != nil {
-		t.Fatalf("EnsureGoalLog: %v", err)
+	if err := EnsureObligationLog(runDir); err != nil {
+		t.Fatalf("EnsureObligationLog: %v", err)
 	}
-	if _, err := EnsureAcceptanceState(runDir, cfg, goalState.Version); err != nil {
-		t.Fatalf("EnsureAcceptanceState: %v", err)
+	if _, err := EnsureAssurancePlan(runDir, NewAcceptanceState(cfg, 0)); err != nil {
+		t.Fatalf("EnsureAssurancePlan: %v", err)
 	}
 	charter, err := NewRunCharter(runDir, cfg.Name, cfg.Objective, meta)
 	if err != nil {
@@ -1993,6 +2048,7 @@ func writeAddRunFixture(t *testing.T, repo, snapshot string) (string, string) {
 
 func writeReadyTmuxScript(t *testing.T, tmuxPath string) {
 	t.Helper()
+	slowtest.Require(t, "tmux/worktree add integration test")
 
 	script := `#!/bin/sh
 case "$1" in

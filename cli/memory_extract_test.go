@@ -404,7 +404,7 @@ func TestMemoryExtractBuildsSuccessDeltaProposalFromInterventionLog(t *testing.T
 		Message:         "Do not stop at route cutover only; the page still needs real product polish.",
 		AffectedTargets: []string{"session-1"},
 		Before: InterventionBeforeState{
-			GoalHash:         "sha256:goal",
+			ObligationModelHash:         "sha256:goal",
 			StatusHash:       "sha256:status",
 			CoordinationHash: "sha256:coordination",
 		},

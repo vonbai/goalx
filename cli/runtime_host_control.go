@@ -94,6 +94,7 @@ func runRuntimeHostLoop(ctx context.Context, projectRoot, runName, runDir, runID
 			_ = watcher.Close()
 		}
 	}()
+	applyOOMPriorityBestEffort(runDir, "runtime-host", os.Getpid())
 	reportError := func(err error) error {
 		appendAuditLog(runDir, "runtime-host error: %v", err)
 		exitReason = err.Error()
@@ -195,22 +196,39 @@ func runRuntimeHostTickWithWatcher(projectRoot, runName, runDir, runID string, e
 	if err := RefreshWorktreeSnapshot(runDir); err != nil {
 		return err
 	}
+	if err := RefreshResourceState(runDir); err != nil {
+		return err
+	}
 	presence, err := BuildTargetPresenceFacts(runDir, tmuxSession)
 	if err != nil {
 		return err
 	}
+	now := time.Now().UTC()
 	closeoutFacts, err := BuildRunCloseoutFacts(runDir)
 	if err != nil {
 		return err
 	}
 	switch closeoutFacts.MaintenanceAction(presence["master"]) {
 	case RunCloseoutMaintenanceActionRecoverMaster:
-		if !presence["master"].SessionExists {
-			if err := relaunchMaster(projectRoot, runDir, tmuxSession, cfg); err != nil {
+		recovery := loadTransportRecoveryTarget(runDir, "master")
+		if missingTargetRelaunchReady(recovery, now, interval) {
+			if err := recordMissingTargetRelaunchAttempt(runDir, "master", presence["master"].State); err != nil {
 				return err
 			}
-		} else {
-			if err := relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession, cfg); err != nil {
+			var relaunchErr error
+			if !presence["master"].SessionExists {
+				relaunchErr = relaunchMaster(projectRoot, runDir, tmuxSession, cfg)
+			} else {
+				relaunchErr = relaunchMissingMasterWindow(projectRoot, runDir, tmuxSession, cfg)
+			}
+			if relaunchErr != nil {
+				if recordErr := recordMissingTargetRelaunchResult(runDir, "master", presence["master"].State, "failure", relaunchErr); recordErr != nil {
+					return recordErr
+				}
+				if !errors.Is(relaunchErr, errResourceAdmissionBlocked) {
+					return relaunchErr
+				}
+			} else if err := recordMissingTargetRelaunchResult(runDir, "master", presence["master"].State, "success", nil); err != nil {
 				return err
 			}
 		}
@@ -221,7 +239,7 @@ func runRuntimeHostTickWithWatcher(projectRoot, runName, runDir, runID string, e
 		}
 		return errRuntimeHostCompleted
 	}
-	presence, err = reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession, cfg, runState, closeoutFacts.Complete, presence)
+	presence, err = reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession, cfg, runState, closeoutFacts.Complete, presence, interval)
 	if err != nil {
 		return err
 	}
@@ -291,10 +309,7 @@ func runRuntimeHostMaintenanceCycle(projectRoot, runName, runDir, tmuxSession st
 	if err := refreshRuntimeHostTransportFacts(runDir, tmuxSession, cfg.Master.Engine, watcher, controlState, "snapshot"); err != nil {
 		return err
 	}
-	if err := refreshActivityFacts(runDir, projectRoot, runName); err != nil {
-		return err
-	}
-	if err := RefreshEvolveFacts(runDir); err != nil {
+	if err := refreshComputedControlFacts(projectRoot, runName, runDir); err != nil {
 		return err
 	}
 	if _, err := processMasterAlerts(runDir, tmuxSession, cfg.Master.Engine, presence); err != nil {
@@ -792,11 +807,7 @@ func buildNonFrontierMasterAlerts(runDir string) ([]masterAlert, map[string]stri
 	if err != nil {
 		return nil, nil, err
 	}
-	acceptance, err := LoadAcceptanceState(AcceptanceStatePath(runDir))
-	if err != nil {
-		return nil, nil, err
-	}
-	if qualityDebt != nil && !qualityDebt.Zero() && hasBuilderEvidence(runDir, acceptance) {
+	if qualityDebt != nil && !qualityDebt.Zero() && hasBuilderEvidence(runDir, nil) {
 		parts := qualityDebtAlertParts(qualityDebt)
 		if len(parts) > 0 {
 			key := "quality_debt:open"
@@ -978,7 +989,7 @@ func processUrgentTransportTargets(runDir, runName, tmuxSession string, cfg *goa
 	return nil
 }
 
-func reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession string, cfg *goalx.Config, runState *RunRuntimeState, closeoutComplete bool, presence map[string]TargetPresenceFacts) (map[string]TargetPresenceFacts, error) {
+func reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession string, cfg *goalx.Config, runState *RunRuntimeState, closeoutComplete bool, presence map[string]TargetPresenceFacts, interval time.Duration) (map[string]TargetPresenceFacts, error) {
 	if runState == nil || !runState.Active || closeoutComplete {
 		return presence, nil
 	}
@@ -990,10 +1001,11 @@ func reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession string, cf
 			return nil, err
 		}
 	}
+	now := time.Now().UTC()
 	masterFacts := presence["master"]
 	if targetPresenceMissing(masterFacts) {
 		recovery := loadTransportRecoveryTarget(runDir, "master")
-		if recovery.CurrentMissingLastRelaunchAt == "" || recovery.CurrentMissingLastRelaunchResult != "success" {
+		if recovery.CurrentMissingLastRelaunchResult != "success" && missingTargetRelaunchReady(recovery, now, interval) {
 			if err := recordMissingTargetRelaunchAttempt(runDir, "master", masterFacts.State); err != nil {
 				return nil, err
 			}
@@ -1010,6 +1022,9 @@ func reconcileTargetPresenceRecovery(projectRoot, runDir, tmuxSession string, cf
 				}
 				if recordErr := recordMissingTargetRelaunchResult(runDir, "master", masterFacts.State, "failure", relaunchErr); recordErr != nil {
 					return nil, recordErr
+				}
+				if errors.Is(relaunchErr, errResourceAdmissionBlocked) {
+					return presence, nil
 				}
 				return nil, relaunchErr
 			}

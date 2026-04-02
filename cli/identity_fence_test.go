@@ -37,10 +37,10 @@ func TestIdentityFencePathAndDerivation(t *testing.T) {
 	}
 	goal := NewGoalState()
 	goal.Required = []GoalItem{{ID: "req-1", Text: "ship feature", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateClaimed, EvidencePaths: []string{"/tmp/evidence.txt"}}}
-	if err := SaveGoalState(GoalPath(runDir), goal); err != nil {
+	if err := writeBoundaryFixture(t, runDir, goal); err != nil {
 		t.Fatalf("SaveGoalState: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version:     2,
 		GoalVersion: goal.Version,
 		Checks: []AcceptanceCheck{
@@ -61,7 +61,7 @@ func TestIdentityFencePathAndDerivation(t *testing.T) {
 	if fence.RunID != meta.RunID || fence.Epoch != meta.Epoch {
 		t.Fatalf("fence run identity = %+v, want run_id %q epoch %d", fence, meta.RunID, meta.Epoch)
 	}
-	if fence.CharterHash == "" || fence.GoalHash == "" || fence.AcceptanceHash == "" || fence.CoordinationHash == "" {
+	if fence.CharterHash == "" || fence.ObligationModelHash == "" || fence.AssurancePlanHash == "" || fence.CoordinationHash == "" {
 		t.Fatalf("fence hashes must be populated: %+v", fence)
 	}
 	wantCharterHash, err := hashFileContents(RunCharterPath(runDir))
@@ -71,19 +71,19 @@ func TestIdentityFencePathAndDerivation(t *testing.T) {
 	if fence.CharterHash != wantCharterHash {
 		t.Fatalf("CharterHash = %q, want %q", fence.CharterHash, wantCharterHash)
 	}
-	wantGoalHash, err := hashFileContents(GoalPath(runDir))
+	wantGoalHash, err := hashFileContents(ObligationModelPath(runDir))
 	if err != nil {
 		t.Fatalf("hashFileContents goal: %v", err)
 	}
-	if fence.GoalHash != wantGoalHash {
-		t.Fatalf("GoalHash = %q, want %q", fence.GoalHash, wantGoalHash)
+	if fence.ObligationModelHash != wantGoalHash {
+		t.Fatalf("ObligationModelHash = %q, want %q", fence.ObligationModelHash, wantGoalHash)
 	}
-	wantAcceptanceHash, err := hashFileContents(AcceptanceStatePath(runDir))
+	wantAcceptanceHash, err := hashFileContents(AssurancePlanPath(runDir))
 	if err != nil {
-		t.Fatalf("hashFileContents acceptance: %v", err)
+		t.Fatalf("hashFileContents assurance plan: %v", err)
 	}
-	if fence.AcceptanceHash != wantAcceptanceHash {
-		t.Fatalf("AcceptanceHash = %q, want %q", fence.AcceptanceHash, wantAcceptanceHash)
+	if fence.AssurancePlanHash != wantAcceptanceHash {
+		t.Fatalf("AssurancePlanHash = %q, want %q", fence.AssurancePlanHash, wantAcceptanceHash)
 	}
 	wantCoordinationHash, err := hashFileContents(CoordinationPath(runDir))
 	if err != nil {
@@ -103,7 +103,7 @@ func TestIdentityFencePathAndDerivation(t *testing.T) {
 	if reloaded == nil {
 		t.Fatal("reloaded fence is nil")
 	}
-	if reloaded.CharterHash != fence.CharterHash || reloaded.GoalHash != fence.GoalHash || reloaded.AcceptanceHash != fence.AcceptanceHash || reloaded.CoordinationHash != fence.CoordinationHash {
+	if reloaded.CharterHash != fence.CharterHash || reloaded.ObligationModelHash != fence.ObligationModelHash || reloaded.AssurancePlanHash != fence.AssurancePlanHash || reloaded.CoordinationHash != fence.CoordinationHash {
 		t.Fatalf("reloaded fence = %+v, want %+v", reloaded, fence)
 	}
 }
@@ -170,10 +170,10 @@ func TestRefreshIdentityFenceDetectsChangedGoalContent(t *testing.T) {
 		t.Fatalf("SaveRunMetadata charter linkage: %v", err)
 	}
 	goal := NewGoalState()
-	if err := SaveGoalState(GoalPath(runDir), goal); err != nil {
+	if err := writeBoundaryFixture(t, runDir, goal); err != nil {
 		t.Fatalf("SaveGoalState initial: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version:     2,
 		GoalVersion: goal.Version,
 		Checks: []AcceptanceCheck{
@@ -195,7 +195,7 @@ func TestRefreshIdentityFenceDetectsChangedGoalContent(t *testing.T) {
 
 	goal.Required = append(goal.Required, GoalItem{ID: "req-1", Text: "ship feature", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen})
 	goal.Version++
-	if err := SaveGoalState(GoalPath(runDir), goal); err != nil {
+	if err := writeBoundaryFixture(t, runDir, goal); err != nil {
 		t.Fatalf("SaveGoalState updated: %v", err)
 	}
 
@@ -206,14 +206,14 @@ func TestRefreshIdentityFenceDetectsChangedGoalContent(t *testing.T) {
 	if !changed {
 		t.Fatal("RefreshIdentityFence should report changed goal content")
 	}
-	if updated.GoalHash == initial.GoalHash {
-		t.Fatalf("GoalHash = %q, want change from %q", updated.GoalHash, initial.GoalHash)
+	if updated.ObligationModelHash == initial.ObligationModelHash {
+		t.Fatalf("ObligationModelHash = %q, want change from %q", updated.ObligationModelHash, initial.ObligationModelHash)
 	}
 	reloaded, err := LoadIdentityFence(IdentityFencePath(runDir))
 	if err != nil {
 		t.Fatalf("LoadIdentityFence: %v", err)
 	}
-	if reloaded.GoalHash != updated.GoalHash {
-		t.Fatalf("reloaded fence goal hash = %q, want %q", reloaded.GoalHash, updated.GoalHash)
+	if reloaded.ObligationModelHash != updated.ObligationModelHash {
+		t.Fatalf("reloaded fence obligation hash = %q, want %q", reloaded.ObligationModelHash, updated.ObligationModelHash)
 	}
 }

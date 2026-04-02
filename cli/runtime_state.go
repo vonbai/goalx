@@ -414,7 +414,7 @@ func sessionLifecycleStateFromJournalStatus(status string) string {
 
 func isControlOnlySessionJournalStatus(status string) bool {
 	switch strings.TrimSpace(status) {
-	case "ack-session":
+	case "ack-inbox":
 		return true
 	default:
 		return false

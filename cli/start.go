@@ -157,24 +157,20 @@ func startWithConfig(projectRoot string, cfg *goalx.Config, engines map[string]g
 		}
 	}
 
-	if err := bootstrapStartWorkspace(state, cfg, selectionSnapshot, metaPatch); err != nil {
+	meta, err := bootstrapStartScaffold(projectRoot, state, cfg, selectionSnapshot, metaPatch, snapshotCommit)
+	if err != nil {
+		return err
+	}
+	if err := bootstrapStartWorktree(state, metaPatch); err != nil {
 		return err
 	}
 
-	masterCmd, masterPrompt, meta, checkSec, warning, err := bootstrapStartDurables(projectRoot, state, cfg, engines, metaPatch, snapshotCommit)
+	masterCmd, masterPrompt, checkSec, warning, err := bootstrapStartDurables(projectRoot, state, cfg, engines, meta)
 	if err != nil {
 		return err
 	}
 	if warning != "" {
 		fmt.Fprint(os.Stderr, warning)
-	}
-	if err := submitControlOperationTarget(state.runDir, RunBootstrapOperationKey(), ControlOperationTarget{
-		Kind:              ControlOperationKindRunBootstrap,
-		State:             ControlOperationStatePreparing,
-		Summary:           "launching master runtime",
-		PendingConditions: []string{"master_window_ready", "master_pane_pid_persisted"},
-	}); err != nil {
-		return err
 	}
 	if err := refreshBoundaryEstablishmentOperation(state.runDir); err != nil {
 		return err
@@ -200,9 +196,9 @@ func ensureStartAvailable(state *startRunState) error {
 	return nil
 }
 
-func bootstrapStartWorkspace(state *startRunState, cfg *goalx.Config, selectionSnapshot *SelectionSnapshot, metaPatch *RunMetadata) error {
+func bootstrapStartScaffold(projectRoot string, state *startRunState, cfg *goalx.Config, selectionSnapshot *SelectionSnapshot, metaPatch *RunMetadata, snapshotCommit string) (*RunMetadata, error) {
 	if err := os.MkdirAll(state.runDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", state.runDir, err)
+		return nil, fmt.Errorf("mkdir %s: %w", state.runDir, err)
 	}
 	state.runDirCreated = true
 	dirs := []string{
@@ -213,24 +209,76 @@ func bootstrapStartWorkspace(state *startRunState, cfg *goalx.Config, selectionS
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", d, err)
+			return nil, fmt.Errorf("mkdir %s: %w", d, err)
 		}
 	}
 	if err := EnsureProjectGoalxIgnoredWithConfig(state.projectRoot, cfg); err != nil {
-		return fmt.Errorf("bootstrap .goalx ignore: %w", err)
+		return nil, fmt.Errorf("bootstrap .goalx ignore: %w", err)
 	}
 	if _, err := ensureRunTmuxLocator(state.projectRoot, state.runDir, cfg.Name); err != nil {
-		return fmt.Errorf("write tmux locator: %w", err)
+		return nil, fmt.Errorf("write tmux locator: %w", err)
 	}
 	if err := SaveRunSpec(state.runDir, cfg); err != nil {
-		return fmt.Errorf("write run spec: %w", err)
+		return nil, fmt.Errorf("write run spec: %w", err)
 	}
 	if selectionSnapshot != nil {
 		if err := SaveSelectionSnapshot(state.runDir, selectionSnapshot); err != nil {
-			return fmt.Errorf("write selection snapshot: %w", err)
+			return nil, fmt.Errorf("write selection snapshot: %w", err)
 		}
 	}
+	meta, err := bootstrapStartRunIdentity(state.runDir, projectRoot, cfg, metaPatch, snapshotCommit)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := EnsureRuntimeState(state.runDir, cfg); err != nil {
+		return nil, fmt.Errorf("init runtime state: %w", err)
+	}
+	if err := EnsureMasterControl(state.runDir); err != nil {
+		return nil, fmt.Errorf("init master control: %w", err)
+	}
+	if err := applyOperationUpsertTargetOp(state.runDir, controlOperationUpsertTargetBody{
+		Target: RunBootstrapOperationKey(),
+		Operation: ControlOperationTarget{
+			Kind:              ControlOperationKindRunBootstrap,
+			State:             ControlOperationStatePreparing,
+			Summary:           "launching master runtime",
+			PendingConditions: []string{"master_window_ready", "master_pane_pid_persisted"},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
 
+func bootstrapStartRunIdentity(runDir, projectRoot string, cfg *goalx.Config, metaPatch *RunMetadata, snapshotCommit string) (*RunMetadata, error) {
+	meta, err := EnsureRunMetadata(runDir, projectRoot, cfg.Objective)
+	if err != nil {
+		return nil, fmt.Errorf("init run metadata: %w", err)
+	}
+	applyRunMetadataPatch(meta, metaPatch)
+	if snapshotCommit != "" {
+		meta.SnapshotCommit = snapshotCommit
+	}
+	charter, err := NewRunCharter(runDir, cfg.Name, cfg.Objective, meta)
+	if err != nil {
+		return nil, fmt.Errorf("init run charter: %w", err)
+	}
+	if err := SaveRunCharter(RunCharterPath(runDir), charter); err != nil {
+		return nil, fmt.Errorf("write run charter: %w", err)
+	}
+	digest, err := hashRunCharter(charter)
+	if err != nil {
+		return nil, fmt.Errorf("hash run charter: %w", err)
+	}
+	meta.CharterID = charter.CharterID
+	meta.CharterHash = digest
+	if err := SaveRunMetadata(RunMetadataPath(runDir), meta); err != nil {
+		return nil, fmt.Errorf("write run metadata: %w", err)
+	}
+	return meta, nil
+}
+
+func bootstrapStartWorktree(state *startRunState, metaPatch *RunMetadata) error {
 	sourceBaseBranch := ""
 	if metaPatch != nil && metaPatch.SourceRun != "" {
 		candidate := fmt.Sprintf("goalx/%s/root", goalx.Slugify(metaPatch.SourceRun))
@@ -259,75 +307,58 @@ func bootstrapStartWorkspace(state *startRunState, cfg *goalx.Config, selectionS
 	return nil
 }
 
-func bootstrapStartDurables(projectRoot string, state *startRunState, cfg *goalx.Config, engines map[string]goalx.EngineConfig, metaPatch *RunMetadata, snapshotCommit string) (string, string, *RunMetadata, int, string, error) {
+func bootstrapStartDurables(projectRoot string, state *startRunState, cfg *goalx.Config, engines map[string]goalx.EngineConfig, meta *RunMetadata) (string, string, int, string, error) {
 	masterSpec, err := goalx.ResolveLaunchSpec(engines, goalx.LaunchRequest{
 		Engine: cfg.Master.Engine,
 		Model:  cfg.Master.Model,
 		Effort: cfg.Master.Effort,
 	})
 	if err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("master engine: %w", err)
+		return "", "", 0, "", fmt.Errorf("master engine: %w", err)
 	}
 	masterCmd := masterSpec.Command
 	masterProtocolPath := filepath.Join(state.runDir, "master.md")
 	masterPrompt := goalx.ResolvePrompt(engines, cfg.Master.Engine, masterProtocolPath)
 
 	if err := EnsureEngineTrusted(cfg.Master.Engine, state.runWorktree); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("trust bootstrap master: %w", err)
+		return "", "", 0, "", fmt.Errorf("trust bootstrap master: %w", err)
 	}
 
-	goalState, err := EnsureGoalState(state.runDir)
+	objectiveContract, err := EnsureObjectiveContract(state.runDir, cfg.Objective)
 	if err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init goal state: %w", err)
+		return "", "", 0, "", fmt.Errorf("init objective contract: %w", err)
 	}
-	if _, err := EnsureObjectiveContract(state.runDir, cfg.Objective); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init objective contract: %w", err)
-	}
-	if err := EnsureGoalLog(state.runDir); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init goal log: %w", err)
-	}
-	if _, err := EnsureAcceptanceState(state.runDir, cfg, goalState.Version); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init acceptance state: %w", err)
-	}
-	meta, err := EnsureRunMetadata(state.runDir, projectRoot, cfg.Objective)
+	objectiveContractHash, err := hashFileSHA256(ObjectiveContractPath(state.runDir))
 	if err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init run metadata: %w", err)
+		return "", "", 0, "", fmt.Errorf("hash objective contract: %w", err)
 	}
-	applyRunMetadataPatch(meta, metaPatch)
-	if snapshotCommit != "" {
-		meta.SnapshotCommit = snapshotCommit
+	if _, err := EnsureObligationModel(state.runDir, nil, objectiveContract, objectiveContractHash, cfg.Objective); err != nil {
+		return "", "", 0, "", fmt.Errorf("init obligation model: %w", err)
 	}
-	charter, err := NewRunCharter(state.runDir, cfg.Name, cfg.Objective, meta)
-	if err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init run charter: %w", err)
+	if err := EnsureObligationLog(state.runDir); err != nil {
+		return "", "", 0, "", fmt.Errorf("init obligation log: %w", err)
 	}
-	if err := SaveRunCharter(RunCharterPath(state.runDir), charter); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("write run charter: %w", err)
+	if _, err := EnsureAssurancePlan(state.runDir, NewAcceptanceState(cfg, 0)); err != nil {
+		return "", "", 0, "", fmt.Errorf("init assurance plan: %w", err)
 	}
-	digest, err := hashRunCharter(charter)
-	if err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("hash run charter: %w", err)
-	}
-	meta.CharterID = charter.CharterID
-	meta.CharterHash = digest
-	if err := SaveRunMetadata(RunMetadataPath(state.runDir), meta); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("write run metadata: %w", err)
+	if meta == nil {
+		return "", "", 0, "", fmt.Errorf("run metadata is nil")
 	}
 	if err := ensureRunIntake(state.runDir, cfg, meta); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("write intake: %w", err)
+		return "", "", 0, "", fmt.Errorf("write intake: %w", err)
 	}
 	if err := EnsureSuccessCompilation(projectRoot, state.runDir, cfg, meta); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("compile success plane: %w", err)
+		return "", "", 0, "", fmt.Errorf("compile success plane: %w", err)
 	}
 	if err := ensureExperimentsSurface(state.runDir); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init experiments surface: %w", err)
+		return "", "", 0, "", fmt.Errorf("init experiments surface: %w", err)
 	}
 	baseRef := strings.TrimSpace(meta.BaseRevision)
 	baseExperimentID := ""
-	if metaPatch != nil && strings.TrimSpace(metaPatch.SourceRun) != "" {
-		sourceState, err := ResolveIntegrationState(projectRoot, goalx.Slugify(metaPatch.SourceRun))
+	if strings.TrimSpace(meta.SourceRun) != "" {
+		sourceState, err := ResolveIntegrationState(projectRoot, goalx.Slugify(meta.SourceRun))
 		if err != nil {
-			return "", "", nil, 0, "", fmt.Errorf("load source integration state: %w", err)
+			return "", "", 0, "", fmt.Errorf("load source integration state: %w", err)
 		}
 		if sourceState != nil {
 			baseExperimentID = sourceState.CurrentExperimentID
@@ -337,62 +368,59 @@ func bootstrapStartDurables(projectRoot string, state *startRunState, cfg *goalx
 		}
 	}
 	if err := initializeRootExperimentLineageWithBase(state.runDir, state.runWorktree, cfg.Name, meta.Intent, baseRef, baseExperimentID); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init root experiment lineage: %w", err)
+		return "", "", 0, "", fmt.Errorf("init root experiment lineage: %w", err)
 	}
 	if _, err := EnsureArtifactsManifest(state.runDir); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init artifacts manifest: %w", err)
+		return "", "", 0, "", fmt.Errorf("init artifacts manifest: %w", err)
 	}
 	if _, err := EnsureCoordinationState(state.runDir, cfg.Objective); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init coordination state: %w", err)
-	}
-	if err := EnsureMasterControl(state.runDir); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init master control: %w", err)
+		return "", "", 0, "", fmt.Errorf("init coordination state: %w", err)
 	}
 	if _, err := EnsureDimensionsState(state.runDir); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init dimensions state: %w", err)
+		return "", "", 0, "", fmt.Errorf("init dimensions state: %w", err)
 	}
 	if err := GenerateAdapter(cfg.Master.Engine, state.runWorktree, MasterInboxPath(state.runDir), MasterCursorPath(state.runDir)); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("generate master adapter: %w", err)
+		return "", "", 0, "", fmt.Errorf("generate master adapter: %w", err)
 	}
 	fence, err := NewIdentityFence(state.runDir, meta)
 	if err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init identity fence: %w", err)
+		return "", "", 0, "", fmt.Errorf("init identity fence: %w", err)
 	}
 	if err := SaveIdentityFence(IdentityFencePath(state.runDir), fence); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("write identity fence: %w", err)
+		return "", "", 0, "", fmt.Errorf("write identity fence: %w", err)
 	}
 
 	masterData, err := buildMasterProtocolData(projectRoot, state.runDir, state.tmuxSession, cfg, engines, masterCmd, meta)
 	if err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("build master protocol data: %w", err)
+		return "", "", 0, "", fmt.Errorf("build master protocol data: %w", err)
 	}
 	if err := RenderMasterProtocol(masterData, state.runDir); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("render master protocol: %w", err)
+		return "", "", 0, "", fmt.Errorf("render master protocol: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(state.runDir, "master.jsonl"), nil, 0o644); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init master journal: %w", err)
-	}
-	if _, err := EnsureRuntimeState(state.runDir, cfg); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init runtime state: %w", err)
+		return "", "", 0, "", fmt.Errorf("init master journal: %w", err)
 	}
 	if _, err := EnsureSessionsRuntimeState(state.runDir); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("init session runtime state: %w", err)
+		return "", "", 0, "", fmt.Errorf("init session runtime state: %w", err)
 	}
 	if err := RegisterActiveRun(projectRoot, cfg); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("register active run: %w", err)
+		return "", "", 0, "", fmt.Errorf("register active run: %w", err)
 	}
 	if err := setFocusedRun(projectRoot, cfg.Name); err != nil {
-		return "", "", nil, 0, "", fmt.Errorf("focus active run: %w", err)
+		return "", "", 0, "", fmt.Errorf("focus active run: %w", err)
 	}
 
 	checkSec, warning := normalizeRuntimeHostInterval(cfg.Master.CheckInterval)
-	return masterCmd, masterPrompt, meta, checkSec, warning, nil
+	return masterCmd, masterPrompt, checkSec, warning, nil
 }
 
 func launchStartRuntime(state *startRunState, cfg *goalx.Config, meta *RunMetadata, masterCmd, masterPrompt string, checkSec int) error {
 	goalxBin, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve goalx executable: %w", err)
+	}
+	if err := requireResourceAdmission(state.runDir, cfg.Master.Engine, cfg.Master.Model, "fresh start"); err != nil {
+		return err
 	}
 	masterLeaseTTL := time.Duration(checkSec) * time.Second * 2
 	masterLaunch := buildMasterLaunchCommand(goalxBin, cfg.Name, state.runDir, meta.RunID, meta.Epoch, masterLeaseTTL, masterCmd, masterPrompt)
@@ -535,12 +563,12 @@ func buildMasterProtocolData(projectRoot, runDir, tmuxSession string, cfg *goalx
 		SummaryPath:            SummaryPath(runDir),
 		CharterPath:            RunCharterPath(runDir),
 		ObjectiveContractPath:  ObjectiveContractPath(runDir),
-		GoalPath:               GoalPath(runDir),
-		GoalLogPath:            GoalLogPath(runDir),
+		ObligationModelPath:    ObligationModelPath(runDir),
+		ObligationLogPath:      ObligationLogPath(runDir),
+		AssurancePlanPath:      AssurancePlanPath(runDir),
+		EvidenceLogPath:        EvidenceLogPath(runDir),
 		IntegrationStatePath:   IntegrationStatePath(runDir),
 		IdentityFencePath:      IdentityFencePath(runDir),
-		AcceptanceNotesPath:    existingProtocolPath(AcceptanceNotesPath(runDir)),
-		AcceptanceStatePath:    AcceptanceStatePath(runDir),
 		CompletionProofPath:    CompletionStatePath(runDir),
 		RunStatePath:           RunRuntimeStatePath(runDir),
 		SessionsStatePath:      SessionsRuntimeStatePath(runDir),

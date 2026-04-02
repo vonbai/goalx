@@ -178,8 +178,11 @@ func resolveClaudeHookRunContext(cwd string) (runDir, target string, ok bool) {
 				runNames = append(runNames, name)
 			}
 			for _, runName := range runNames {
-				// Check configured run root first, then legacy location
-				for _, candidateRunDir := range resolveRunDirCandidates(projectRoot, runName) {
+				candidateRunDirs, err := resolveRunDirCandidates(projectRoot, runName)
+				if err != nil {
+					return "", "", false
+				}
+				for _, candidateRunDir := range candidateRunDirs {
 					if runDir, target, ok := resolveClaudeHookRunContextForRun(absCWD, candidateRunDir); ok {
 						return runDir, target, true
 					}

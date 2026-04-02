@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	missingTargetRelaunchMinBackoff = 15 * time.Second
+	missingTargetRelaunchMaxBackoff = 10 * time.Minute
+)
+
 type TransportRecoveryState struct {
 	Version   int                                `json:"version"`
 	Targets   map[string]TransportRecoveryTarget `json:"targets,omitempty"`
@@ -236,6 +241,41 @@ func recordMissingTargetRelaunchResult(runDir, target, missingState, result stri
 			entry.CurrentMissingLastRelaunchError = ""
 		}
 	})
+}
+
+func missingTargetRelaunchBackoff(interval time.Duration, attempts int) time.Duration {
+	if interval <= 0 {
+		interval = missingTargetRelaunchMinBackoff
+	}
+	if interval < missingTargetRelaunchMinBackoff {
+		interval = missingTargetRelaunchMinBackoff
+	}
+	if attempts <= 1 {
+		return interval
+	}
+	backoff := interval
+	for i := 1; i < attempts; i++ {
+		backoff *= 2
+		if backoff >= missingTargetRelaunchMaxBackoff {
+			return missingTargetRelaunchMaxBackoff
+		}
+	}
+	if backoff > missingTargetRelaunchMaxBackoff {
+		return missingTargetRelaunchMaxBackoff
+	}
+	return backoff
+}
+
+func missingTargetRelaunchReady(entry TransportRecoveryTarget, now time.Time, interval time.Duration) bool {
+	if strings.TrimSpace(entry.CurrentMissingLastRelaunchAt) == "" {
+		return true
+	}
+	lastAttemptAt, err := time.Parse(time.RFC3339, entry.CurrentMissingLastRelaunchAt)
+	if err != nil {
+		return true
+	}
+	backoff := missingTargetRelaunchBackoff(interval, entry.CurrentMissingRelaunchAttempts)
+	return !now.Before(lastAttemptAt.Add(backoff))
 }
 
 func recordTargetAttentionObservation(runDir string, facts TargetAttentionFacts) error {

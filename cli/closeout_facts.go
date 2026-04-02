@@ -3,31 +3,34 @@ package cli
 import "strings"
 
 type RunCloseoutFacts struct {
-	StatusPhase                string   `json:"status_phase,omitempty"`
-	SummaryExists              bool     `json:"summary_exists,omitempty"`
-	CompletionExists           bool     `json:"completion_exists,omitempty"`
-	MasterUnread               int      `json:"master_unread,omitempty"`
-	RunIntent                  string   `json:"run_intent,omitempty"`
-	EvolveFrontierState        string   `json:"evolve_frontier_state,omitempty"`
-	EvolveOpenCandidateCount   int      `json:"evolve_open_candidate_count,omitempty"`
-	EvolveManagementGap        string   `json:"evolve_management_gap,omitempty"`
-	ObjectiveContractPresent   bool     `json:"objective_contract_present,omitempty"`
-	ObjectiveContractLocked    bool     `json:"objective_contract_locked,omitempty"`
-	ObjectiveIntegrityReady    bool     `json:"objective_integrity_ready,omitempty"`
-	ObjectiveIntegrityOK       bool     `json:"objective_integrity_ok,omitempty"`
-	MissingGoalClauseIDs       []string `json:"missing_goal_clause_ids,omitempty"`
-	MissingAcceptanceClauseIDs []string `json:"missing_acceptance_clause_ids,omitempty"`
-	SuccessPlanePresent        bool     `json:"success_plane_present,omitempty"`
-	SuccessModelExists         bool     `json:"success_model_exists,omitempty"`
-	ProofPlanExists            bool     `json:"proof_plan_exists,omitempty"`
-	WorkflowPlanExists         bool     `json:"workflow_plan_exists,omitempty"`
-	QualityDebtZero            bool     `json:"quality_debt_zero,omitempty"`
-	QualityDebtPresent         bool     `json:"quality_debt_present,omitempty"`
-	CriticGateMissing          bool     `json:"critic_gate_missing,omitempty"`
-	FinisherGateMissing        bool     `json:"finisher_gate_missing,omitempty"`
-	SuccessDimensionUnowned    []string `json:"success_dimension_unowned,omitempty"`
-	ProofPlanGap               []string `json:"proof_plan_gap,omitempty"`
-	Complete                   bool     `json:"complete,omitempty"`
+	StatusPhase                  string   `json:"status_phase,omitempty"`
+	SummaryExists                bool     `json:"summary_exists,omitempty"`
+	CompletionExists             bool     `json:"completion_exists,omitempty"`
+	MasterUnread                 int      `json:"master_unread,omitempty"`
+	RunIntent                    string   `json:"run_intent,omitempty"`
+	EvolveFrontierState          string   `json:"evolve_frontier_state,omitempty"`
+	EvolveOpenCandidateCount     int      `json:"evolve_open_candidate_count,omitempty"`
+	EvolveManagementGap          string   `json:"evolve_management_gap,omitempty"`
+	ObjectiveContractPresent     bool     `json:"objective_contract_present,omitempty"`
+	ObjectiveContractLocked      bool     `json:"objective_contract_locked,omitempty"`
+	ObjectiveIntegrityReady      bool     `json:"objective_integrity_ready,omitempty"`
+	ObjectiveIntegrityOK         bool     `json:"objective_integrity_ok,omitempty"`
+	MissingGoalClauseIDs         []string `json:"missing_obligation_clause_ids,omitempty"`
+	MissingAcceptanceClauseIDs   []string `json:"missing_assurance_clause_ids,omitempty"`
+	SuccessPlanePresent          bool     `json:"success_plane_present,omitempty"`
+	SuccessModelExists           bool     `json:"success_model_exists,omitempty"`
+	ProofPlanExists              bool     `json:"proof_plan_exists,omitempty"`
+	WorkflowPlanExists           bool     `json:"workflow_plan_exists,omitempty"`
+	QualityDebtZero              bool     `json:"quality_debt_zero,omitempty"`
+	QualityDebtPresent           bool     `json:"quality_debt_present,omitempty"`
+	CriticGateMissing            bool     `json:"critic_gate_missing,omitempty"`
+	FinisherGateMissing          bool     `json:"finisher_gate_missing,omitempty"`
+	SuccessDimensionUnowned      []string `json:"success_dimension_unowned,omitempty"`
+	ProofPlanGap                 []string `json:"proof_plan_gap,omitempty"`
+	RequiredEvidenceStale        []string `json:"required_evidence_stale,omitempty"`
+	RequiredCognitionUnsatisfied []string `json:"required_cognition_unsatisfied,omitempty"`
+	ImpactResolutionUnknown      bool     `json:"impact_resolution_unknown,omitempty"`
+	Complete                     bool     `json:"complete,omitempty"`
 }
 
 type RunCloseoutMaintenanceAction string
@@ -94,6 +97,9 @@ func BuildRunCloseoutFacts(runDir string) (RunCloseoutFacts, error) {
 		facts.FinisherGateMissing = debt.FinisherGateMissing
 		facts.SuccessDimensionUnowned = append([]string(nil), debt.SuccessDimensionUnowned...)
 		facts.ProofPlanGap = append([]string(nil), debt.ProofPlanGap...)
+		facts.RequiredEvidenceStale = append([]string(nil), debt.RequiredEvidenceStale...)
+		facts.RequiredCognitionUnsatisfied = append([]string(nil), debt.RequiredCognitionUnsatisfied...)
+		facts.ImpactResolutionUnknown = debt.ImpactResolutionUnknown
 	}
 	facts.Complete = facts.StatusPhase == "complete" && facts.SummaryExists && facts.CompletionExists
 	return facts, nil
@@ -108,6 +114,9 @@ func (facts RunCloseoutFacts) objectiveCloseoutReady() bool {
 		return false
 	}
 	if facts.ObjectiveContractPresent && !facts.ObjectiveIntegrityOK {
+		return false
+	}
+	if len(facts.RequiredEvidenceStale) > 0 || len(facts.RequiredCognitionUnsatisfied) > 0 {
 		return false
 	}
 	return true

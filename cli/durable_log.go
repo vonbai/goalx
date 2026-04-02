@@ -18,13 +18,11 @@ type DurableLogEvent struct {
 }
 
 var durableLogKinds = map[DurableSurfaceName]map[string]struct{}{
-	DurableSurfaceGoalLog: {
+	DurableSurfaceObligationLog: {
 		"decision":   {},
 		"checkpoint": {},
-		"blocker":    {},
-		"handoff":    {},
+		"waiver":     {},
 		"closeout":   {},
-		"note":       {},
 		"update":     {},
 	},
 	DurableSurfaceExperiments: {
@@ -40,6 +38,11 @@ var durableLogKinds = map[DurableSurfaceName]map[string]struct{}{
 		"budget_extend":    {},
 		"budget_set_total": {},
 		"budget_clear":     {},
+	},
+	DurableSurfaceEvidenceLog: {
+		"scenario.executed": {},
+		"judge.recorded":    {},
+		"signoff.recorded":  {},
 	},
 }
 
@@ -123,6 +126,11 @@ func validateDurableLogEvent(event DurableLogEvent, surface DurableSurfaceName) 
 	}
 	if surface == DurableSurfaceInterventionLog {
 		if _, err := parseInterventionEventBody(event.Body); err != nil {
+			return err
+		}
+	}
+	if surface == DurableSurfaceEvidenceLog {
+		if _, err := parseEvidenceEventBody(event.Body); err != nil {
 			return err
 		}
 	}

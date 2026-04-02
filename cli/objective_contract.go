@@ -22,8 +22,8 @@ const (
 	objectiveClauseKindGuardrail     = "guardrail"
 	objectiveClauseKindOperatingRule = "operating_rule"
 
-	objectiveRequiredSurfaceGoal       ObjectiveRequiredSurface = "goal"
-	objectiveRequiredSurfaceAcceptance ObjectiveRequiredSurface = "acceptance"
+	objectiveRequiredSurfaceGoal       ObjectiveRequiredSurface = "obligation"
+	objectiveRequiredSurfaceAcceptance ObjectiveRequiredSurface = "assurance"
 )
 
 type ObjectiveRequiredSurface string
@@ -200,7 +200,7 @@ func validateObjectiveClauseInput(clause ObjectiveClause) error {
 	seen := make(map[ObjectiveRequiredSurface]struct{}, len(clause.RequiredSurfaces))
 	for _, surface := range clause.RequiredSurfaces {
 		switch surface {
-		case objectiveRequiredSurfaceGoal, objectiveRequiredSurfaceAcceptance:
+		case objectiveRequiredSurfaceGoal, objectiveRequiredSurfaceAcceptance, "goal", "acceptance":
 		default:
 			return fmt.Errorf("objective clause %s has invalid required surface %q", clause.ID, surface)
 		}
@@ -240,6 +240,12 @@ func normalizeObjectiveClause(clause *ObjectiveClause) {
 	out := make([]ObjectiveRequiredSurface, 0, len(clause.RequiredSurfaces))
 	for _, surface := range clause.RequiredSurfaces {
 		trimmed := ObjectiveRequiredSurface(strings.TrimSpace(string(surface)))
+		switch trimmed {
+		case "goal":
+			trimmed = objectiveRequiredSurfaceGoal
+		case "acceptance":
+			trimmed = objectiveRequiredSurfaceAcceptance
+		}
 		if trimmed != "" {
 			out = append(out, trimmed)
 		}

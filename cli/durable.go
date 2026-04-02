@@ -41,6 +41,9 @@ func Durable(projectRoot string, args []string) error {
 	if runName == "" || strings.TrimSpace(bodyFile) == "" || len(rest) != 1 {
 		return fmt.Errorf(durableUsage)
 	}
+	if err := rejectLegacyPublicSurface(rest[0]); err != nil {
+		return err
+	}
 	rc, err := ResolveRun(projectRoot, runName)
 	if err != nil {
 		return err

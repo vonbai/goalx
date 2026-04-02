@@ -43,6 +43,97 @@ func TestObserveShowsRunRuntimeStateAndRunStatusRecord(t *testing.T) {
 	}
 }
 
+func TestObserveShowsResourceStateSection(t *testing.T) {
+	repo, _, cfg, _ := writeGuidanceRunFixture(t)
+	prev := resourceReadFile
+	t.Cleanup(func() { resourceReadFile = prev })
+	resourceReadFile = func(path string) ([]byte, error) {
+		switch path {
+		case "/proc/meminfo":
+			return []byte("MemTotal: 32768 kB\nMemAvailable: 20971520 kB\nSwapTotal: 16384 kB\nSwapFree: 16384 kB\n"), nil
+		case "/proc/pressure/memory":
+			return []byte("some avg10=0.10 avg60=0 avg300=0 total=0\nfull avg10=0 avg60=0 avg300=0 total=0\n"), nil
+		case "/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.high", "/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.swap.current", "/sys/fs/cgroup/memory.swap.max":
+			return []byte("0\n"), nil
+		case "/sys/fs/cgroup/memory.events":
+			return []byte("low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\n"), nil
+		}
+		if strings.HasSuffix(path, "/status") {
+			return []byte("Name:\tgoalx\nVmRSS:\t1048576 kB\n"), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	out := captureStdout(t, func() {
+		if err := Observe(repo, []string{"--run", cfg.Name}); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	})
+	for _, want := range []string{
+		"### Resource state",
+		`"state": "healthy"`,
+		`"mem_available_bytes": 21474836480`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("observe output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestObserveShowsSettlingStateDuringStartupGrace(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	installFakePresenceTmux(t, true, "master", "%0\tmaster\n")
+
+	runName := "settling-observe"
+	runDir := writeRunSpecFixture(t, repo, &goalx.Config{
+		Name:      runName,
+		Mode:      goalx.ModeWorker,
+		Objective: "ship settling",
+	})
+	if err := SaveControlRunState(ControlRunStatePath(runDir), &ControlRunState{
+		Version:         1,
+		GoalState:       "open",
+		ContinuityState: "running",
+		UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("SaveControlRunState: %v", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := SaveRunRuntimeState(RunRuntimeStatePath(runDir), &RunRuntimeState{
+		Version:   1,
+		Run:       runName,
+		Mode:      string(goalx.ModeWorker),
+		Active:    true,
+		StartedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveRunRuntimeState: %v", err)
+	}
+	if err := submitControlOperationTarget(runDir, RunBootstrapOperationKey(), ControlOperationTarget{
+		Kind:    ControlOperationKindRunBootstrap,
+		State:   ControlOperationStateCommitted,
+		Summary: "run bootstrap committed",
+	}); err != nil {
+		t.Fatalf("submitControlOperationTarget: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := Observe(repo, []string{"--run", runName}); err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+	})
+	if !strings.Contains(out, "run_status=launching") {
+		t.Fatalf("observe output missing launching state for settling grace:\n%s", out)
+	}
+	if !strings.Contains(out, "Startup: settling") {
+		t.Fatalf("observe output missing startup settling hint:\n%s", out)
+	}
+	if strings.Contains(out, "transport degraded") {
+		t.Fatalf("observe output should not degrade transport during settling grace:\n%s", out)
+	}
+}
+
 func TestRefreshDisplayFactsWritesEvolveFactsOnlyForEvolveRun(t *testing.T) {
 	repo, runDir, cfg, meta := writeGuidanceRunFixture(t)
 	meta.Intent = runIntentEvolve
@@ -438,7 +529,7 @@ func TestObserveWarnsAboutEvolveManagementGapsAndMissingCloseoutArtifacts(t *tes
 
 func TestObserveWarnsAboutRunStatusGoalDrift(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{
@@ -466,7 +557,7 @@ func TestObserveWarnsAboutRunStatusGoalDrift(t *testing.T) {
 		"### advisories",
 		"Status drift:",
 		"status_required_remaining=0",
-		"goal_required_remaining=1",
+		"boundary_required_remaining=1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("observe output missing %q:\n%s", want, out)
@@ -579,7 +670,7 @@ func TestObserveShowsExplicitCoverageFacts(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "first open item", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "second open item", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -653,7 +744,7 @@ func TestObserveShowsBlockedRequiredFrontierAdvisory(t *testing.T) {
 		}
 	}
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{{ID: "req-1", Text: "blocked item", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen}},
 	}); err != nil {
 		t.Fatalf("SaveGoalState: %v", err)
@@ -770,7 +861,7 @@ func TestObserveShowsBlockedRequiredFrontierDetailAdvisory(t *testing.T) {
 	t.Setenv("TMUX_SESSION1_CAPTURE", sessionCapture)
 	installGuidanceFakeTmux(t, []string{"session-1"})
 
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{{ID: "req-1", Text: "ship UI polish", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen}},
 	}); err != nil {
 		t.Fatalf("SaveGoalState: %v", err)
@@ -882,7 +973,7 @@ func TestObserveWarnsAboutMasterOrphanedAndPrematureBlockedFrontierFacts(t *test
 	if err := os.WriteFile(RunStatusPath(runDir), []byte(`{"version":1,"phase":"working","required_remaining":2,"active_sessions":[],"updated_at":"2026-03-28T10:00:00Z"}`), 0o644); err != nil {
 		t.Fatalf("write status record: %v", err)
 	}
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "finish integration", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "verify remote system", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -948,7 +1039,7 @@ func TestObserveWarnsAboutMasterOrphanedAndPrematureBlockedFrontierFacts(t *test
 
 func TestObserveWarnsAboutControlGapFacts(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -1029,7 +1120,7 @@ func TestObserveWarnsAboutControlGapFacts(t *testing.T) {
 
 func TestObserveWarnsAboutQualityDebt(t *testing.T) {
 	repo, runDir, cfg, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -1056,7 +1147,7 @@ func TestObserveWarnsAboutQualityDebt(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version:     2,
 		GoalVersion: 1,
 		Checks: []AcceptanceCheck{
@@ -1069,7 +1160,7 @@ func TestObserveWarnsAboutQualityDebt(t *testing.T) {
 	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
 		Version:               1,
 		ObjectiveContractHash: "sha256:objective",
-		GoalHash:              "sha256:goal",
+		ObligationModelHash:   "sha256:goal",
 		Dimensions: []SuccessDimension{
 			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
 			{ID: "req-2", Kind: "outcome", Text: "ship research spine", Required: true},

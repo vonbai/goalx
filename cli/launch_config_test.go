@@ -44,56 +44,21 @@ func makeLaunchPathWithCommands(t *testing.T, names ...string) string {
 	return binDir
 }
 
-func TestBuildLaunchConfigPreservesConfiguredParallelWhenFlagOmitted(t *testing.T) {
+func TestBuildLaunchConfigRejectsLegacyParallelField(t *testing.T) {
 	projectRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
-		t.Fatalf("mkdir .goalx: %v", err)
-	}
-	cfgYAML := `
+	writeLaunchConfigProjectFile(t, projectRoot, `
 parallel: 4
 master:
   engine: codex
   model: best
-roles:
-  worker:
-    engine: claude-code
-    model: opus
-`
-	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte(cfgYAML), 0o644); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
+`)
 
-	cfg, err := buildLaunchConfig(projectRoot, launchOptions{
+	_, err := buildLaunchConfig(projectRoot, launchOptions{
 		Objective: "audit auth",
 		Mode:      goalx.ModeWorker,
 	})
-	if err != nil {
-		t.Fatalf("buildLaunchConfig: %v", err)
-	}
-	if cfg.Parallel != 4 {
-		t.Fatalf("parallel = %d, want 4", cfg.Parallel)
-	}
-}
-
-func TestBuildLaunchConfigOverridesParallelWhenFlagProvided(t *testing.T) {
-	projectRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
-		t.Fatalf("mkdir .goalx: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("parallel: 4\n"), 0o644); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
-
-	cfg, err := buildLaunchConfig(projectRoot, launchOptions{
-		Objective: "audit auth",
-		Mode:      goalx.ModeWorker,
-		Parallel:  2,
-	})
-	if err != nil {
-		t.Fatalf("buildLaunchConfig: %v", err)
-	}
-	if cfg.Parallel != 2 {
-		t.Fatalf("parallel = %d, want 2", cfg.Parallel)
+	if err == nil || !strings.Contains(err.Error(), "parallel") {
+		t.Fatalf("buildLaunchConfig error = %v, want legacy parallel rejection", err)
 	}
 }
 
@@ -709,7 +674,7 @@ local_validation:
 	}
 }
 
-func TestResolveLaunchConfigPreservesConfiguredParallelWhenFlagOmitted(t *testing.T) {
+func TestResolveLaunchConfigRejectsLegacyParallelField(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `
 parallel: 4
@@ -726,15 +691,12 @@ local_validation:
   command: go test ./...
 `)
 
-	resolvedCfg, err := resolveLaunchConfig(projectRoot, launchOptions{
+	_, err := resolveLaunchConfig(projectRoot, launchOptions{
 		Objective: "audit auth",
 		Mode:      goalx.ModeWorker,
 	})
-	if err != nil {
-		t.Fatalf("resolveLaunchConfig: %v", err)
-	}
-	if resolvedCfg.Config.Parallel != 4 {
-		t.Fatalf("parallel = %d, want 4", resolvedCfg.Config.Parallel)
+	if err == nil || !strings.Contains(err.Error(), "parallel") {
+		t.Fatalf("resolveLaunchConfig error = %v, want legacy parallel rejection", err)
 	}
 }
 
@@ -826,13 +788,12 @@ target:
 	}
 }
 
-func TestResolveLaunchConfigDimensionsDoNotIncreaseParallel(t *testing.T) {
+func TestResolveLaunchConfigDimensionsApplyToWorkerDefaultsWithoutSeedingSessions(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `
 master:
   engine: codex
   model: gpt-5.4
-parallel: 1
 target:
   files: ["."]
 local_validation:
@@ -847,8 +808,11 @@ local_validation:
 	if err != nil {
 		t.Fatalf("resolveLaunchConfig: %v", err)
 	}
-	if resolvedCfg.Config.Parallel != 1 {
-		t.Fatalf("parallel = %d, want 1", resolvedCfg.Config.Parallel)
+	if len(resolvedCfg.Config.Sessions) != 0 {
+		t.Fatalf("sessions = %#v, want no preseeded sessions", resolvedCfg.Config.Sessions)
+	}
+	if got, want := resolvedCfg.Config.Roles.Worker.Dimensions, []string{"audit", "adversarial", "evidence"}; len(got) != len(want) || strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("worker dimensions = %#v, want %#v", got, want)
 	}
 }
 
@@ -884,7 +848,6 @@ local_validation:
 func TestBuildLaunchConfigMatchesResolveLaunchConfig(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeLaunchConfigProjectFile(t, projectRoot, `
-parallel: 2
 master:
   engine: claude-code
   model: opus

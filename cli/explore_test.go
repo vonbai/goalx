@@ -157,7 +157,6 @@ context:
 		Name:      "research-a",
 		Mode:      goalx.ModeWorker,
 		Objective: "audit auth flow",
-		Parallel:  2,
 		Master: goalx.MasterConfig{
 			Engine: "codex",
 			Model:  "codex",
@@ -169,9 +168,9 @@ context:
 	}, map[string]string{
 		"summary.md":              "# summary\n",
 		"session-1-report.md":     "# report\n",
-		"objective-contract.json": "{\n  \"version\": 1,\n  \"state\": \"locked\",\n  \"clauses\": []\n}\n",
-		"goal.json":               "{\n  \"version\": 1,\n  \"required\": [],\n  \"optional\": []\n}\n",
-		"acceptance.json":         "{\n  \"version\": 2,\n  \"checks\": []\n}\n",
+		"objective-contract.json": "{\n  \"version\": 1,\n  \"objective_hash\": \"sha256:demo\",\n  \"state\": \"locked\",\n  \"clauses\": []\n}\n",
+		"obligation-model.json":   "{\n  \"version\": 1,\n  \"objective_contract_hash\": \"sha256:demo\",\n  \"required\": [],\n  \"optional\": [],\n  \"guardrails\": []\n}\n",
+		"assurance-plan.json":     "{\n  \"version\": 1,\n  \"scenarios\": []\n}\n",
 		"status.json":             "{\n  \"version\": 1,\n  \"phase\": \"working\",\n  \"required_remaining\": 1\n}\n",
 		"coordination.json":       "{\n  \"version\": 1,\n  \"required\": {},\n  \"sessions\": {}\n}\n",
 		"experiments.jsonl":       "{\"version\":1,\"kind\":\"experiment.created\",\"at\":\"2026-03-28T10:00:00Z\",\"actor\":\"goalx\",\"body\":{\"experiment_id\":\"exp_source\",\"created_at\":\"2026-03-28T10:00:00Z\"}}\n",
@@ -199,8 +198,8 @@ context:
 		"experiments.jsonl",
 		"integration.json",
 		"objective-contract.json",
-		"goal.json",
-		"acceptance.json",
+		"obligation-model.json",
+		"assurance-plan.json",
 		"status.json",
 		"coordination.json",
 	} {
@@ -235,6 +234,15 @@ func TestExploreRejectsSavedRunMissingCanonicalIntake(t *testing.T) {
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run spec: %v", err)
 	}
+	if err := os.WriteFile(ObjectiveContractPath(runDir), []byte("{\n  \"version\": 1,\n  \"objective_hash\": \"sha256:demo\",\n  \"state\": \"locked\",\n  \"clauses\": []\n}\n"), 0o644); err != nil {
+		t.Fatalf("write objective contract: %v", err)
+	}
+	if err := os.WriteFile(ObligationModelPath(runDir), []byte("{\n  \"version\": 1,\n  \"objective_contract_hash\": \"sha256:demo\",\n  \"required\": [],\n  \"optional\": [],\n  \"guardrails\": []\n}\n"), 0o644); err != nil {
+		t.Fatalf("write obligation model: %v", err)
+	}
+	if err := os.WriteFile(AssurancePlanPath(runDir), []byte("{\n  \"version\": 1,\n  \"scenarios\": []\n}\n"), 0o644); err != nil {
+		t.Fatalf("write assurance plan: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(runDir, "summary.md"), []byte("# summary\n"), 0o644); err != nil {
 		t.Fatalf("write summary: %v", err)
 	}
@@ -243,8 +251,8 @@ func TestExploreRejectsSavedRunMissingCanonicalIntake(t *testing.T) {
 	if err == nil {
 		t.Fatal("Explore unexpectedly succeeded without canonical intake")
 	}
-	if !strings.Contains(err.Error(), "intake") || !strings.Contains(err.Error(), "legacy") {
-		t.Fatalf("Explore error = %v, want legacy intake rejection", err)
+	if !strings.Contains(err.Error(), "intake") || !strings.Contains(err.Error(), "canonical") {
+		t.Fatalf("Explore error = %v, want canonical intake rejection", err)
 	}
 }
 
@@ -272,6 +280,15 @@ func TestExploreWriteConfigPreservesSavedRunIntakeArtifact(t *testing.T) {
 	}
 	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
 		t.Fatalf("write run spec: %v", err)
+	}
+	if err := os.WriteFile(ObjectiveContractPath(runDir), []byte("{\n  \"version\": 1,\n  \"objective_hash\": \"sha256:demo\",\n  \"state\": \"locked\",\n  \"clauses\": []\n}\n"), 0o644); err != nil {
+		t.Fatalf("write objective contract: %v", err)
+	}
+	if err := os.WriteFile(ObligationModelPath(runDir), []byte("{\n  \"version\": 1,\n  \"objective_contract_hash\": \"sha256:demo\",\n  \"required\": [],\n  \"optional\": [],\n  \"guardrails\": []\n}\n"), 0o644); err != nil {
+		t.Fatalf("write obligation model: %v", err)
+	}
+	if err := os.WriteFile(AssurancePlanPath(runDir), []byte("{\n  \"version\": 1,\n  \"scenarios\": []\n}\n"), 0o644); err != nil {
+		t.Fatalf("write assurance plan: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(runDir, "summary.md"), []byte("# summary\n"), 0o644); err != nil {
 		t.Fatalf("write summary: %v", err)
@@ -379,7 +396,6 @@ func writeSavedPhaseSourceFixture(t *testing.T, projectRoot, runName, phaseKind 
 		Name:      runName,
 		Mode:      goalx.ModeWorker,
 		Objective: "audit auth flow",
-		Parallel:  2,
 		Master: goalx.MasterConfig{
 			Engine: "codex",
 			Model:  "codex",

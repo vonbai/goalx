@@ -10,7 +10,7 @@ import (
 
 func TestBuildControlGapFactsDetectsStatusDriftAndSerializedFrontier(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -92,7 +92,7 @@ func TestBuildControlGapFactsDetectsStatusDriftAndSerializedFrontier(t *testing.
 
 func TestBuildControlGapFactsDetectsCoordinationStaleFromIntegrationUpdate(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 		},
@@ -161,7 +161,7 @@ func TestBuildControlGapFactsDetectsCoordinationStaleFromIntegrationUpdate(t *te
 
 func TestBuildControlGapFactsDoesNotFlagSerializedFrontierWhenMultipleOwnersActive(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "ship research spine", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},

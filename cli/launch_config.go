@@ -84,7 +84,6 @@ func buildLaunchResolveRequest(projectRoot string, baseCfg goalx.Config, opts la
 		Name:          launchConfigName(projectRoot, opts),
 		Mode:          opts.Mode,
 		Objective:     opts.Objective,
-		Parallel:      opts.Parallel,
 		ClearSessions: true,
 	}
 	_ = projectRoot
@@ -136,18 +135,8 @@ func applyLaunchSessionOverrides(cfg *goalx.Config, opts launchOptions, dimensio
 		}
 	}
 
-	if len(opts.Subs) == 0 && (len(opts.Dimensions) > 0 || opts.Effort != "") {
-		size := cfg.Parallel
-		if size < 1 {
-			size = 1
-		}
-		cfg.Sessions = make([]goalx.SessionConfig, size)
-		for i := range cfg.Sessions {
-			cfg.Sessions[i] = goalx.SessionConfig{
-				Effort:     opts.Effort,
-				Dimensions: append([]string(nil), opts.Dimensions...),
-			}
-		}
+	if len(opts.Subs) == 0 && len(opts.Dimensions) > 0 {
+		cfg.Roles.Worker.Dimensions = append([]string(nil), opts.Dimensions...)
 	}
 
 	if len(opts.Subs) > 0 {

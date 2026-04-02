@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +12,6 @@ type phaseOptions struct {
 	From         string
 	Name         string
 	Objective    string
-	Parallel     int
 	Readonly     bool
 	ContextPaths []string
 	Dimensions   []string
@@ -28,12 +26,11 @@ type phaseOptions struct {
 }
 
 func phaseUsage(command string) string {
-	return fmt.Sprintf(`usage: goalx %s --from RUN [--name NAME] [--objective TEXT] [--parallel N] [--master ENGINE/MODEL] [--worker ENGINE/MODEL] [--context ITEMS] [--dimension SPEC]... [--effort LEVEL] [--master-effort LEVEL] [--worker-effort LEVEL] [--budget DURATION] [--readonly] [--write-config]
+	return fmt.Sprintf(`usage: goalx %s --from RUN [--name NAME] [--objective TEXT] [--master ENGINE/MODEL] [--worker ENGINE/MODEL] [--context ITEMS] [--dimension SPEC]... [--effort LEVEL] [--master-effort LEVEL] [--worker-effort LEVEL] [--budget DURATION] [--readonly] [--write-config]
 
 notes:
   --from RUN is required and must reference a saved run.
   use one comma-delimited --context value for multiple items; escape literal commas inside one item as \\,.
-  --parallel is optional initial fan-out for the new phase run.
   saved run selection snapshot stays in effect unless you request an explicit CLI selection override.
   direct start is the default; use --write-config only for advanced config-first control.`, command)
 }
@@ -60,16 +57,6 @@ func parsePhaseOptions(command string, args []string) (phaseOptions, error) {
 			}
 			i++
 			opts.Objective = args[i]
-		case "--parallel":
-			if i+1 >= len(args) {
-				return opts, fmt.Errorf("missing value for --parallel")
-			}
-			i++
-			n, err := strconv.Atoi(args[i])
-			if err != nil || n < 1 {
-				return opts, fmt.Errorf("invalid --parallel value %q", args[i])
-			}
-			opts.Parallel = n
 		case "--context":
 			if i+1 >= len(args) {
 				return opts, fmt.Errorf("missing value for --context")

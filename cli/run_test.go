@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -76,6 +78,42 @@ func TestRunIntentEvolveUsesAutoLaunchMode(t *testing.T) {
 	}
 	if !strings.Contains(out, "Run started.") {
 		t.Fatalf("run output missing start summary:\n%s", out)
+	}
+}
+
+func TestRunSupportsObjectiveFlag(t *testing.T) {
+	oldAuto := runAutoWithOptions
+	defer func() { runAutoWithOptions = oldAuto }()
+
+	runAutoWithOptions = func(projectRoot string, opts launchOptions) error {
+		if opts.Objective != "ship it from flag" {
+			t.Fatalf("objective = %q, want flag objective", opts.Objective)
+		}
+		return nil
+	}
+
+	if err := Run(t.TempDir(), []string{"--objective", "ship it from flag"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestRunSupportsObjectiveFile(t *testing.T) {
+	oldAuto := runAutoWithOptions
+	defer func() { runAutoWithOptions = oldAuto }()
+
+	path := filepath.Join(t.TempDir(), "objective.txt")
+	if err := os.WriteFile(path, []byte("ship it from file\n"), 0o644); err != nil {
+		t.Fatalf("write objective file: %v", err)
+	}
+	runAutoWithOptions = func(projectRoot string, opts launchOptions) error {
+		if opts.Objective != "ship it from file" {
+			t.Fatalf("objective = %q, want file objective", opts.Objective)
+		}
+		return nil
+	}
+
+	if err := Run(t.TempDir(), []string{"--objective-file", path}); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 }
 

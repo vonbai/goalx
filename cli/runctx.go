@@ -98,7 +98,10 @@ func resolveLocalRun(projectRoot, selector string) (*RunContext, error) {
 	}
 
 	// Try configured run root first, then legacy location
-	runDirs := resolveRunDirCandidates(projectRoot, runName)
+	runDirs, err := resolveRunDirCandidates(projectRoot, runName)
+	if err != nil {
+		return nil, err
+	}
 	for _, runDir := range runDirs {
 		if _, err := os.Stat(RunSpecPath(runDir)); err == nil {
 			return buildRunContext(projectRoot, runDir, runName)
@@ -122,20 +125,22 @@ func resolveLocalRun(projectRoot, selector string) (*RunContext, error) {
 // resolveRunDirCandidates returns candidate run directories in priority order:
 // 1. Configured run_root (if set)
 // 2. Legacy ~/.goalx/runs/{projectID}/{runName}
-func resolveRunDirCandidates(projectRoot, runName string) []string {
+func resolveRunDirCandidates(projectRoot, runName string) ([]string, error) {
 	var candidates []string
 
-	// Check if project has a configured run_root
-	if layers, err := goalx.LoadConfigLayers(projectRoot); err == nil && layers.Config.RunRoot != "" {
+	layers, err := goalx.LoadConfigLayers(projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("load config layers: %w", err)
+	}
+	if layers.Config.RunRoot != "" {
 		configuredDir := goalx.ResolveRunDir(projectRoot, runName, &layers.Config)
 		candidates = append(candidates, configuredDir)
 	}
 
-	// Always include legacy location as fallback
 	legacyDir := goalx.RunDir(projectRoot, runName)
 	candidates = append(candidates, legacyDir)
 
-	return candidates
+	return candidates, nil
 }
 
 func buildRunContext(projectRoot, runDir, runName string) (*RunContext, error) {

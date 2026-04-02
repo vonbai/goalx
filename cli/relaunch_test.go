@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -196,5 +197,46 @@ func TestRelaunchMasterRestoresMissingSuccessCompilationArtifacts(t *testing.T) 
 	}
 	if compilerInput == nil || compilerInput.ObjectiveContractRef != "objective-contract.json" {
 		t.Fatalf("compiler input = %+v, want objective-contract reference", compilerInput)
+	}
+}
+
+func TestRelaunchMasterRestoresMissingCognitionState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	prev := lookPathFunc
+	defer func() { lookPathFunc = prev }()
+	lookPathFunc = func(name string) (string, error) {
+		switch name {
+		case "git", "npx":
+			return "/usr/bin/" + name, nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	installFakeTmux(t, "master")
+	runName, runDir := writeLifecycleRunFixture(t, repo)
+	cfg, err := LoadRunSpec(runDir)
+	if err != nil {
+		t.Fatalf("LoadRunSpec: %v", err)
+	}
+	if err := os.Remove(CognitionStatePath(runDir)); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove cognition-state: %v", err)
+	}
+
+	if err := relaunchMaster(repo, runDir, goalx.TmuxSessionName(repo, runName), cfg); err != nil {
+		t.Fatalf("relaunchMaster: %v", err)
+	}
+
+	state, err := LoadCognitionState(CognitionStatePath(runDir))
+	if err != nil {
+		t.Fatalf("LoadCognitionState: %v", err)
+	}
+	if state == nil || len(state.Scopes) == 0 || state.Scopes[0].Scope != "run-root" {
+		t.Fatalf("cognition state = %#v, want restored run-root scope", state)
 	}
 }

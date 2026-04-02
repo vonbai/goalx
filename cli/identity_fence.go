@@ -12,14 +12,14 @@ import (
 )
 
 type IdentityFence struct {
-	Version          int    `json:"version"`
-	RunID            string `json:"run_id,omitempty"`
-	Epoch            int    `json:"epoch,omitempty"`
-	CharterHash      string `json:"charter_hash,omitempty"`
-	GoalHash         string `json:"goal_hash,omitempty"`
-	AcceptanceHash   string `json:"acceptance_hash,omitempty"`
-	CoordinationHash string `json:"coordination_hash,omitempty"`
-	UpdatedAt        string `json:"updated_at,omitempty"`
+	Version              int    `json:"version"`
+	RunID                string `json:"run_id,omitempty"`
+	Epoch                int    `json:"epoch,omitempty"`
+	CharterHash          string `json:"charter_hash,omitempty"`
+	ObligationModelHash  string `json:"obligation_model_hash,omitempty"`
+	AssurancePlanHash    string `json:"assurance_plan_hash,omitempty"`
+	CoordinationHash     string `json:"coordination_hash,omitempty"`
+	UpdatedAt            string `json:"updated_at,omitempty"`
 }
 
 func IdentityFencePath(runDir string) string {
@@ -47,11 +47,11 @@ func NewIdentityFence(runDir string, meta *RunMetadata) (*IdentityFence, error) 
 	if err != nil {
 		return nil, err
 	}
-	goalHash, err := hashFileContents(GoalPath(runDir))
+	obligationModelHash, err := hashOptionalCanonicalBoundary(runDir)
 	if err != nil {
 		return nil, err
 	}
-	acceptanceHash, err := hashFileContents(AcceptanceStatePath(runDir))
+	assurancePlanHash, err := hashOptionalCanonicalAssurance(runDir)
 	if err != nil {
 		return nil, err
 	}
@@ -60,8 +60,8 @@ func NewIdentityFence(runDir string, meta *RunMetadata) (*IdentityFence, error) 
 		return nil, err
 	}
 	fence.CharterHash = charterHash
-	fence.GoalHash = goalHash
-	fence.AcceptanceHash = acceptanceHash
+	fence.ObligationModelHash = obligationModelHash
+	fence.AssurancePlanHash = assurancePlanHash
 	fence.CoordinationHash = coordinationHash
 	fence.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	return fence, nil
@@ -94,18 +94,37 @@ func LoadIdentityFence(path string) (*IdentityFence, error) {
 		}
 		return nil, err
 	}
-	var fence IdentityFence
-	if len(strings.TrimSpace(string(data))) == 0 {
-		fence.Version = 1
-		return &fence, nil
+	type identityFenceCompat struct {
+		Version             int    `json:"version"`
+		RunID               string `json:"run_id,omitempty"`
+		Epoch               int    `json:"epoch,omitempty"`
+		CharterHash         string `json:"charter_hash,omitempty"`
+		ObligationModelHash string `json:"obligation_model_hash,omitempty"`
+		AssurancePlanHash   string `json:"assurance_plan_hash,omitempty"`
+		CoordinationHash    string `json:"coordination_hash,omitempty"`
+		UpdatedAt           string `json:"updated_at,omitempty"`
 	}
-	if err := json.Unmarshal(data, &fence); err != nil {
+	var payload identityFenceCompat
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return &IdentityFence{Version: 1}, nil
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, fmt.Errorf("parse identity fence: %w", err)
+	}
+	fence := &IdentityFence{
+		Version:             payload.Version,
+		RunID:               payload.RunID,
+		Epoch:               payload.Epoch,
+		CharterHash:         payload.CharterHash,
+		ObligationModelHash: strings.TrimSpace(payload.ObligationModelHash),
+		AssurancePlanHash:   strings.TrimSpace(payload.AssurancePlanHash),
+		CoordinationHash:    payload.CoordinationHash,
+		UpdatedAt:           payload.UpdatedAt,
 	}
 	if fence.Version <= 0 {
 		fence.Version = 1
 	}
-	return &fence, nil
+	return fence, nil
 }
 
 func SaveIdentityFence(path string, fence *IdentityFence) error {
@@ -144,7 +163,7 @@ func sameIdentityFence(a, b *IdentityFence) bool {
 	return a.RunID == b.RunID &&
 		a.Epoch == b.Epoch &&
 		a.CharterHash == b.CharterHash &&
-		a.GoalHash == b.GoalHash &&
-		a.AcceptanceHash == b.AcceptanceHash &&
+		a.ObligationModelHash == b.ObligationModelHash &&
+		a.AssurancePlanHash == b.AssurancePlanHash &&
 		a.CoordinationHash == b.CoordinationHash
 }

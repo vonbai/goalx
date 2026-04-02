@@ -160,7 +160,7 @@ func BuildActivitySnapshot(projectRoot, runName, runDir string) (*ActivitySnapsh
 	if err != nil {
 		return nil, err
 	}
-	goalState, err := LoadGoalState(GoalPath(runDir))
+	goalState, err := LoadCanonicalGoalState(runDir)
 	if err != nil {
 		return nil, err
 	}

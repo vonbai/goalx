@@ -1,43 +1,36 @@
 ---
 name: goalx
-description: Use when a human developer wants GoalX to autonomously investigate, build, verify, keep iterating on a goal in the current project, or when they want to observe, redirect, recover, save, or continue a GoalX run.
+description: "Use when a human wants durable autonomous progress in the current project: investigation, implementation, recovery, runtime control, saved-run continuation, or continuous improvement."
 ---
 
 # GoalX
 
-GoalX is the default operating system for durable autonomous investigation, implementation, and continuous evolution in this project. Use it when the user wants more than a one-shot answer: a real run, real artifacts, durable control, and the ability to continue the work later.
+GoalX is the default operating system for durable autonomous work in this project. Use it when the user wants a real run with durable state, not a one-shot answer.
 
 ## Use GoalX By Default
 
-If the user wants autonomous progress in this repo, prefer the GoalX skill / `goalx run` over ad-hoc manual orchestration.
-
-Use GoalX when the user wants any of these:
+Prefer GoalX when the user wants:
 
 - autonomous investigation
 - autonomous implementation
-- a project audit with follow-through
-- continuous improvement over time
+- a repo audit with follow-through
 - durable observation and redirection
 - a stopped or stranded run recovered in place
-- a saved run that can continue into the next phase
+- a saved run continued into the next phase
+- continuous improvement over time
 
-Do not default to manual config or raw tmux operations. For machine-consumed durable surfaces, inspect the authoring contract with `goalx schema <surface>` before writing with `goalx durable write`.
-
-When operating through a host assistant:
-
-- in Claude Code, use the installed GoalX skill from `~/.claude/skills/goalx`
-- in Codex, use the installed GoalX skill from `~/.codex/skills/goalx`
+Do not default to manual tmux orchestration. Use GoalX commands and durable surfaces.
 
 ## Write Better Goals
 
-The goal should describe the end state, not the route.
+Write the desired end state, not a checklist.
 
 Good:
 
 ```bash
 goalx run "users can complete the core workflow reliably in production"
 goalx run "the codebase has a high-quality architecture audit and a prioritized fix plan"
-goalx run "the product keeps getting better until the budget runs out" --intent evolve --budget 8h
+goalx run "this project keeps getting better until the budget runs out" --intent evolve --budget 8h
 ```
 
 Bad:
@@ -46,60 +39,122 @@ Bad:
 goalx run "1. inspect auth 2. patch middleware 3. update tests"
 ```
 
-When the user is vague, keep the goal outcome-focused:
+When the user is vague, keep it outcome-focused:
 
 - "make deploy work" -> `goalx run "the project deploys cleanly to the target host in one step"`
 - "audit this repo" -> `goalx run "full audit of this project with an actionable improvement plan"`
-- "keep improving this" -> `goalx run "this project keeps getting better until the budget runs out" --intent evolve --budget 8h`
 
 ## Default Operator Loop
 
-The normal loop is:
+Use this by default:
 
 ```bash
 goalx run "goal"
+goalx run --objective "goal"
+goalx run --objective-file /abs/path/to/objective.txt
 goalx status
 goalx observe
 goalx context
 goalx afford
-goalx schema status
 goalx tell "redirect"
-goalx recover --run NAME
-goalx budget --run NAME --extend 2h
 goalx verify
 goalx result
 goalx save
 ```
 
-Use this by default unless the user explicitly asks for config-first control.
+Quick meanings:
 
-- `goalx status` = durable control/state view
-- `goalx observe` = live transport view plus control summary
-- `goalx context` = canonical run identity plus durable paths
-- `goalx afford` = current run-scoped command surface
-- `goalx schema <surface>` = authoring contract view for machine-consumed durable surfaces
-- `goalx tell` = durable redirect to master or session
-- `goalx recover --run NAME` = relaunch the same stopped or stranded run in place
-- `goalx budget` = same-run budget inspection and mutation
-- `goalx verify` = record acceptance facts, not completion verdict
-- `goalx result` = read the current result surfaces
-- `goalx save` = export a durable saved run for later continuation
+- `status`: compact durable control summary
+- `observe`: full diagnostic path for live transport and runtime facts
+- `context`: canonical identity, paths, cognition, and assurance facts
+- `afford`: current run-scoped command surface
+- `tell`: durable redirect to master or a worker
+- `verify`: record assurance evidence, not completion
+- `save`: export a saved run for continuation
+
+Use `goalx schema <surface>` before `goalx durable write <surface> ...` when authoring machine-consumed state.
+
+Operator guidance:
+
+- use `--objective-file` for long or multi-line objectives
+- fresh runs can briefly show `launching` while bootstrap settles
+- in that startup window, prefer `status`, `observe`, or `goalx wait --run RUN master --timeout 30s`
+- do not default to `recover` unless the run is actually stopped or stranded
+
+Resource safety:
+
+- GoalX records resource facts itself; do not read Linux telemetry by default
+- healthy runs stay compact on `status`
+- use `observe` when you actually need runtime/resource diagnosis
+- unsafe new launches can be refused explicitly instead of silently degrading effort or fan-out
+
+## Canonical Surfaces
+
+GoalX now centers these durable surfaces:
+
+- `objective-contract`
+- `obligation-model`
+- `assurance-plan`
+- `evidence-log`
+- `cognition-state`
+- `impact-state`
+- `freshness-state`
+
+The old `goal` and `acceptance` runtime path is gone. Saved-run continuation now fails fast if canonical surfaces are missing.
+
+## Intent Routing
+
+```bash
+goalx run "goal"
+goalx run "goal" --intent explore
+goalx run "goal" --intent explore --readonly
+goalx run "goal" --intent evolve --budget 8h
+goalx run --from RUN --intent debate
+goalx run --from RUN --intent implement
+goalx run --from RUN --intent explore
+```
+
+Intent meanings:
+
+- `deliver`: default shipped-result path
+- `explore`: evidence-first investigation
+- `evolve`: continuous improvement
+- `debate`: challenge and refine prior findings
+- `implement`: build from prior evidence
+
+`--readonly` declares a no-edit GoalX boundary in `target.readonly`.
+
+## Recovery vs Saved Continuation
+
+Same run:
+
+```bash
+goalx recover --run RUN
+goalx budget --run RUN --extend 2h
+```
+
+New phase:
+
+```bash
+goalx save --run RUN
+goalx run --from RUN --intent debate
+goalx run --from RUN --intent implement
+goalx run --from RUN --intent explore
+```
+
+Rules:
+
+- `recover` relaunches the same run in place
+- `recover` is for stopped or stranded runs, not a fresh run still showing `launching`
+- `save + run --from` creates a new phase
+- exhausted-budget recovery requires changing budget first
 
 ## Selection Policy
 
-GoalX now defaults to auto-detected candidate pools rather than preset-first launch.
-
-- use `~/.goalx/config.yaml` `selection.*` for long-term engine/model preferences
-- do not suggest project-scoped `selection`; project config is for shared repo facts
-- use explicit `--engine/--model` only when the user clearly wants a one-off override
-- if the user wants help configuring engine choices, help them write or edit `~/.goalx/config.yaml` directly instead of improvising a custom config shape
-
-When helping with selection config, stay inside this shape:
+Normal engine/model policy lives in `~/.goalx/config.yaml` under `selection`.
 
 ```yaml
 selection:
-  disabled_engines:
-    - aider
   disabled_targets:
     - claude-code/sonnet
   master_candidates:
@@ -112,134 +167,32 @@ selection:
   worker_effort: high
 ```
 
-Recommended guidance when a human asks for engine/model setup:
+Guidance:
 
-- ask which engines or targets should be disabled because of quota, stability, or preference
-- ask which target should bootstrap master by default
-- ask whether the worker pool should bias toward one target or stay balanced across multiple targets
-- keep the config user-scoped in `~/.goalx/config.yaml`
-- avoid `preset`, `routing`, or project-scoped policy unless the human explicitly asks for legacy compatibility
+- keep `selection` user-scoped
+- do not invent project-scoped engine policy
+- use explicit `--engine/--model` only for one-off overrides
 
-## Intent Routing
+## Optional Repo Cognition
 
-Use intent to express the kind of outcome the user wants.
+GoalX always has builtin `repo-native` cognition.  
+GitNexus is optional.
 
-```bash
-goalx run "goal"
-goalx run "goal" --intent explore
-goalx run "goal" --intent explore --readonly
-goalx run "goal" --intent evolve --budget 8h
-goalx run --from RUN --intent debate
-goalx run --from RUN --intent implement
-goalx run --from RUN --intent explore
-goalx run --from RUN --intent explore --readonly
-```
+Current GitNexus behavior:
 
-Intent mapping:
+- binary install is preferred
+- install with `npm install -g gitnexus@1.5.0`
+- verify with `gitnexus status`
+- pinned `npx gitnexus@1.5.0` is only exposed when a real probe succeeds
+- GoalX does not auto-install it
+- GoalX records provider facts per worktree scope
+- `available` does not mean `indexed` or `fresh`
+- GoalX can best-effort refresh missing or stale GitNexus indexes during lifecycle transitions
+- both master and worker scopes can receive runnable GitNexus cognition commands through `goalx afford`
 
-- **default / deliver**: the user wants the goal achieved
-- **explore**: the user wants a fresh evidence-first investigation or a follow-up evidence expansion
-- fresh `explore` means the master should start by expanding evidence and comparing paths before committing to implementation
-- **evolve**: the user wants open-ended iterative improvement
-- **debate**: challenge and refine prior findings from a saved run
-- **implement**: build from prior evidence or debate output from a saved run
-
-Boundary flag:
-
-- **--readonly**: declare a no-edit execution boundary in `target.readonly` for report-first or investigation-only runs; GoalX exposes it in protocol/context/affordances instead of pretending it is an OS sandbox
-- fresh `goalx run` always writes intake and feeds it into the success compiler
-
-Context injection:
-
-- use `--context` for extra evidence at launch or phase continuation
-- existing files/dirs are recorded in `context.files`
-- URLs and explicit `ref:` / `note:` items are recorded in `context.refs`
-- use one comma-delimited `--context` value; escape literal commas inside one item as `\,`
-- phase runs preserve saved-run boundary/evidence surfaces and merge any extra `--context` items on top
-
-Run naming:
-
-- default run names are derived from the goal text
-- when that generated name already exists, GoalX auto-suffixes `-2`, `-3`, and so on
-- explicit `--name` stays exact; do not promise automatic renaming for user-provided names
-
-## Evolve
-
-`evolve` is not just "run again." It is GoalX's continuous improvement mode.
-
-Use it when the user wants the system to keep finding and executing the next best improvement until a boundary is reached.
-
-```bash
-goalx run "this project keeps getting better until the budget runs out" --intent evolve --budget 8h
-```
-
-Important facts:
-
-- the master chooses each next iteration
-- the run records an iteration trail in `experiments.jsonl`
-- budget is a fact the master sees and manages against
-- the framework does not force-stop on meaning; the agents decide when to consolidate, continue, or stop
-
-## Saved Runs And Phase Continuation
-
-Saved runs are first-class inputs to later work. Do not improvise this flow.
-
-```bash
-goalx save --run RUN
-goalx run --from RUN --intent debate
-goalx run --from RUN --intent implement
-goalx run --from RUN --intent explore
-goalx run --from RUN --intent explore --readonly
-```
-
-Rules:
-
-- `debate` and `implement` phase continuation require a saved run
-- `explore` supports both fresh runs and saved-run continuation
-- add `--readonly` when the continuation should carry a declared no-edit boundary
-- the saved run must contain report or summary context
-- use `goalx save` before telling the user to continue from a prior run
-
-## Recovery vs Phase Continuation
-
-Keep these two paths separate:
-
-```bash
-goalx recover --run RUN
-goalx save --run RUN
-goalx run --from RUN --intent implement
-```
-
-- `goalx recover --run RUN` relaunches the same stopped or stranded run in place
-- `goalx recover --run RUN` does not change budget; if budget is exhausted, run `goalx budget --run RUN --extend ...` or `--clear` first, then recover
-- `goalx save --run RUN` plus `goalx run --from RUN --intent ...` creates a new phase from saved artifacts
-- do not suggest `save + run --from` when the user wants to continue the same run after `stop`, tmux loss, or a stranded state
-
-## Runtime Budget Control
-
-Use the dedicated budget surface instead of overloading recover:
-
-```bash
-goalx budget --run RUN
-goalx budget --run RUN --extend 2h
-goalx budget --run RUN --set-total 10h
-goalx budget --run RUN --clear
-```
-
-## Public Command Surface
-
-Use `references/advanced-control.md` when the user needs the full operator-facing command matrix. It covers:
-
-- launch: `run`, `init`, `start`
-- inspect: `list`, `status`, `observe`, `context`, `afford`, `attach`, `wait`
-- control: `tell`, `add`, `replace`, `dimension`, `budget`, `focus`
-- review/integration: `review`, `diff`, `keep`, `integrate`
-- lifecycle/persistence: `park`, `resume`, `stop`, `recover`, `archive`, `save`, `drop`
-- results/surfaces: `verify`, `result`, `report`, `schema`, `durable`
+If the current runtime already supports MCP, GitNexus MCP can be configured separately and then preferred for graph reads when freshness is trusted.
 
 ## Worktree And Merge Boundaries
-
-GoalX uses explicit worktree boundaries so parallel work stays mergeable.
 
 ```bash
 goalx add --run NAME --worktree "task"
@@ -250,61 +203,10 @@ goalx keep --run NAME
 
 Meaning:
 
-- run root worktree = the integration boundary for the run
-- session worktree = an isolated worker boundary
-- `goalx keep --run NAME session-N` = merge session branch into the run root
-- `goalx integrate --run NAME --method ... --from ...` = record the current run-root result after master manually integrated work there
-- `goalx keep --run NAME` = merge run root back into the source root
-
-Do not describe `keep` as a generic "save my work" command. It is a merge boundary command.
-Do not describe `integrate` as a merge command. It records lineage for a run-root state that master already produced.
-
-## Effort, Dimensions, And Control
-
-Use these when the user wants to shape the run, not as the default first move.
-
-```bash
-goalx run "goal" --effort high --dimension adversarial,evidence
-goalx dimension --run NAME session-2 --set depth,creative
-goalx replace --run NAME session-2 --engine claude-code --model opus --effort high
-```
-
-Prefer the simplest viable control surface first:
-
-1. `goalx tell`
-2. `goalx dimension`
-3. `goalx replace`
-4. `goalx add`
-
-## Results And Truth
-
-GoalX keeps the public result in `summary.md` and supporting material in `reports/`.
-
-```bash
-goalx result
-goalx result --full
-goalx save
-```
-
-Keep these truths straight:
-
-- GoalX records facts; agents make judgments
-- `goalx verify` records exit code and output; it does not auto-declare success
-- `goalx result` reads the canonical final summary surface, not arbitrary in-progress reports
-- transport delivery is not the same thing as task completion
-- local-first control and durable state are the public release contract
-- active docs explain the workflow, but `goalx schema` is the canonical durable authoring-contract authority
-
-## What Not To Do
-
-- Do not turn the user's goal into a checklist unless they explicitly need planning rather than execution.
-- Do not default to `goalx init` / `goalx start --config` unless the user wants config-first control.
-- Do not hand-edit GoalX machine-consumed runtime files.
-- Do not recommend raw tmux interaction as the primary control path.
-- Do not suggest `goalx save` plus `goalx run --from ...` as same-run recovery; use `goalx recover --run NAME`.
-- Do not suggest `goalx run --from ...` unless there is already a saved run with usable context.
-- Do not blur worktree merge boundaries: session keep and run keep are different operations.
+- `keep session-N`: merge a reviewed session branch into the run root
+- `integrate`: record run-root integration lineage after master already merged
+- `keep` without `session-N`: merge run root into source root
 
 ## Advanced Control
 
-For config-first launch, manual session control, explicit engine overrides, or transport-level intervention: [references/advanced-control.md](references/advanced-control.md).
+Use [references/advanced-control.md](references/advanced-control.md) when the user explicitly wants the full command matrix or operator-level control.

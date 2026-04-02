@@ -31,18 +31,26 @@ func TestSchemaPrintsStructuredSurfaceContract(t *testing.T) {
 	}
 }
 
-func TestSchemaPrintsGoalContractWithObligationGrammar(t *testing.T) {
+func TestSchemaRejectsLegacyGoalSurface(t *testing.T) {
+	err := Schema(t.TempDir(), []string{"goal"})
+	if err == nil || !strings.Contains(err.Error(), "obligation-model") {
+		t.Fatalf("Schema error = %v, want obligation-model migration hint", err)
+	}
+}
+
+func TestSchemaPrintsObligationModelContract(t *testing.T) {
 	out := captureStdout(t, func() {
-		if err := Schema(t.TempDir(), []string{"goal"}); err != nil {
+		if err := Schema(t.TempDir(), []string{"obligation-model"}); err != nil {
 			t.Fatalf("Schema: %v", err)
 		}
 	})
 
 	for _, want := range []string{
-		"# GoalX Schema: goal",
-		`"role": "outcome"`,
-		`"source": "master"`,
-		"goalx durable write goal --run NAME --body-file /abs/path.json",
+		"# GoalX Schema: obligation-model",
+		`"covers_clauses": [`,
+		`"assurance_required": true`,
+		`"guardrails": [`,
+		"goalx durable write obligation-model --run NAME --body-file /abs/path.json",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("schema output missing %q:\n%s", want, out)
@@ -71,6 +79,56 @@ func TestSchemaPrintsCoordinationContract(t *testing.T) {
 	}
 }
 
+func TestSchemaPrintsCognitionStateContract(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := Schema(t.TempDir(), []string{"cognition-state"}); err != nil {
+			t.Fatalf("Schema: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"# GoalX Schema: cognition-state",
+		`"providers": [`,
+		`"invocation_kind": "builtin"`,
+		`"index_state": "fresh"`,
+		`"index_provenance": "seeded"`,
+		`"read_transports_supported": [`,
+		`"mcp_server_command": "gitnexus mcp"`,
+		`"mcp_tools_supported": [`,
+		`"mcp_resources_supported": [`,
+		`"registry_name": "demo-repo"`,
+		`"last_refresh_error": "status parse warning"`,
+		`"analyzed_in_scope_at": "2026-04-01T00:00:00Z"`,
+		`"capabilities": [`,
+		"goalx durable write cognition-state --run NAME --body-file /abs/path.json",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("schema output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSchemaPrintsAssurancePlanContract(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := Schema(t.TempDir(), []string{"assurance-plan"}); err != nil {
+			t.Fatalf("Schema: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"# GoalX Schema: assurance-plan",
+		`"scenarios": [`,
+		`"harness": {`,
+		`"oracle": {`,
+		`"required_cognition_tier": "repo-native"`,
+		"goalx durable write assurance-plan --run NAME --body-file /abs/path.json",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("schema output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestSchemaPrintsSuccessModelContract(t *testing.T) {
 	out := captureStdout(t, func() {
 		if err := Schema(t.TempDir(), []string{"success-model"}); err != nil {
@@ -92,6 +150,69 @@ func TestSchemaPrintsSuccessModelContract(t *testing.T) {
 	}
 }
 
+func TestSchemaPrintsImpactStateContract(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := Schema(t.TempDir(), []string{"impact-state"}); err != nil {
+			t.Fatalf("Schema: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"# GoalX Schema: impact-state",
+		`"resolver_kind": "repo-native"`,
+		`"changed_files": [`,
+		`"changed_symbols": [`,
+		"goalx durable write impact-state --run NAME --body-file /abs/path.json",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("schema output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSchemaPrintsFreshnessStateContract(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := Schema(t.TempDir(), []string{"freshness-state"}); err != nil {
+			t.Fatalf("Schema: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"# GoalX Schema: freshness-state",
+		`"cognition": [`,
+		`"evidence": [`,
+		`"state": "stale"`,
+		"goalx durable write freshness-state --run NAME --body-file /abs/path.json",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("schema output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSchemaPrintsResourceStateContract(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := Schema(t.TempDir(), []string{"resource-state"}); err != nil {
+			t.Fatalf("Schema: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"# GoalX Schema: resource-state",
+		`"host": {`,
+		`"psi": {`,
+		`"cgroup": {`,
+		`"goalx_processes": {`,
+		`"headroom_bytes": 17179869184`,
+		`"state": "healthy"`,
+		"goalx durable write resource-state --run NAME --body-file /abs/path.json",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("schema output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestSchemaPrintsProofPlanContract(t *testing.T) {
 	out := captureStdout(t, func() {
 		if err := Schema(t.TempDir(), []string{"proof-plan"}); err != nil {
@@ -104,8 +225,48 @@ func TestSchemaPrintsProofPlanContract(t *testing.T) {
 		"structured_state",
 		"replace",
 		`"covers_dimensions": [`,
-		`"kind": "acceptance_check"`,
+		`"kind": "assurance_check"`,
 		"goalx durable write proof-plan --run NAME --body-file /abs/path.json",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("schema output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSchemaPrintsObligationLogContract(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := Schema(t.TempDir(), []string{"obligation-log"}); err != nil {
+			t.Fatalf("Schema: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"# GoalX Schema: obligation-log",
+		"event_log",
+		"append",
+		`"decision": "initial_obligation_boundary"`,
+		"goalx durable write obligation-log --run NAME --kind decision --actor master --body-file /abs/path.json",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("schema output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSchemaPrintsEvidenceLogContract(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := Schema(t.TempDir(), []string{"evidence-log"}); err != nil {
+			t.Fatalf("Schema: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"# GoalX Schema: evidence-log",
+		"event_log",
+		"append",
+		`"scenario_id": "scenario-cli-first-run"`,
+		"goalx durable write evidence-log --run NAME --kind scenario.executed --actor master --body-file /abs/path.json",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("schema output missing %q:\n%s", want, out)
@@ -193,30 +354,10 @@ func TestSchemaPrintsInterventionLogContract(t *testing.T) {
 	}
 }
 
-func TestSchemaPrintsEventLogContract(t *testing.T) {
-	out := captureStdout(t, func() {
-		if err := Schema(t.TempDir(), []string{"goal-log"}); err != nil {
-			t.Fatalf("Schema: %v", err)
-		}
-	})
-
-	for _, want := range []string{
-		"# GoalX Schema: goal-log",
-		"event_log",
-		"append",
-		`"decision": "initial_boundary_shape_selection"`,
-		"goalx durable write goal-log --run NAME --kind decision --actor master --body-file /abs/path.json",
-		"Authoring format: `json`",
-		"Storage format: `jsonl`",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("schema output missing %q:\n%s", want, out)
-		}
-	}
-	for _, unwanted := range []string{`"kind": "decision"`, `"version": 1`, `"actor": "master"`} {
-		if strings.Contains(out, unwanted) {
-			t.Fatalf("goal-log schema should not expose storage envelope field %q in authoring example:\n%s", unwanted, out)
-		}
+func TestSchemaRejectsLegacyGoalLogSurface(t *testing.T) {
+	err := Schema(t.TempDir(), []string{"goal-log"})
+	if err == nil || !strings.Contains(err.Error(), "obligation-log") {
+		t.Fatalf("Schema error = %v, want obligation-log migration hint", err)
 	}
 }
 

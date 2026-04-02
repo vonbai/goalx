@@ -85,7 +85,11 @@ func ResolveIntegrationStateWithConfig(projectRoot, runName string, cfg *goalx.C
 	if rc, err := resolveLocalRun(projectRoot, runName); err == nil && rc != nil {
 		candidates = append(candidates, filepath.Join(rc.RunDir, "integration.json"))
 	} else {
-		for _, runDir := range resolveRunDirCandidates(projectRoot, runName) {
+		runDirs, candidateErr := resolveRunDirCandidates(projectRoot, runName)
+		if candidateErr != nil {
+			return nil, candidateErr
+		}
+		for _, runDir := range runDirs {
 			candidates = append(candidates, filepath.Join(runDir, "integration.json"))
 		}
 	}

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,7 @@ import (
 	goalx "github.com/vonbai/goalx"
 )
 
-func TestVerifyUsesAcceptanceChecksAndWritesState(t *testing.T) {
+func TestVerifyBootstrapsAssurancePlanFromConfigAndWritesEvidenceLog(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -43,20 +44,6 @@ acceptance:
 	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
-	goal := []byte(`{
-  "version": 1,
-  "required": [
-    {
-      "id": "req-1",
-      "text": "ship feature",
-      "source": "user",
-      "role": "outcome",
-      "state": "claimed",
-      "evidence_paths": ["/tmp/e2e.txt"]
-    }
-  ],
-  "optional": []
-}`)
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
 		Version:      1,
 		Objective:    "ship feature",
@@ -65,36 +52,103 @@ acceptance:
 		t.Fatalf("write run metadata: %v", err)
 	}
 	seedRunCharterForTests(t, runDir, runName, repo)
-	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
-		t.Fatalf("write goal state: %v", err)
+
+	if err := Verify(repo, []string{"--run", runName}); err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+
+	plan, err := LoadAssurancePlan(AssurancePlanPath(runDir))
+	if err != nil {
+		t.Fatalf("read assurance plan: %v", err)
+	}
+	if plan == nil || len(plan.Scenarios) != 1 {
+		t.Fatalf("assurance plan = %+v, want one scenario", plan)
+	}
+	if plan.Scenarios[0].Harness.Command != "printf 'e2e ok\n'" {
+		t.Fatalf("assurance plan command = %q, want printf e2e ok", plan.Scenarios[0].Harness.Command)
+	}
+	events, err := LoadEvidenceLog(EvidenceLogPath(runDir))
+	if err != nil {
+		t.Fatalf("read evidence log: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("evidence events = %d, want 1", len(events))
+	}
+}
+
+func TestVerifyUsesAssurancePlanAndWritesEvidenceLog(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "README.md", "demo", "base commit")
+	ensureSharedProofEvidence(t)
+
+	runName := "verify-run"
+	runDir := goalx.RunDir(repo, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), []byte(`name: verify-run
+mode: worker
+objective: ship feature
+`), 0o644); err != nil {
+		t.Fatalf("write run snapshot: %v", err)
+	}
+	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
+		Version:      1,
+		Objective:    "ship feature",
+		BaseRevision: strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD")),
+	}); err != nil {
+		t.Fatalf("write run metadata: %v", err)
+	}
+	seedRunCharterForTests(t, runDir, runName, repo)
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
+		Version: 1,
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship feature", Source: "user", Role: "outcome", State: "claimed", EvidencePaths: []string{"/tmp/e2e.txt"}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveAssurancePlan(AssurancePlanPath(runDir), &AssurancePlan{
+		Version:        1,
+		ObligationRefs: []string{"obl-1"},
+		Scenarios: []AssuranceScenario{
+			{
+				ID:                "scenario-cli-first-run",
+				CoversObligations: []string{"obl-1"},
+				Harness:           AssuranceHarness{Kind: "cli", Command: "printf 'ok\\n'"},
+				Oracle: AssuranceOracle{
+					Kind:             "exit_code",
+					CheckDefinitions: []AssuranceOracleCheck{{Kind: "exit_code", Equals: "0"}},
+				},
+				Evidence:   []AssuranceEvidenceRequirement{{Kind: "stdout"}},
+				GatePolicy: AssuranceGatePolicy{VerifyLane: "required", RequiredCognitionTier: "repo-native", Closeout: "required"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveAssurancePlan: %v", err)
 	}
 
 	if err := Verify(repo, []string{"--run", runName}); err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
 
-	stateData, err := os.ReadFile(filepath.Join(runDir, "acceptance.json"))
+	events, err := LoadEvidenceLog(EvidenceLogPath(runDir))
 	if err != nil {
-		t.Fatalf("read acceptance state: %v", err)
+		t.Fatalf("LoadEvidenceLog: %v", err)
 	}
-	stateText := string(stateData)
-	for _, want := range []string{
-		`"goal_version": 1`,
-		`"checks": [`,
-		`"id": "chk-1"`,
-		`"command": "printf 'e2e ok\n'"`,
-		`"check_results": [`,
-		`"exit_code": 0`,
-	} {
-		if !strings.Contains(stateText, want) {
-			t.Fatalf("acceptance state missing %q:\n%s", want, stateText)
-		}
+	if len(events) != 1 {
+		t.Fatalf("evidence events = %#v, want one", events)
 	}
-	// Framework must NOT derive status from exit code — that's the master's job
-	if strings.Contains(stateText, `"status"`) {
-		t.Fatalf("acceptance state must not contain derived status field:\n%s", stateText)
+	var body EvidenceEventBody
+	if err := decodeStrictJSON(events[0].Body, &body); err != nil {
+		t.Fatalf("decode event body: %v", err)
 	}
-
+	if body.ScenarioID != "scenario-cli-first-run" || body.HarnessKind != "cli" {
+		t.Fatalf("event body = %+v, want scenario-cli-first-run/cli", body)
+	}
 }
 
 func TestVerifyRunsAcceptanceInsideRunWorktree(t *testing.T) {
@@ -128,8 +182,13 @@ acceptance:
 		t.Fatalf("write run metadata: %v", err)
 	}
 	seedRunCharterForTests(t, runDir, runName, repo)
-	if err := os.WriteFile(GoalPath(runDir), []byte(`{"version":1,"required":[{"id":"req-1","text":"ship feature","source":"user","role":"outcome","state":"claimed","evidence_paths":["/tmp/e2e.txt"]}],"optional":[]}`), 0o644); err != nil {
-		t.Fatalf("write goal state: %v", err)
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
+		Version: 1,
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship feature", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateClaimed, EvidencePaths: []string{"/tmp/e2e.txt"}},
+		},
+	}); err != nil {
+		t.Fatalf("write boundary fixture: %v", err)
 	}
 
 	runWT := RunWorktreePath(runDir)
@@ -192,34 +251,22 @@ local_validation:
 		t.Fatalf("write run metadata: %v", err)
 	}
 	seedRunCharterForTests(t, runDir, runName, repo)
-	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
-		t.Fatalf("write goal state: %v", err)
+	var goalState GoalState
+	if err := json.Unmarshal(goal, &goalState); err != nil {
+		t.Fatalf("unmarshal goal state: %v", err)
+	}
+	if err := writeBoundaryFixture(t, runDir, &goalState); err != nil {
+		t.Fatalf("write boundary fixture: %v", err)
 	}
 
 	err := Verify(repo, []string{"--run", runName})
 	if err == nil {
 		t.Fatal("expected Verify to fail")
 	}
-	if !strings.Contains(err.Error(), "no acceptance checks configured") {
+	if !strings.Contains(err.Error(), "no assurance scenarios configured") {
 		t.Fatalf("Verify error = %v, want missing acceptance checks", err)
 	}
 
-	stateData, readErr := os.ReadFile(filepath.Join(runDir, "acceptance.json"))
-	if readErr != nil {
-		t.Fatalf("read acceptance state: %v", readErr)
-	}
-	stateText := string(stateData)
-	for _, unwanted := range []string{
-		`"command": "test -f DOES-NOT-EXIST"`,
-		`"exit_code"`,
-	} {
-		if strings.Contains(stateText, unwanted) {
-			t.Fatalf("acceptance state unexpectedly contains %q:\n%s", unwanted, stateText)
-		}
-	}
-	if strings.Contains(stateText, `"status"`) {
-		t.Fatalf("acceptance state must not contain derived status field:\n%s", stateText)
-	}
 }
 
 func TestVerifyDoesNotRewriteGoalState(t *testing.T) {
@@ -260,8 +307,12 @@ acceptance:
   ],
   "optional": []
 }`)
-	if err := os.WriteFile(GoalPath(runDir), goalBefore, 0o644); err != nil {
-		t.Fatalf("write goal state: %v", err)
+	var goalState GoalState
+	if err := json.Unmarshal(goalBefore, &goalState); err != nil {
+		t.Fatalf("unmarshal goal state: %v", err)
+	}
+	if err := writeBoundaryFixture(t, runDir, &goalState); err != nil {
+		t.Fatalf("write boundary fixture: %v", err)
 	}
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
 		Version:      1,
@@ -276,7 +327,13 @@ acceptance:
 		t.Fatalf("Verify: %v", err)
 	}
 
-	assertFileUnchanged(t, GoalPath(runDir), goalBefore)
+	after, err := os.ReadFile(ObligationModelPath(runDir))
+	if err != nil {
+		t.Fatalf("read obligation model: %v", err)
+	}
+	if len(after) == 0 {
+		t.Fatal("obligation model unexpectedly empty")
+	}
 }
 
 func TestVerifyDoesNotGateOnMissingReportEvidenceManifest(t *testing.T) {
@@ -453,7 +510,7 @@ acceptance:
 		},
 		Optional: []GoalItem{},
 	}
-	if err := SaveGoalState(GoalPath(runDir), goal); err != nil {
+	if err := writeBoundaryFixture(t, runDir, goal); err != nil {
 		t.Fatalf("SaveGoalState: %v", err)
 	}
 	if err := os.WriteFile(SummaryPath(runDir), []byte("# summary\n"), 0o644); err != nil {
@@ -471,7 +528,7 @@ acceptance:
 	return runDir
 }
 
-func TestVerifyRecordsAcceptanceWhenRunChangedCode(t *testing.T) {
+func TestVerifyRecordsAssuranceEvidenceWhenRunChangedCode(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -498,24 +555,6 @@ acceptance:
 	if err := os.WriteFile(RunSpecPath(runDir), snapshot, 0o644); err != nil {
 		t.Fatalf("write run snapshot: %v", err)
 	}
-	goal := []byte(`{
-  "version": 1,
-  "required": [
-    {
-      "id": "req-1",
-      "text": "ship feature",
-      "source": "user",
-      "role": "outcome",
-      "state": "claimed",
-      "evidence_paths": ["/tmp/e2e.txt"],
-      "note": "ready for verification"
-    }
-  ],
-  "optional": []
-}`)
-	if err := os.WriteFile(GoalPath(runDir), goal, 0o644); err != nil {
-		t.Fatalf("write goal state: %v", err)
-	}
 	if err := SaveRunMetadata(RunMetadataPath(runDir), &RunMetadata{
 		Version:      1,
 		Objective:    "ship feature",
@@ -531,21 +570,12 @@ acceptance:
 		t.Fatalf("Verify: %v", err)
 	}
 
-	stateData, err := os.ReadFile(filepath.Join(runDir, "acceptance.json"))
+	events, err := LoadEvidenceLog(EvidenceLogPath(runDir))
 	if err != nil {
-		t.Fatalf("read acceptance state: %v", err)
+		t.Fatalf("read evidence log: %v", err)
 	}
-	stateText := string(stateData)
-	for _, want := range []string{
-		`"command": "printf 'e2e ok\n'"`,
-		`"exit_code": 0`,
-	} {
-		if !strings.Contains(stateText, want) {
-			t.Fatalf("acceptance state missing %q:\n%s", want, stateText)
-		}
-	}
-	if strings.Contains(stateText, `"status"`) {
-		t.Fatalf("acceptance state must not contain derived status field:\n%s", stateText)
+	if len(events) != 1 {
+		t.Fatalf("evidence events = %d, want 1", len(events))
 	}
 }
 

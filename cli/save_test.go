@@ -28,7 +28,6 @@ func TestSaveUsesConfiguredResearchTargetFile(t *testing.T) {
 		Name:      runName,
 		Mode:      goalx.ModeWorker,
 		Objective: "inspect",
-		Parallel:  1,
 		Target: goalx.TargetConfig{
 			Files: []string{"notes.md"},
 		},
@@ -185,33 +184,36 @@ func TestSaveCopiesGoalBoundaryArtifacts(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveObjectiveContract: %v", err)
 	}
-	goal := `{"version":1,"required":[{"id":"req-1","text":"ship feature","source":"user","state":"claimed","evidence_paths":["/tmp/e2e.txt"]}],"optional":[]}`
-	if err := os.WriteFile(filepath.Join(runDir, "goal.json"), []byte(goal), 0o644); err != nil {
-		t.Fatalf("write goal state: %v", err)
+	goal := `{"version":1,"objective_contract_hash":"sha256:demo","required":[{"id":"req-1","text":"ship feature","kind":"outcome","covers_clauses":["ucl-1"]}],"optional":[],"guardrails":[]}`
+	if err := os.WriteFile(filepath.Join(runDir, "obligation-model.json"), []byte(goal), 0o644); err != nil {
+		t.Fatalf("write obligation model: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "goal-log.jsonl"), []byte("{\"type\":\"path_selected\"}\n"), 0o644); err != nil {
-		t.Fatalf("write goal log: %v", err)
+	if err := os.WriteFile(filepath.Join(runDir, "obligation-log.jsonl"), []byte("{\"type\":\"path_selected\"}\n"), 0o644); err != nil {
+		t.Fatalf("write obligation log: %v", err)
 	}
 
 	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(SavedRunDir(projectRoot, runName), "goal.json"))
+	got, err := os.ReadFile(filepath.Join(SavedRunDir(projectRoot, runName), "obligation-model.json"))
 	if err != nil {
 		t.Fatalf("read saved goal state: %v", err)
 	}
 	if string(got) != goal {
-		t.Fatalf("saved goal state = %q, want %q", string(got), goal)
+		t.Fatalf("saved obligation model = %q, want %q", string(got), goal)
 	}
-	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "goal-log.jsonl")); err != nil {
-		t.Fatalf("saved goal log missing: %v", err)
+	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "obligation-log.jsonl")); err != nil {
+		t.Fatalf("saved obligation log missing: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "run-charter.json")); err != nil {
 		t.Fatalf("saved run charter missing: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "objective-contract.json")); err != nil {
 		t.Fatalf("saved objective contract missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "obligation-model.json")); err != nil {
+		t.Fatalf("saved obligation model missing: %v", err)
 	}
 }
 
@@ -241,11 +243,11 @@ func TestSaveCopiesAcceptanceCheckEvidence(t *testing.T) {
 	}
 	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
 
-	evidencePath := AcceptanceCheckEvidencePath(runDir, "chk-live")
+	evidencePath := filepath.Join(runDir, "evidence-chk-live.txt")
 	if err := os.WriteFile(evidencePath, []byte("check ok\n"), 0o644); err != nil {
 		t.Fatalf("write check evidence: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version: 2,
 		Checks: []AcceptanceCheck{
 			{ID: "chk-live", Label: "live gate", Command: "printf ok", State: acceptanceCheckStateActive},
@@ -265,6 +267,47 @@ func TestSaveCopiesAcceptanceCheckEvidence(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), filepath.Base(evidencePath))); err != nil {
 		t.Fatalf("saved acceptance check evidence missing: %v", err)
+	}
+}
+
+func TestSaveCopiesEvidenceLogWhenPresent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	runName := "demo"
+	runDir := goalx.RunDir(projectRoot, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	cfg := goalx.Config{
+		Name:      runName,
+		Mode:      goalx.ModeWorker,
+		Objective: "inspect",
+		Target:    goalx.TargetConfig{Files: []string{"notes.md"}},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), data, 0o644); err != nil {
+		t.Fatalf("write run spec: %v", err)
+	}
+	seedSaveRunProvenance(t, projectRoot, runDir, runName, cfg.Objective)
+	if err := AppendEvidenceLogEvent(EvidenceLogPath(runDir), "scenario.executed", "master", EvidenceEventBody{
+		ScenarioID:   "scenario-cli-first-run",
+		HarnessKind:  "cli",
+		OracleResult: map[string]any{"exit_code": 0},
+	}); err != nil {
+		t.Fatalf("AppendEvidenceLogEvent: %v", err)
+	}
+
+	if err := Save(projectRoot, []string{"--run", runName}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(SavedRunDir(projectRoot, runName), "evidence-log.jsonl")); err != nil {
+		t.Fatalf("saved evidence-log missing: %v", err)
 	}
 }
 

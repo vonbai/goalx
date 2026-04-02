@@ -47,6 +47,27 @@ func Save(projectRoot string, args []string) error {
 	if err := ValidateRunCharterLinkage(meta, charter); err != nil {
 		return fmt.Errorf("validate run charter linkage: %w", err)
 	}
+	if !fileExists(ObligationModelPath(rc.RunDir)) {
+		objectiveContract, err := LoadObjectiveContract(ObjectiveContractPath(rc.RunDir))
+		if err != nil {
+			return fmt.Errorf("load objective contract: %w", err)
+		}
+		objectiveHash := ""
+		if objectiveContract != nil {
+			objectiveHash = objectiveContract.ObjectiveHash
+		}
+		if objectiveHash == "" {
+			objectiveHash = "save-objective"
+		}
+		if _, err := EnsureObligationModel(rc.RunDir, nil, objectiveContract, objectiveHash, meta.Objective); err != nil {
+			return fmt.Errorf("ensure obligation model before save: %w", err)
+		}
+	}
+	if !fileExists(AssurancePlanPath(rc.RunDir)) {
+		if _, err := EnsureAssurancePlan(rc.RunDir, NewAcceptanceState(rc.Config, 0)); err != nil {
+			return fmt.Errorf("ensure assurance plan before save: %w", err)
+		}
+	}
 
 	saveDir := goalx.ResolveSavedRunDir(rc.ProjectRoot, rc.Name, rc.Config)
 	if err := os.MkdirAll(saveDir, 0755); err != nil {
@@ -89,11 +110,26 @@ func Save(projectRoot string, args []string) error {
 	if err := copyFileIfExists(ObjectiveContractPath(rc.RunDir), filepath.Join(saveDir, "objective-contract.json")); err != nil {
 		return fmt.Errorf("copy objective contract: %w", err)
 	}
-	if err := copyFileIfExists(GoalPath(rc.RunDir), filepath.Join(saveDir, "goal.json")); err != nil {
-		return fmt.Errorf("copy goal state: %w", err)
+	if err := copyFileIfExists(ObligationModelPath(rc.RunDir), filepath.Join(saveDir, "obligation-model.json")); err != nil {
+		return fmt.Errorf("copy obligation model: %w", err)
 	}
-	if err := copyFileIfExists(GoalLogPath(rc.RunDir), filepath.Join(saveDir, "goal-log.jsonl")); err != nil {
-		return fmt.Errorf("copy goal log: %w", err)
+	if err := copyFileIfExists(ObligationLogPath(rc.RunDir), filepath.Join(saveDir, "obligation-log.jsonl")); err != nil {
+		return fmt.Errorf("copy obligation log: %w", err)
+	}
+	if err := copyFileIfExists(EvidenceLogPath(rc.RunDir), filepath.Join(saveDir, "evidence-log.jsonl")); err != nil {
+		return fmt.Errorf("copy evidence log: %w", err)
+	}
+	if err := copyFileIfExists(AssurancePlanPath(rc.RunDir), filepath.Join(saveDir, "assurance-plan.json")); err != nil {
+		return fmt.Errorf("copy assurance plan: %w", err)
+	}
+	if err := copyFileIfExists(CognitionStatePath(rc.RunDir), filepath.Join(saveDir, "cognition-state.json")); err != nil {
+		return fmt.Errorf("copy cognition state: %w", err)
+	}
+	if err := copyFileIfExists(ImpactStatePath(rc.RunDir), filepath.Join(saveDir, "impact-state.json")); err != nil {
+		return fmt.Errorf("copy impact state: %w", err)
+	}
+	if err := copyFileIfExists(FreshnessStatePath(rc.RunDir), filepath.Join(saveDir, "freshness-state.json")); err != nil {
+		return fmt.Errorf("copy freshness state: %w", err)
 	}
 	if err := copyFileIfExists(ExperimentsLogPath(rc.RunDir), filepath.Join(saveDir, "experiments.jsonl")); err != nil {
 		return fmt.Errorf("copy experiments log: %w", err)
@@ -115,25 +151,23 @@ func Save(projectRoot string, args []string) error {
 	if err := copyFileIfExists(completionStatePath, filepath.Join(saveDir, "proof", "completion.json")); err != nil {
 		return fmt.Errorf("copy completion state: %w", err)
 	}
-	acceptStatePath := AcceptanceStatePath(rc.RunDir)
-	if err := copyFileIfExists(acceptStatePath, filepath.Join(saveDir, "acceptance.json")); err != nil {
-		return fmt.Errorf("copy acceptance state: %w", err)
-	}
-	acceptEvidencePath := AcceptanceEvidencePath(rc.RunDir)
-	if err := copyFileIfExists(acceptEvidencePath, filepath.Join(saveDir, "acceptance-last.txt")); err != nil {
-		return fmt.Errorf("copy acceptance evidence: %w", err)
-	}
-	if acceptState, err := LoadAcceptanceState(acceptStatePath); err != nil {
-		return fmt.Errorf("load acceptance state: %w", err)
-	} else if acceptState != nil {
-		for _, result := range acceptState.LastResult.CheckResults {
-			source := strings.TrimSpace(result.EvidencePath)
-			if source == "" {
-				continue
+	if events, err := LoadEvidenceLog(EvidenceLogPath(rc.RunDir)); err != nil {
+		return fmt.Errorf("load evidence log: %w", err)
+	} else {
+		for _, event := range events {
+			body, err := parseEvidenceEventBody(event.Body)
+			if err != nil {
+				return fmt.Errorf("parse evidence log body: %w", err)
 			}
-			destName := filepath.Base(source)
-			if err := copyFileIfExists(source, filepath.Join(saveDir, destName)); err != nil {
-				return fmt.Errorf("copy acceptance check evidence %s: %w", result.ID, err)
+			for _, source := range body.ArtifactRefs {
+				source = strings.TrimSpace(source)
+				if source == "" {
+					continue
+				}
+				destName := filepath.Base(source)
+				if err := copyFileIfExists(source, filepath.Join(saveDir, destName)); err != nil {
+					return fmt.Errorf("copy evidence artifact %s: %w", source, err)
+				}
 			}
 		}
 	}

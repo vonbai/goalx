@@ -8,6 +8,7 @@ import (
 	"time"
 
 	goalx "github.com/vonbai/goalx"
+	"github.com/vonbai/goalx/internal/slowtest"
 )
 
 func TestScanLivenessReportsHealthyMasterAndSession(t *testing.T) {
@@ -222,6 +223,7 @@ func TestScanLivenessDoesNotNotifyMasterWhenParkedSessionDies(t *testing.T) {
 }
 
 func TestRunRuntimeHostTickWritesLivenessState(t *testing.T) {
+	slowtest.Require(t, "runtime-host integration test")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 

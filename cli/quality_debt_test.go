@@ -8,7 +8,7 @@ import (
 
 func TestBuildQualityDebtDetectsStructuralGaps(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -35,7 +35,7 @@ func TestBuildQualityDebtDetectsStructuralGaps(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version:     2,
 		GoalVersion: 1,
 		Checks: []AcceptanceCheck{
@@ -50,7 +50,7 @@ func TestBuildQualityDebtDetectsStructuralGaps(t *testing.T) {
 	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
 		Version:               1,
 		ObjectiveContractHash: "sha256:objective",
-		GoalHash:              "sha256:goal",
+		ObligationModelHash:              "sha256:goal",
 		Dimensions: []SuccessDimension{
 			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
 			{ID: "req-2", Kind: "outcome", Text: "ship research spine", Required: true},
@@ -108,7 +108,7 @@ func TestBuildQualityDebtDetectsStructuralGaps(t *testing.T) {
 
 func TestBuildQualityDebtReturnsZeroWhenSatisfied(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -134,7 +134,7 @@ func TestBuildQualityDebtReturnsZeroWhenSatisfied(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version:     2,
 		GoalVersion: 1,
 		Checks: []AcceptanceCheck{
@@ -147,7 +147,7 @@ func TestBuildQualityDebtReturnsZeroWhenSatisfied(t *testing.T) {
 	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
 		Version:               1,
 		ObjectiveContractHash: "sha256:objective",
-		GoalHash:              "sha256:goal",
+		ObligationModelHash:              "sha256:goal",
 		Dimensions: []SuccessDimension{
 			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
 		},
@@ -190,6 +190,9 @@ func TestBuildQualityDebtReturnsZeroWhenSatisfied(t *testing.T) {
 			t.Fatalf("SaveSessionIdentity %s: %v", session, err)
 		}
 	}
+	if err := SaveImpactState(ImpactStatePath(runDir), &ImpactState{Version: 1, Scope: "run-root", BaselineRevision: "abc123", HeadRevision: "abc123", ResolverKind: "repo-native"}); err != nil {
+		t.Fatalf("SaveImpactState: %v", err)
+	}
 
 	debt, err := BuildQualityDebt(runDir)
 	if err != nil {
@@ -197,5 +200,127 @@ func TestBuildQualityDebtReturnsZeroWhenSatisfied(t *testing.T) {
 	}
 	if debt == nil || !debt.Zero() {
 		t.Fatalf("quality debt = %+v, want zero debt", debt)
+	}
+	if debt.ImpactResolutionUnknown {
+		t.Fatalf("impact resolution should be known in satisfied quality debt: %+v", debt)
+	}
+}
+
+func TestBuildQualityDebtDetectsRequiredEvidenceStaleAndGraphTierUnsatisfied(t *testing.T) {
+	_, runDir, _, _ := writeGuidanceRunFixture(t)
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
+		Version: 1,
+		Required: []GoalItem{
+			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
+		},
+	}); err != nil {
+		t.Fatalf("SaveGoalState: %v", err)
+	}
+	if err := SaveCoordinationState(CoordinationPath(runDir), &CoordinationState{
+		Version: 1,
+		Required: map[string]CoordinationRequiredItem{
+			"req-1": {
+				Owner:          "session-1",
+				ExecutionState: coordinationRequiredExecutionStateProbing,
+				Surfaces: CoordinationRequiredSurfaces{
+					Repo:           coordinationRequiredSurfaceActive,
+					Runtime:        coordinationRequiredSurfaceActive,
+					RunArtifacts:   coordinationRequiredSurfacePending,
+					WebResearch:    coordinationRequiredSurfacePending,
+					ExternalSystem: coordinationRequiredSurfaceNotApplicable,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCoordinationState: %v", err)
+	}
+	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:objective",
+		ObligationModelHash:              "sha256:goal",
+		Dimensions: []SuccessDimension{
+			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSuccessModel: %v", err)
+	}
+	if err := SaveProofPlan(ProofPlanPath(runDir), &ProofPlan{
+		Version: 1,
+		Items: []ProofPlanItem{
+			{ID: "proof-acceptance", CoversDimensions: []string{"req-1"}, Kind: "acceptance_check", Required: true, SourceSurface: "acceptance"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveProofPlan: %v", err)
+	}
+	if err := SaveWorkflowPlan(WorkflowPlanPath(runDir), &WorkflowPlan{
+		Version:       1,
+		RequiredRoles: []WorkflowRoleRequirement{{ID: "builder", Required: true}},
+		Gates:         []string{"builder_result_present"},
+	}); err != nil {
+		t.Fatalf("SaveWorkflowPlan: %v", err)
+	}
+	if err := SaveDomainPack(DomainPackPath(runDir), &DomainPack{Version: 1, Domain: "generic"}); err != nil {
+		t.Fatalf("SaveDomainPack: %v", err)
+	}
+	if err := SaveAssurancePlan(AssurancePlanPath(runDir), &AssurancePlan{
+		Version: 1,
+		Scenarios: []AssuranceScenario{
+			{
+				ID:                "scenario-1",
+				CoversObligations: []string{"obl-1"},
+				Harness:           AssuranceHarness{Kind: "cli", Command: "printf ok"},
+				Oracle:            AssuranceOracle{Kind: "exit_code", CheckDefinitions: []AssuranceOracleCheck{{Kind: "exit_code", Equals: "0"}}},
+				Evidence:          []AssuranceEvidenceRequirement{{Kind: "stdout"}},
+				Touchpoints:       AssuranceTouchpoints{Files: []string{"cli/start.go"}},
+				GatePolicy:        AssuranceGatePolicy{Closeout: "required", RequiredCognitionTier: "graph"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveAssurancePlan: %v", err)
+	}
+	if err := SaveImpactState(ImpactStatePath(runDir), &ImpactState{
+		Version:          1,
+		Scope:            "run-root",
+		BaselineRevision: "abc123",
+		HeadRevision:     "def456",
+		ResolverKind:     "repo-native",
+		ChangedFiles:     []string{"cli/start.go"},
+	}); err != nil {
+		t.Fatalf("SaveImpactState: %v", err)
+	}
+	if err := SaveFreshnessState(FreshnessStatePath(runDir), &FreshnessState{
+		Version: 1,
+		Evidence: []EvidenceFreshnessItem{
+			{ScenarioID: "scenario-1", LatestRevision: "abc123", CurrentRevision: "def456", State: freshnessStateStale},
+		},
+		Cognition: []CognitionFreshnessItem{
+			{Scope: "run-root", Provider: "repo-native", State: freshnessStateFresh},
+		},
+	}); err != nil {
+		t.Fatalf("SaveFreshnessState: %v", err)
+	}
+	if err := SaveCognitionState(CognitionStatePath(runDir), &CognitionState{
+		Version: 1,
+		Scopes: []CognitionScopeState{
+			{
+				Scope: "run-root",
+				Providers: []CognitionProviderState{
+					{Name: "repo-native", InvocationKind: "builtin", Available: true, Capabilities: []string{"git_diff"}},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCognitionState: %v", err)
+	}
+
+	debt, err := BuildQualityDebt(runDir)
+	if err != nil {
+		t.Fatalf("BuildQualityDebt: %v", err)
+	}
+	if len(debt.RequiredEvidenceStale) != 1 || debt.RequiredEvidenceStale[0] != "scenario-1" {
+		t.Fatalf("required_evidence_stale = %#v, want scenario-1", debt.RequiredEvidenceStale)
+	}
+	if len(debt.RequiredCognitionUnsatisfied) != 1 || debt.RequiredCognitionUnsatisfied[0] != "scenario-1" {
+		t.Fatalf("required_cognition_unsatisfied = %#v, want scenario-1", debt.RequiredCognitionUnsatisfied)
 	}
 }

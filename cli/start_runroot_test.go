@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	goalx "github.com/vonbai/goalx"
@@ -266,5 +267,62 @@ func TestResolveIntegrationStateUsesConfiguredRunRoot(t *testing.T) {
 	}
 	if got.CurrentExperimentID != state.CurrentExperimentID {
 		t.Errorf("CurrentExperimentID = %q, want %q", got.CurrentExperimentID, state.CurrentExperimentID)
+	}
+}
+
+func TestResolveLocalRunFailsWhenProjectConfigIsInvalid(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("run_root: [\n"), 0o644); err != nil {
+		t.Fatalf("write broken config: %v", err)
+	}
+
+	runName := "legacy-run"
+	runDir := goalx.RunDir(projectRoot, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir legacy run dir: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), []byte("name: legacy-run\nmode: worker\nobjective: legacy\n"), 0o644); err != nil {
+		t.Fatalf("write run spec: %v", err)
+	}
+
+	_, err := resolveLocalRun(projectRoot, runName)
+	if err == nil || !strings.Contains(err.Error(), "load config layers") {
+		t.Fatalf("resolveLocalRun error = %v, want load config layers", err)
+	}
+}
+
+func TestListDerivedRunStatesFailsWhenConfiguredRunRootCannotBeScanned(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".goalx"), 0o755); err != nil {
+		t.Fatalf("mkdir .goalx: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".goalx", "config.yaml"), []byte("run_root: ./runs-root\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "runs-root"), []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("write blocking file: %v", err)
+	}
+
+	runName := "legacy-run"
+	runDir := goalx.RunDir(projectRoot, runName)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir legacy run dir: %v", err)
+	}
+	if err := os.WriteFile(RunSpecPath(runDir), []byte("name: legacy-run\nmode: worker\nobjective: legacy\n"), 0o644); err != nil {
+		t.Fatalf("write run spec: %v", err)
+	}
+
+	_, err := listDerivedRunStates(projectRoot)
+	if err == nil || !strings.Contains(err.Error(), "scan configured run root") {
+		t.Fatalf("listDerivedRunStates error = %v, want scan configured run root", err)
 	}
 }

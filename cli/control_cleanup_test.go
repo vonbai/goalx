@@ -508,7 +508,7 @@ func TestRefreshDisplayFactsRepairsCompletedRunDespiteQualityDebt(t *testing.T) 
 	if _, err := EnsureRuntimeState(runDir, cfg); err != nil {
 		t.Fatalf("EnsureRuntimeState: %v", err)
 	}
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -522,7 +522,7 @@ func TestRefreshDisplayFactsRepairsCompletedRunDespiteQualityDebt(t *testing.T) 
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version:     2,
 		GoalVersion: 1,
 		Checks: []AcceptanceCheck{
@@ -535,7 +535,7 @@ func TestRefreshDisplayFactsRepairsCompletedRunDespiteQualityDebt(t *testing.T) 
 	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
 		Version:               1,
 		ObjectiveContractHash: "sha256:objective",
-		GoalHash:              "sha256:goal",
+		ObligationModelHash:              "sha256:goal",
 		Dimensions: []SuccessDimension{
 			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
 		},

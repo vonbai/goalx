@@ -157,6 +157,7 @@ func TargetRunnerCommand(projectRoot string, args []string) error {
 	if err := child.Start(); err != nil {
 		return fmt.Errorf("start target runner child: %w", err)
 	}
+	applyOOMPriorityBestEffort(runDir, holder, child.Process.Pid)
 	ctx, cancel := context.WithCancel(context.Background())
 	leaseDone := make(chan error, 1)
 	go func() {

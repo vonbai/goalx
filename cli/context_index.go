@@ -27,11 +27,14 @@ type ContextIndex struct {
 	ReportsDir            string                      `json:"reports_dir,omitempty"`
 	CharterPath           string                      `json:"charter_path,omitempty"`
 	ObjectiveContractPath string                      `json:"objective_contract_path,omitempty"`
-	GoalPath              string                      `json:"goal_path,omitempty"`
+	ObligationModelPath   string                      `json:"obligation_model_path,omitempty"`
+	ObligationLogPath     string                      `json:"obligation_log_path,omitempty"`
+	AssurancePlanPath     string                      `json:"assurance_plan_path,omitempty"`
+	EvidenceLogPath       string                      `json:"evidence_log_path,omitempty"`
+	BoundarySurface       string                      `json:"boundary_surface,omitempty"`
 	StatusPath            string                      `json:"status_path,omitempty"`
 	ExperimentsLogPath    string                      `json:"experiments_log_path,omitempty"`
 	IntegrationStatePath  string                      `json:"integration_state_path,omitempty"`
-	AcceptanceStatePath   string                      `json:"acceptance_state_path,omitempty"`
 	CompletionProofPath   string                      `json:"completion_proof_path,omitempty"`
 	CoordinationPath      string                      `json:"coordination_path,omitempty"`
 	SummaryPath           string                      `json:"summary_path,omitempty"`
@@ -40,6 +43,7 @@ type ContextIndex struct {
 	WorktreeSnapshotPath  string                      `json:"worktree_snapshot_path,omitempty"`
 	SelectionSnapshotPath string                      `json:"selection_snapshot_path,omitempty"`
 	TransportFactsPath    string                      `json:"transport_facts_path,omitempty"`
+	ResourceStatePath     string                      `json:"resource_state_path,omitempty"`
 	MemoryQueryPath       string                      `json:"memory_query_path,omitempty"`
 	MemoryContextPath     string                      `json:"memory_context_path,omitempty"`
 	IntakePath            string                      `json:"intake_path,omitempty"`
@@ -54,14 +58,16 @@ type ContextIndex struct {
 	Master                ContextMaster               `json:"master"`
 	Evolve                *ContextEvolve              `json:"evolve,omitempty"`
 	ObjectiveIntegrity    *ContextObjectiveIntegrity  `json:"objective_integrity,omitempty"`
-	GoalBoundary          *ContextGoalBoundary        `json:"goal_boundary,omitempty"`
+	GoalBoundary          *ContextGoalBoundary        `json:"obligation_boundary,omitempty"`
 	RunStatus             *ContextRunStatus           `json:"run_status,omitempty"`
-	Acceptance            *ContextAcceptance          `json:"acceptance,omitempty"`
+	Acceptance            *ContextAcceptance          `json:"assurance,omitempty"`
+	Resource              *ContextResourceSummary     `json:"resource,omitempty"`
 	QualityDebt           *ContextQualityDebt         `json:"quality_debt,omitempty"`
 	Closeout              *ContextCloseout            `json:"closeout,omitempty"`
 	Selection             *ContextSelection           `json:"selection,omitempty"`
 	ProtocolComposition   *ContextProtocolComposition `json:"protocol_composition,omitempty"`
 	Sessions              []ContextSession            `json:"sessions,omitempty"`
+	CognitionScopes       []CognitionScopeState       `json:"cognition_scopes,omitempty"`
 	ProviderRuntimeFacts  []ProviderRuntimeFact       `json:"provider_runtime_facts,omitempty"`
 	ClaudeCodeAvailable   bool                        `json:"claude_code_available,omitempty"`
 	CodexAvailable        bool                        `json:"codex_available,omitempty"`
@@ -103,9 +109,9 @@ type ContextGoalBoundary struct {
 type ContextRunStatus struct {
 	Phase                         string   `json:"phase,omitempty"`
 	RequiredRemaining             int      `json:"required_remaining"`
-	GoalRequiredRemaining         int      `json:"goal_required_remaining"`
+	GoalRequiredRemaining         int      `json:"boundary_required_remaining"`
 	StatusOpenRequiredIDs         []string `json:"status_open_required_ids,omitempty"`
-	GoalRemainingRequiredIDs      []string `json:"goal_remaining_required_ids,omitempty"`
+	GoalRemainingRequiredIDs      []string `json:"boundary_remaining_required_ids,omitempty"`
 	StatusOpenRequiredIDsRecorded bool     `json:"status_open_required_ids_recorded,omitempty"`
 	RequiredRemainingMatch        bool     `json:"required_remaining_match"`
 	OpenRequiredIDsMatch          bool     `json:"open_required_ids_match,omitempty"`
@@ -119,14 +125,23 @@ type ContextAcceptance struct {
 	EvidencePath     string `json:"evidence_path,omitempty"`
 }
 
+type ContextResourceSummary struct {
+	State         string   `json:"state,omitempty"`
+	HeadroomBytes int64    `json:"headroom_bytes,omitempty"`
+	Reasons       []string `json:"reasons,omitempty"`
+}
+
 type ContextQualityDebt struct {
-	SuccessDimensionUnowned []string `json:"success_dimension_unowned,omitempty"`
-	ProofPlanGap            []string `json:"proof_plan_gap,omitempty"`
-	CriticGateMissing       bool     `json:"critic_gate_missing,omitempty"`
-	FinisherGateMissing     bool     `json:"finisher_gate_missing,omitempty"`
-	OnlyCorrectnessEvidence bool     `json:"only_correctness_evidence_present,omitempty"`
-	DomainPackMissing       bool     `json:"domain_pack_missing_for_nontrivial_run,omitempty"`
-	Zero                    bool     `json:"zero,omitempty"`
+	SuccessDimensionUnowned      []string `json:"success_dimension_unowned,omitempty"`
+	ProofPlanGap                 []string `json:"proof_plan_gap,omitempty"`
+	CriticGateMissing            bool     `json:"critic_gate_missing,omitempty"`
+	FinisherGateMissing          bool     `json:"finisher_gate_missing,omitempty"`
+	OnlyCorrectnessEvidence      bool     `json:"only_correctness_evidence_present,omitempty"`
+	DomainPackMissing            bool     `json:"domain_pack_missing_for_nontrivial_run,omitempty"`
+	RequiredEvidenceStale        []string `json:"required_evidence_stale,omitempty"`
+	RequiredCognitionUnsatisfied []string `json:"required_cognition_unsatisfied,omitempty"`
+	ImpactResolutionUnknown      bool     `json:"impact_resolution_unknown,omitempty"`
+	Zero                         bool     `json:"zero,omitempty"`
 }
 
 type ContextCloseout struct {
@@ -148,12 +163,12 @@ type ContextObjectiveIntegrity struct {
 	ContractState              string   `json:"contract_state,omitempty"`
 	ContractLocked             bool     `json:"contract_locked,omitempty"`
 	ClauseCount                int      `json:"clause_count,omitempty"`
-	GoalClauseCount            int      `json:"goal_clause_count,omitempty"`
-	AcceptanceClauseCount      int      `json:"acceptance_clause_count,omitempty"`
-	GoalCoveredCount           int      `json:"goal_covered_count,omitempty"`
-	AcceptanceCoveredCount     int      `json:"acceptance_covered_count,omitempty"`
-	MissingGoalClauseIDs       []string `json:"missing_goal_clause_ids,omitempty"`
-	MissingAcceptanceClauseIDs []string `json:"missing_acceptance_clause_ids,omitempty"`
+	GoalClauseCount            int      `json:"obligation_clause_count,omitempty"`
+	AcceptanceClauseCount      int      `json:"assurance_clause_count,omitempty"`
+	GoalCoveredCount           int      `json:"obligation_covered_count,omitempty"`
+	AcceptanceCoveredCount     int      `json:"assurance_covered_count,omitempty"`
+	MissingGoalClauseIDs       []string `json:"missing_obligation_clause_ids,omitempty"`
+	MissingAcceptanceClauseIDs []string `json:"missing_assurance_clause_ids,omitempty"`
 	IntegrityReady             bool     `json:"integrity_ready,omitempty"`
 	IntegrityOK                bool     `json:"integrity_ok,omitempty"`
 }
@@ -290,11 +305,13 @@ func BuildContextIndex(projectRoot, runName, runDir string) (*ContextIndex, erro
 		ReportsDir:            ReportsDir(runDir),
 		CharterPath:           RunCharterPath(runDir),
 		ObjectiveContractPath: ObjectiveContractPath(runDir),
-		GoalPath:              GoalPath(runDir),
+		ObligationModelPath:   ObligationModelPath(runDir),
+		ObligationLogPath:     ObligationLogPath(runDir),
+		AssurancePlanPath:     AssurancePlanPath(runDir),
+		EvidenceLogPath:       EvidenceLogPath(runDir),
 		StatusPath:            RunStatusPath(runDir),
 		ExperimentsLogPath:    ExperimentsLogPath(runDir),
 		IntegrationStatePath:  IntegrationStatePath(runDir),
-		AcceptanceStatePath:   AcceptanceStatePath(runDir),
 		CompletionProofPath:   CompletionStatePath(runDir),
 		CoordinationPath:      CoordinationPath(runDir),
 		SummaryPath:           SummaryPath(runDir),
@@ -302,6 +319,7 @@ func BuildContextIndex(projectRoot, runName, runDir string) (*ContextIndex, erro
 		ActivityPath:          ActivityPath(runDir),
 		WorktreeSnapshotPath:  WorktreeSnapshotPath(runDir),
 		TransportFactsPath:    TransportFactsPath(runDir),
+		ResourceStatePath:     ResourceStatePath(runDir),
 		MemoryQueryPath:       MemoryQueryPath(runDir),
 		MemoryContextPath:     MemoryContextPath(runDir),
 		IntakePath:            IntakePath(runDir),
@@ -319,9 +337,26 @@ func BuildContextIndex(projectRoot, runName, runDir string) (*ContextIndex, erro
 	if budget := buildActivityBudget(cfg, runtimeState, meta, index.CheckedAt); budget.MaxDurationSeconds > 0 {
 		index.Budget = &budget
 	}
-	if goalState, err := LoadGoalState(GoalPath(runDir)); err != nil {
+	if cognitionState, err := LoadCognitionState(CognitionStatePath(runDir)); err != nil {
+		return nil, err
+	} else if cognitionState != nil {
+		index.CognitionScopes = append([]CognitionScopeState(nil), cognitionState.Scopes...)
+	} else {
+		scope, err := DiscoverCognitionScope("run-root", RunWorktreePath(runDir))
+		if err != nil {
+			return nil, err
+		}
+		index.CognitionScopes = []CognitionScopeState{scope}
+	}
+	if obligationModel, err := LoadObligationModel(ObligationModelPath(runDir)); err != nil {
+		return nil, err
+	} else if obligationModel != nil && obligationModelHasContent(obligationModel) {
+		index.BoundarySurface = "obligation-model"
+		index.GoalBoundary = contextGoalBoundaryFromObligationModel(obligationModel)
+	} else if goalState, err := LoadCanonicalGoalState(runDir); err != nil {
 		return nil, err
 	} else if goalState != nil {
+		index.BoundarySurface = "obligation-model"
 		index.GoalBoundary = contextGoalBoundary(goalState)
 	}
 	if statusSummary, err := contextRunStatus(runDir); err != nil {
@@ -333,6 +368,11 @@ func BuildContextIndex(projectRoot, runName, runDir string) (*ContextIndex, erro
 		return nil, err
 	} else if acceptanceSummary != nil {
 		index.Acceptance = acceptanceSummary
+	}
+	if resourceSummary, err := contextResourceSummary(runDir); err != nil {
+		return nil, err
+	} else if resourceSummary != nil {
+		index.Resource = resourceSummary
 	}
 	if qualityDebt, err := contextQualityDebt(runDir); err != nil {
 		return nil, err
@@ -481,6 +521,35 @@ func contextGoalBoundary(state *GoalState) *ContextGoalBoundary {
 	return summary
 }
 
+func contextGoalBoundaryFromObligationModel(model *ObligationModel) *ContextGoalBoundary {
+	if model == nil {
+		return nil
+	}
+	normalizeObligationModel(model)
+	summary := &ContextGoalBoundary{
+		OptionalCount:     len(model.Optional) + len(model.Guardrails),
+		RequiredBySource:  map[string]int{},
+		RequiredByRole:    map[string]int{},
+		RequiredByState:   map[string]int{},
+	}
+	for _, item := range model.Required {
+		summary.RequiredCount++
+		summary.RequiredBySource[item.Source]++
+		summary.RequiredByRole[item.Kind]++
+		summary.RequiredByState[item.State]++
+	}
+	if len(summary.RequiredBySource) == 0 {
+		summary.RequiredBySource = nil
+	}
+	if len(summary.RequiredByRole) == 0 {
+		summary.RequiredByRole = nil
+	}
+	if len(summary.RequiredByState) == 0 {
+		summary.RequiredByState = nil
+	}
+	return summary
+}
+
 func contextObjectiveIntegrity(summary ObjectiveIntegritySummary) *ContextObjectiveIntegrity {
 	if !summary.ContractPresent {
 		return nil
@@ -526,21 +595,27 @@ func contextRunStatus(runDir string) (*ContextRunStatus, error) {
 }
 
 func contextAcceptance(runDir string) (*ContextAcceptance, error) {
-	state, err := LoadAcceptanceState(AcceptanceStatePath(runDir))
-	if err != nil || state == nil {
+	summary, err := LoadCanonicalAssuranceSummary(runDir)
+	if err != nil || summary == nil {
 		return nil, err
 	}
-	activeChecks := 0
-	for _, check := range state.Checks {
-		if normalizeAcceptanceCheckState(check.State) == acceptanceCheckStateActive {
-			activeChecks++
-		}
-	}
 	return &ContextAcceptance{
-		ActiveCheckCount: activeChecks,
-		LastCheckedAt:    strings.TrimSpace(state.LastResult.CheckedAt),
-		LastExitCode:     state.LastResult.ExitCode,
-		EvidencePath:     strings.TrimSpace(state.LastResult.EvidencePath),
+		ActiveCheckCount: summary.ScenarioCount,
+		LastCheckedAt:    summary.LastCheckedAt,
+		LastExitCode:     summary.LastExitCode,
+		EvidencePath:     summary.EvidencePath,
+	}, nil
+}
+
+func contextResourceSummary(runDir string) (*ContextResourceSummary, error) {
+	state, err := LoadResourceState(ResourceStatePath(runDir))
+	if err != nil || state == nil || !resourceStateNeedsAttention(state) {
+		return nil, err
+	}
+	return &ContextResourceSummary{
+		State:         strings.TrimSpace(state.State),
+		HeadroomBytes: state.HeadroomBytes,
+		Reasons:       append([]string(nil), state.Reasons...),
 	}, nil
 }
 
@@ -550,13 +625,16 @@ func contextQualityDebt(runDir string) (*ContextQualityDebt, error) {
 		return nil, err
 	}
 	return &ContextQualityDebt{
-		SuccessDimensionUnowned: append([]string(nil), debt.SuccessDimensionUnowned...),
-		ProofPlanGap:            append([]string(nil), debt.ProofPlanGap...),
-		CriticGateMissing:       debt.CriticGateMissing,
-		FinisherGateMissing:     debt.FinisherGateMissing,
-		OnlyCorrectnessEvidence: debt.OnlyCorrectnessEvidence,
-		DomainPackMissing:       debt.DomainPackMissing,
-		Zero:                    debt.Zero(),
+		SuccessDimensionUnowned:      append([]string(nil), debt.SuccessDimensionUnowned...),
+		ProofPlanGap:                 append([]string(nil), debt.ProofPlanGap...),
+		CriticGateMissing:            debt.CriticGateMissing,
+		FinisherGateMissing:          debt.FinisherGateMissing,
+		OnlyCorrectnessEvidence:      debt.OnlyCorrectnessEvidence,
+		DomainPackMissing:            debt.DomainPackMissing,
+		RequiredEvidenceStale:        append([]string(nil), debt.RequiredEvidenceStale...),
+		RequiredCognitionUnsatisfied: append([]string(nil), debt.RequiredCognitionUnsatisfied...),
+		ImpactResolutionUnknown:      debt.ImpactResolutionUnknown,
+		Zero:                         debt.Zero(),
 	}, nil
 }
 

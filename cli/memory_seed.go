@@ -105,30 +105,29 @@ func NormalizeMemorySeed(seed *MemorySeed) (*MemorySeed, error) {
 }
 
 func AppendMemorySeedFromVerifyResult(runDir string) error {
-	state, err := LoadAcceptanceState(AcceptanceStatePath(runDir))
-	if err != nil {
+	if events, err := LoadEvidenceLog(EvidenceLogPath(runDir)); err == nil && len(events) > 0 {
+		last := events[len(events)-1]
+		body, err := parseEvidenceEventBody(last.Body)
+		if err != nil {
+			return err
+		}
+		seed := MemorySeed{
+			Kind:    "verify_result",
+			Run:     filepath.Base(runDir),
+			Message: fmt.Sprintf("assurance scenario recorded scenario=%s", body.ScenarioID),
+			Evidence: []MemoryEvidence{
+				{Kind: "evidence_log", Path: EvidenceLogPath(runDir)},
+			},
+			CreatedAt: last.At,
+		}
+		for _, ref := range body.ArtifactRefs {
+			seed.Evidence = append(seed.Evidence, MemoryEvidence{Kind: "assurance_output", Path: ref})
+		}
+		return AppendMemorySeed(runDir, seed)
+	} else if err != nil {
 		return err
 	}
-	if state == nil || strings.TrimSpace(state.LastResult.CheckedAt) == "" {
-		return nil
-	}
-	exitCode := "unknown"
-	if state.LastResult.ExitCode != nil {
-		exitCode = fmt.Sprintf("%d", *state.LastResult.ExitCode)
-	}
-	seed := MemorySeed{
-		Kind:    "verify_result",
-		Run:     filepath.Base(runDir),
-		Message: fmt.Sprintf("acceptance command recorded exit_code=%s", exitCode),
-		Evidence: []MemoryEvidence{
-			{Kind: "acceptance_state", Path: AcceptanceStatePath(runDir)},
-		},
-		CreatedAt: state.LastResult.CheckedAt,
-	}
-	if strings.TrimSpace(state.LastResult.EvidencePath) != "" {
-		seed.Evidence = append(seed.Evidence, MemoryEvidence{Kind: "acceptance_output", Path: state.LastResult.EvidencePath})
-	}
-	return AppendMemorySeed(runDir, seed)
+	return nil
 }
 
 func CollectRunMemorySeeds(runDir string) ([]MemorySeed, error) {
@@ -235,10 +234,10 @@ func collectSavedArtifactSeeds(runDir string) []MemorySeed {
 	}
 	if info, err := os.Stat(filepath.Join(saveDir, "acceptance-last.txt")); err == nil && !info.IsDir() && info.Size() > 0 {
 		seeds = append(seeds, MemorySeed{
-			Kind:      "saved_acceptance_evidence_present",
+			Kind:      "saved_assurance_compat_evidence_present",
 			Run:       filepath.Base(runDir),
-			Message:   "saved acceptance evidence present",
-			Evidence:  []MemoryEvidence{{Kind: "saved_acceptance_output", Path: filepath.Join(saveDir, "acceptance-last.txt")}},
+			Message:   "saved assurance compatibility evidence present",
+			Evidence:  []MemoryEvidence{{Kind: "saved_assurance_compat_output", Path: filepath.Join(saveDir, "acceptance-last.txt")}},
 			CreatedAt: info.ModTime().UTC().Format(time.RFC3339),
 		})
 	}

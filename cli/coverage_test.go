@@ -8,7 +8,7 @@ import (
 
 func TestBuildRequiredCoverageTreatsMissingRequiredFrontierAsUnknown(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship feature", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 		},
@@ -34,9 +34,30 @@ func TestBuildRequiredCoverageTreatsMissingRequiredFrontierAsUnknown(t *testing.
 	}
 }
 
+func TestBuildRequiredCoverageUsesObligationModelWhenGoalMissing(t *testing.T) {
+	_, runDir, _, _ := writeGuidanceRunFixture(t)
+	if err := SaveObligationModel(ObligationModelPath(runDir), &ObligationModel{
+		Version:               1,
+		ObjectiveContractHash: "sha256:objective",
+		Required: []ObligationItem{
+			{ID: "obl-1", Text: "ship feature", Kind: "outcome", CoversClauses: []string{"ucl-1"}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveObligationModel: %v", err)
+	}
+
+	coverage, err := BuildRequiredCoverage(runDir)
+	if err != nil {
+		t.Fatalf("BuildRequiredCoverage: %v", err)
+	}
+	if got := coverage.OpenRequiredIDs; len(got) != 1 || got[0] != "obl-1" {
+		t.Fatalf("open_required_ids = %v, want [obl-1]", got)
+	}
+}
+
 func TestBuildRequiredCoverageOnlyCountsOpenRequiredItems(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "open item", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "claimed item", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateClaimed, EvidencePaths: []string{"/tmp/evidence.txt"}},
@@ -81,7 +102,7 @@ func TestBuildRequiredCoverageOnlyCountsOpenRequiredItems(t *testing.T) {
 
 func TestBuildRequiredCoverageDetectsMissingSessionOwner(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship feature", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 		},
@@ -121,7 +142,7 @@ func TestBuildRequiredCoverageDetectsMissingSessionOwner(t *testing.T) {
 
 func TestBuildRequiredCoverageDoesNotReuseOpenOwnerSessions(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "owned item", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 		},
@@ -167,7 +188,7 @@ func TestBuildRequiredCoverageDoesNotReuseOpenOwnerSessions(t *testing.T) {
 
 func TestBuildRequiredCoverageMarksMasterOrphanedRequiredWhenReusableSessionExists(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship feature", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 		},
@@ -216,7 +237,7 @@ func TestBuildRequiredCoverageMarksMasterOrphanedRequiredWhenReusableSessionExis
 
 func TestBuildRequiredCoverageDoesNotMarkMasterOrphanedRequiredWhenActiveSessionExists(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship feature", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 		},
@@ -263,7 +284,7 @@ func TestBuildRequiredCoverageDoesNotMarkMasterOrphanedRequiredWhenActiveSession
 
 func TestBuildRequiredCoverageClassifiesBlockedAndPrematureBlockedItems(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Required: []GoalItem{
 			{ID: "req-1", Text: "prematurely blocked item", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
 			{ID: "req-2", Text: "fully blocked item", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},

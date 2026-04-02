@@ -129,7 +129,7 @@ func TestMergeWorktreeAllowsLocalAutoresearchFiles(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, ".goalx"), 0o755); err != nil {
 		t.Fatalf("mkdir .goalx: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, ".goalx", "config.yaml"), []byte("parallel: 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".goalx", "config.yaml"), []byte("master:\n  engine: codex\n  model: gpt-5.4\n"), 0o644); err != nil {
 		t.Fatalf("write .goalx/config.yaml: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(repo, ".claude"), 0o755); err != nil {
@@ -243,6 +243,41 @@ func TestEnsureProjectGoalxIgnoredAddsConfiguredProjectWorktreeRoot(t *testing.T
 	text := string(data)
 	if !strings.Contains(text, ".worktrees/") {
 		t.Fatalf("exclude missing configured worktree root:\n%s", text)
+	}
+}
+
+func TestEnsureProjectGoalxIgnoredAddsConfiguredProjectRunAndSavedRoots(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "base.txt", "base", "base commit")
+
+	cfg := &goalx.Config{
+		RunRoot:      ".goalx/runs",
+		SavedRunRoot: ".goalx/saved",
+	}
+	if err := EnsureProjectGoalxIgnoredWithConfig(repo, cfg); err != nil {
+		t.Fatalf("EnsureProjectGoalxIgnoredWithConfig: %v", err)
+	}
+
+	gitDirOut, err := exec.Command("git", "-C", repo, "rev-parse", "--git-dir").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse --git-dir: %v\n%s", err, string(gitDirOut))
+	}
+	excludePath := filepath.Join(strings.TrimSpace(string(gitDirOut)), "info", "exclude")
+	if !filepath.IsAbs(excludePath) {
+		excludePath = filepath.Join(repo, excludePath)
+	}
+	data, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatalf("read exclude: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{".goalx/runs/", ".goalx/saved/"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("exclude missing %s:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "\n.goalx/\n") || strings.HasSuffix(strings.TrimSpace(text), ".goalx/") {
+		t.Fatalf("exclude should not blanket-ignore .goalx:\n%s", text)
 	}
 }
 

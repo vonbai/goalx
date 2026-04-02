@@ -38,6 +38,14 @@
 {{if .LocalValidationCommand}}- Local validation command: `{{.LocalValidationCommand}}`{{end}}
 - Read current run context: `goalx context --run {{.RunName}}`
 - Read current GoalX affordances: `goalx afford --run {{.RunName}} {{.SessionName}}`
+- Treat default GoalX runtime surfaces as compact. Do not inspect host/resource telemetry unless your assignment is runtime/perf/ops-focused or your path is blocked by an explicit resource refusal or runtime incident.
+- If you need runtime diagnosis for your slice, prefer `goalx observe --run {{.RunName}}` over repeatedly reading raw control files.
+- If GitNexus is fresh and your current runtime already supports its MCP server, prefer MCP resources and tools for graph exploration.
+- If GitNexus is fresh but MCP is unavailable in your runtime, use the CLI cognition commands from `goalx afford`.
+- Use `goalx afford --run {{.RunName}} {{.SessionName}}` as your scope-aware cognition command surface before broad repo search.
+- If your selected cognition scope exposes fresh GitNexus state, prefer its `query`, `context`, and `impact` commands for architecture lookup and blast-radius checks in your current slice.
+- If GitNexus is unavailable, stale, or unknown for your scope, fall back explicitly to builtin `repo-native` cognition such as `rg`, direct file reads, and `git diff`.
+- Do not claim graph-backed certainty unless your current scope shows `index_state=fresh`.
 
 ## Resume From Durable State
 
@@ -62,20 +70,20 @@ You are **{{.SessionName}}** of {{len .Sessions}} sessions working in parallel o
 Parallel sessions: {{range $i, $s := .Sessions}}{{if $i}}, {{end}}`{{$s.Name}}`{{end}}
 {{end}}
 
-{{if .GoalPath}}## Goal Boundary
+{{if .ObligationModelPath}}## Obligation Boundary
 
-Goal boundary: `{{.GoalPath}}` (read-only — this defines required current-goal outcomes and optional improvements)
-The goal boundary defines what must be true before the overall goal can be considered complete. Your current assignment defines what to do next, not what counts as full completion.
-Required goal items are the canonical current-goal obligations for the overall run. Your assignment is the decomposition; the goal boundary is not.
-Run identity stays immutable for the life of the run. `{{.GoalPath}}` may evolve, but it may not silently shrink user-required outcomes.
+Obligation boundary: `{{.ObligationModelPath}}` (read-only — this defines the canonical mutable obligations for the run)
+The obligation boundary defines what must be true before the overall objective can be considered complete. Your current assignment defines what to do next, not what counts as full completion.
+Required obligations are the canonical mutable obligations for the overall run. Your assignment is the decomposition; the obligation boundary is not.
+Run identity stays immutable for the life of the run. `{{.ObligationModelPath}}` may evolve, but it may not silently shrink user-required outcomes.
 If your assignment is only gathering proof while the underlying outcome or enabler still appears unmet, record that risk in the journal or dispatchable_slices for the master.
 {{end}}
 
-{{if .AcceptanceStatePath}}## Acceptance State
+{{if .AssurancePlanPath}}## Assurance State
 
-Machine-readable acceptance state: `{{.AcceptanceStatePath}}` (read-only — verification-only; it does not define scope)
+Machine-readable assurance plan: `{{.AssurancePlanPath}}` (read-only — verification-only; it does not define scope)
+{{if .EvidenceLogPath}}Recorded assurance evidence log: `{{.EvidenceLogPath}}` (read-only — inspect it when you need to understand current coverage or freshness){{end}}
 {{if .CompletionProofPath}}Agent-owned closeout/evidence surface: `{{.CompletionProofPath}}` (read-only — inspect it when you need to understand current closeout coverage or proof gaps; GoalX does not validate verdict structure there){{end}}
-{{if .AcceptanceNotesPath}}Optional acceptance notes: `{{.AcceptanceNotesPath}}`{{end}}
 {{end}}
 
 ## Optimization Doctrine
@@ -176,9 +184,9 @@ If unread inbox entries exist:
 1. Read them carefully and adjust to the latest direction.
 2. Acknowledge the latest processed inbox entry:
    ```bash
-   cd {{.ProjectRoot}} && goalx ack-session --run {{.RunName}} {{.SessionName}}
+   cd {{.ProjectRoot}} && goalx ack-inbox --run {{.RunName}} {{.SessionName}}
    ```
-3. Acknowledge in journal with status `ack-session`.
+3. Acknowledge in journal with status `ack-inbox`.
 
 If there are no unread inbox entries, continue your current work.
 

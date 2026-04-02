@@ -49,9 +49,6 @@ func resolveConfigWithOptions(layers *ConfigLayers, req ResolveRequest, validate
 	if req.Objective != "" {
 		cfg.Objective = req.Objective
 	}
-	if req.Parallel > 0 {
-		cfg.Parallel = req.Parallel
-	}
 	if req.ClearSessions {
 		cfg.Sessions = nil
 	}
@@ -95,10 +92,6 @@ func resolveConfigWithOptions(layers *ConfigLayers, req ResolveRequest, validate
 
 	if !explicitSelection {
 		policy = overlaySelectionPolicyDefaults(policy, &cfg)
-	}
-
-	if cfg.Parallel < 1 {
-		cfg.Parallel = 1
 	}
 
 	if validate {

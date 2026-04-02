@@ -176,7 +176,7 @@ func TestBuildRunCloseoutFactsBlocksEvolveFinalizeWithoutManagedStop(t *testing.
 
 func TestBuildRunCloseoutFactsAllowsFinalizeWhenOnlyQualityDebtRemains(t *testing.T) {
 	_, runDir, _, _ := writeGuidanceRunFixture(t)
-	if err := SaveGoalState(GoalPath(runDir), &GoalState{
+	if err := writeBoundaryFixture(t, runDir, &GoalState{
 		Version: 1,
 		Required: []GoalItem{
 			{ID: "req-1", Text: "ship cockpit", Source: goalItemSourceUser, Role: goalItemRoleOutcome, State: goalItemStateOpen},
@@ -203,7 +203,7 @@ func TestBuildRunCloseoutFactsAllowsFinalizeWhenOnlyQualityDebtRemains(t *testin
 	}); err != nil {
 		t.Fatalf("SaveCoordinationState: %v", err)
 	}
-	if err := SaveAcceptanceState(AcceptanceStatePath(runDir), &AcceptanceState{
+	if err := writeAssuranceFixture(t, runDir, &AcceptanceState{
 		Version:     2,
 		GoalVersion: 1,
 		Checks:      []AcceptanceCheck{{ID: "chk-1", Label: "acceptance", Command: "printf ok", State: acceptanceCheckStateActive}},
@@ -214,7 +214,7 @@ func TestBuildRunCloseoutFactsAllowsFinalizeWhenOnlyQualityDebtRemains(t *testin
 	if err := SaveSuccessModel(SuccessModelPath(runDir), &SuccessModel{
 		Version:               1,
 		ObjectiveContractHash: "sha256:objective",
-		GoalHash:              "sha256:goal",
+		ObligationModelHash:              "sha256:goal",
 		Dimensions: []SuccessDimension{
 			{ID: "req-1", Kind: "outcome", Text: "ship cockpit", Required: true},
 			{ID: "req-2", Kind: "outcome", Text: "ship research spine", Required: true},
@@ -269,5 +269,56 @@ func TestBuildRunCloseoutFactsAllowsFinalizeWhenOnlyQualityDebtRemains(t *testin
 	}
 	if !facts.ReadyToFinalize() {
 		t.Fatalf("ReadyToFinalize() = false, want true when only quality debt remains: %+v", facts)
+	}
+}
+
+func TestBuildRunCloseoutFactsBlocksFinalizeWhenRequiredEvidenceIsStale(t *testing.T) {
+	_, runDir, _, _ := writeGuidanceRunFixture(t)
+	if err := os.WriteFile(RunStatusPath(runDir), []byte(`{"version":1,"phase":"complete","required_remaining":0,"updated_at":"2026-03-31T02:00:00Z"}`), 0o644); err != nil {
+		t.Fatalf("write status: %v", err)
+	}
+	if err := os.WriteFile(SummaryPath(runDir), []byte("# summary\n"), 0o644); err != nil {
+		t.Fatalf("write summary: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(CompletionStatePath(runDir)), 0o755); err != nil {
+		t.Fatalf("mkdir proof dir: %v", err)
+	}
+	if err := os.WriteFile(CompletionStatePath(runDir), []byte(`{"verdict":"complete"}`), 0o644); err != nil {
+		t.Fatalf("write completion proof: %v", err)
+	}
+	if err := SaveAssurancePlan(AssurancePlanPath(runDir), &AssurancePlan{
+		Version: 1,
+		Scenarios: []AssuranceScenario{
+			{
+				ID:                "scenario-1",
+				CoversObligations: []string{"obl-1"},
+				Harness:           AssuranceHarness{Kind: "cli", Command: "printf ok"},
+				Oracle:            AssuranceOracle{Kind: "exit_code", CheckDefinitions: []AssuranceOracleCheck{{Kind: "exit_code", Equals: "0"}}},
+				Evidence:          []AssuranceEvidenceRequirement{{Kind: "stdout"}},
+				GatePolicy:        AssuranceGatePolicy{Closeout: "required", RequiredCognitionTier: "repo-native"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveAssurancePlan: %v", err)
+	}
+	if err := SaveFreshnessState(FreshnessStatePath(runDir), &FreshnessState{
+		Version:  1,
+		Evidence: []EvidenceFreshnessItem{{ScenarioID: "scenario-1", State: freshnessStateStale}},
+	}); err != nil {
+		t.Fatalf("SaveFreshnessState: %v", err)
+	}
+	if err := SaveCognitionState(CognitionStatePath(runDir), &CognitionState{
+		Version: 1,
+		Scopes:  []CognitionScopeState{{Scope: "run-root", Providers: []CognitionProviderState{{Name: "repo-native", InvocationKind: "builtin", Available: true, Capabilities: []string{"git_diff"}}}}},
+	}); err != nil {
+		t.Fatalf("SaveCognitionState: %v", err)
+	}
+
+	facts, err := BuildRunCloseoutFacts(runDir)
+	if err != nil {
+		t.Fatalf("BuildRunCloseoutFacts: %v", err)
+	}
+	if facts.ReadyToFinalize() {
+		t.Fatalf("ReadyToFinalize() = true, want false with stale required evidence: %+v", facts)
 	}
 }

@@ -14,7 +14,7 @@ func TestSaveSuccessModelRoundTrip(t *testing.T) {
 		CompiledAt:            "2026-03-31T08:00:00Z",
 		CompilerVersion:       "smc-v1",
 		ObjectiveContractHash: "sha256:objective",
-		GoalHash:              "sha256:goal",
+		ObligationModelHash:              "sha256:goal",
 		Dimensions: []SuccessDimension{
 			{
 				ID:           "dim-product-clarity",
@@ -53,7 +53,7 @@ func TestLoadSuccessModelRejectsUnknownFields(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{
   "version": 1,
   "objective_contract_hash": "sha256:objective",
-  "goal_hash": "sha256:goal",
+  "obligation_model_hash": "sha256:goal",
   "dimensions": [],
   "unexpected": true
 }`), 0o644); err != nil {

@@ -216,7 +216,7 @@ func deriveTargetAttentionState(facts TargetAttentionFacts) string {
 	freshWorktree := hasWorktreeSignal && !staleWorktree
 
 	switch {
-	case presence == TargetPresenceParked:
+	case presence == TargetPresenceParked || presence == TargetPresenceInactive:
 		return TargetAttentionHealthy
 	case runtimeState == "parked" || runtimeState == "kept" || runtimeState == "stopped":
 		return TargetAttentionHealthy

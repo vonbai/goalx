@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -52,48 +50,6 @@ type GoalSummary struct {
 	OptionalOpen      int
 }
 
-func GoalPath(runDir string) string {
-	return filepath.Join(runDir, "goal.json")
-}
-
-func GoalLogPath(runDir string) string {
-	return filepath.Join(runDir, "goal-log.jsonl")
-}
-
-func LoadGoalState(path string) (*GoalState, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	state, err := parseGoalState(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse goal state: %w", err)
-	}
-	return state, nil
-}
-
-func SaveGoalState(path string, state *GoalState) error {
-	if state == nil {
-		return fmt.Errorf("goal state is nil")
-	}
-	if err := validateGoalStateInput(state); err != nil {
-		return err
-	}
-	normalizeGoalState(state)
-	if err := validateGoalStateIntegrity(filepath.Dir(path), state); err != nil {
-		return err
-	}
-	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeFileAtomic(path, data, 0o644)
-}
-
 func NewGoalState() *GoalState {
 	state := &GoalState{
 		Version:   1,
@@ -103,35 +59,6 @@ func NewGoalState() *GoalState {
 	}
 	normalizeGoalState(state)
 	return state
-}
-
-func EnsureGoalState(runDir string) (*GoalState, error) {
-	path := GoalPath(runDir)
-	state, err := LoadGoalState(path)
-	if err != nil {
-		return nil, err
-	}
-	if state == nil {
-		state = NewGoalState()
-		if err := SaveGoalState(path, state); err != nil {
-			return nil, err
-		}
-		return state, nil
-	}
-	return state, nil
-}
-
-func EnsureGoalLog(runDir string) error {
-	path := GoalLogPath(runDir)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	return os.WriteFile(path, nil, 0o644)
 }
 
 func SummarizeGoalState(state *GoalState) GoalSummary {
@@ -302,18 +229,18 @@ func validateGoalItemInput(item GoalItem) error {
 func parseGoalState(data []byte) (*GoalState, error) {
 	var state GoalState
 	if len(strings.TrimSpace(string(data))) == 0 {
-		return nil, durableSchemaHintError(DurableSurfaceGoal, fmt.Errorf("goal state is empty"))
+		return nil, durableSchemaHintError(DurableSurfaceObligationModel, fmt.Errorf("goal state is empty"))
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&state); err != nil {
-		return nil, durableSchemaHintError(DurableSurfaceGoal, err)
+		return nil, durableSchemaHintError(DurableSurfaceObligationModel, err)
 	}
 	if err := ensureJSONEOF(decoder); err != nil {
-		return nil, durableSchemaHintError(DurableSurfaceGoal, err)
+		return nil, durableSchemaHintError(DurableSurfaceObligationModel, err)
 	}
 	if err := validateGoalStateInput(&state); err != nil {
-		return nil, durableSchemaHintError(DurableSurfaceGoal, err)
+		return nil, durableSchemaHintError(DurableSurfaceObligationModel, err)
 	}
 	normalizeGoalState(&state)
 	return &state, nil
